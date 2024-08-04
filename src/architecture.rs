@@ -183,7 +183,8 @@ struct Instruction<'a> {
     // Can't be a reference because there might be escape sequences, which require
     // modifying the data on deserialization
     definition: String,
-    /// Determines whether the field `i` is separated in the resulting binary instruction
+    /// Determines whether the field `i` is separated in the resulting binary instruction. Ignored
+    #[deprecated = "Values are obtained from the variant used in BitPosition in each field"]
     separated: Option<Vec<bool>>,
     /// Help information of the instruction
     help: &'a str,
@@ -309,8 +310,8 @@ struct Pseudoinstruction<'a> {
     /// Size of the pseudoinstruction. Ignored since some pseudoinstructions can have different sizes
     /// depending on the instructions they are replaced with
     nwords: Integer,
-    /// Parameters of the pseudoinstruction
-    fields: Vec<InstructionField<'a, Option<BitPosition>>>,
+    /// Parameters of the pseudoinstruction. Bit positions of fields are ignored
+    fields: Vec<InstructionField<'a, Option<Integer>>>,
     /// Code to execute for the instruction
     // Can't be a reference because there might be escape sequences, which require
     // modifying the data on deserialization
