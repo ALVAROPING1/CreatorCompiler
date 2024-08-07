@@ -1,4 +1,4 @@
-use creator_parser::architecture::Architecture;
+use creator_parser::{architecture::Architecture, parser};
 
 fn main() {
     let mut args = std::env::args();
@@ -17,5 +17,7 @@ fn main() {
     if operation == 1 {
         let arch = Architecture::from_json(&src).expect("The input JSON should be correct");
         println!("{arch:#?}");
+    } else {
+        parser::parse(&filename, &src);
     }
 }
