@@ -123,24 +123,36 @@ enum ASTNode {
 fn parser<'a>(
     arch: &'a Architecture,
 ) -> impl Parser<Token, Vec<ASTNode>, Error = Simple<Token>> + 'a {
+    // Identifiers
     let ident = select! { Token::Identifier(ident) => ident }.labelled("identifier");
+    // Newline token
     let newline = || just(Token::Ctrl('\n'));
+
+    // Labels: `label -> ident:`
     let label = ident
         .then_ignore(just(Token::Ctrl(':')))
         .padded_by(newline().repeated())
         .labelled("label");
 
+    // Directives: `directive -> .ident`
     let directive = just(Token::Ctrl('.'))
         .ignore_then(ident)
         .map(|ident| format!(".{ident}"))
         .labelled("directive name");
 
+    // Any amount of labels: `labels -> label*`
     let labels = label.repeated().collect().labelled("labels");
 
-    let data_directive = labels
+    // Data statement: statements within the data segment
+    // `data_statement -> labels directive expression (, expression)*`
+    let data_statement = labels
         .clone()
         .then(directive.clone())
         .then(
+            // Arguments of the directive. Comma-separated list of expressions. Each expression can
+            // have any amount of newlines prefixing it, and any amount of newlines following it if
+            // they are followed by a comma (indicating that more expressions will follow,
+            // otherwise the first newline is used as the statement end)
             newline()
                 .repeated()
                 .ignore_then(expression::parser())
@@ -151,19 +163,23 @@ fn parser<'a>(
                         .or_not(),
                 )
                 .separated_by(just(Token::Ctrl(',')))
+                .at_least(1)
                 .labelled("parameters"),
         )
         .then_ignore(newline())
         .map(|((labels, name), args)| DataNode { labels, name, args })
         .labelled("data directive");
 
+    // Name of the directive changing to the data segment
     let data_segment_directive = arch
         .find_directive(DirectiveAction::DataSegment)
         .expect("The data segment directive should be defined");
+    // Name of the directive changing to the code segment
     let code_segment_directive = arch
         .find_directive(DirectiveAction::CodeSegment)
         .expect("The code segment directive should be defined");
 
+    // Data segment: `data_segment -> data_segment_directive data_statement*`
     let data_segment = directive
         .clone()
         .then_ignore(newline())
@@ -174,15 +190,17 @@ fn parser<'a>(
                 Err(Simple::custom(span, "TODO: error message data"))
             }
         })
-        .ignore_then(data_directive.repeated())
+        .ignore_then(data_statement.repeated())
         .map(ASTNode::DataSegment);
 
+    // Instruction: `instruction -> labels ident [^\n]*`
     let instruction = labels
         .then(ident)
         .then(take_until(newline()).map_with_span(|(args, _), span| (args, span)))
         .map(|((labels, name), args)| InstructionNode { labels, name, args })
         .labelled("instruction");
 
+    // Code segment: `code_segment -> code_segment_directive instruction*`
     let code_segment = directive
         .clone()
         .then_ignore(newline())
