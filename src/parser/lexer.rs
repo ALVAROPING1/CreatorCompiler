@@ -39,7 +39,7 @@ pub fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
         .labelled("operator");
 
     // Control characters used in the grammar
-    let ctrl = one_of(":,.")
+    let ctrl = one_of(":,.()")
         .or(newline)
         .map(Token::Ctrl)
         .labelled("control character");
