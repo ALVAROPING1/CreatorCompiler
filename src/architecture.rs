@@ -3,7 +3,7 @@ use serde::Deserialize;
 
 type Integer = i64;
 
-#[derive(Deserialize, JsonSchema, Debug)]
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Clone, Copy)]
 #[serde(untagged)]
 enum Number {
     Int(Integer),
@@ -11,7 +11,7 @@ enum Number {
 }
 
 /// Architecture description
-#[derive(Deserialize, JsonSchema, Debug)]
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Clone)]
 pub struct Architecture<'a> {
     /// Metadata about the architecture
     /// Order of elements is assumed to be name, bits, description, data format,
@@ -32,15 +32,15 @@ pub struct Architecture<'a> {
     memory_layout: [Pair<'a, MemoryLayoutKeys>; 6],
 }
 
-#[derive(Deserialize, JsonSchema, Debug)]
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
 struct Pair<'a, Keys> {
     name: Keys,
     value: &'a str,
 }
 
 /// Architecture metadata attribute types
-#[derive(Deserialize, JsonSchema, Debug)]
-enum MetadataKeys {
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
+pub enum MetadataKeys {
     /// Name of the architecture
     Name,
     /// Word size
@@ -65,7 +65,7 @@ enum MetadataKeys {
 }
 
 /// Register bank
-#[derive(Deserialize, JsonSchema, Debug)]
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Clone)]
 struct Component<'a> {
     /// Name of the register bank
     name: &'a str,
@@ -80,8 +80,8 @@ struct Component<'a> {
 }
 
 /// Types of register banks allowed
-#[derive(Deserialize, JsonSchema, Debug)]
-enum ComponentType {
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ComponentType {
     /// Control registers
     #[serde(rename = "ctrl_registers")]
     Ctrl,
@@ -94,9 +94,9 @@ enum ComponentType {
 }
 
 /// Type of registers bigger than a single word
-#[derive(Deserialize, JsonSchema, Debug)]
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
-enum PrecisionType {
+pub enum PrecisionType {
     /// Register has a bigger size
     Extended,
     /// Register is made up of 2 word size registers
@@ -104,7 +104,7 @@ enum PrecisionType {
 }
 
 /// Register specification
-#[derive(Deserialize, JsonSchema, Debug)]
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Clone)]
 struct Register<'a> {
     /// List of aliases
     name: Vec<&'a str>,
@@ -121,9 +121,9 @@ struct Register<'a> {
 }
 
 /// Properties of a register
-#[derive(Deserialize, JsonSchema, Debug)]
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
-enum RegisterProperty {
+pub enum RegisterProperty {
     /// Register can be read
     Read,
     /// Register can be written
@@ -149,7 +149,7 @@ enum RegisterProperty {
 }
 
 /// Instruction specification
-#[derive(Deserialize, JsonSchema, Debug)]
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
 struct Instruction<'a> {
     /// Name of the instruction
     name: &'a str,
@@ -193,8 +193,8 @@ struct Instruction<'a> {
 }
 
 /// Allowed instruction types
-#[derive(Deserialize, JsonSchema, Debug)]
-enum InstructionType {
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
+pub enum InstructionType {
     #[serde(rename = "Arithmetic integer")]
     ArithmeticInteger,
     #[serde(rename = "Arithmetic floating point")]
@@ -217,8 +217,8 @@ enum InstructionType {
 }
 
 /// Allowed instruction properties
-#[derive(Deserialize, JsonSchema, Debug)]
-enum InstructionProperties {
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
+pub enum InstructionProperties {
     #[serde(rename = "exit_subrutine")]
     ExitSubrutine,
     #[serde(rename = "enter_subrutine")]
@@ -226,7 +226,7 @@ enum InstructionProperties {
 }
 
 /// Instruction field specification
-#[derive(Deserialize, JsonSchema, Debug)]
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
 struct InstructionField<'a, BitPos> {
     /// Name of the field
     name: &'a str,
@@ -243,7 +243,7 @@ struct InstructionField<'a, BitPos> {
 }
 
 /// Position of the start/end bit of a field in a binary instruction
-#[derive(Deserialize, JsonSchema, Debug)]
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
 #[serde(untagged)]
 enum BitPosition {
     // Field uses a single, contiguous bit range
@@ -253,9 +253,9 @@ enum BitPosition {
 }
 
 /// Allowed instruction field types
-#[derive(Deserialize, JsonSchema, Debug)]
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
-enum InstructionFieldType {
+pub enum InstructionFieldType {
     /// Opcode of the instruction
     Co,
     /// Extended operation code
@@ -289,7 +289,7 @@ enum InstructionFieldType {
 }
 
 /// Pseudoinstruction specification
-#[derive(Deserialize, JsonSchema, Debug)]
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
 struct Pseudoinstruction<'a> {
     /// Name of the pseudoinstruction
     name: &'a str,
@@ -323,7 +323,7 @@ struct Pseudoinstruction<'a> {
 }
 
 /// Directive specification
-#[derive(Deserialize, JsonSchema, Debug)]
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
 struct Directive<'a> {
     /// Name of the directive
     name: &'a str,
@@ -334,9 +334,9 @@ struct Directive<'a> {
 }
 
 /// Allowed acytions for directives
-#[derive(Deserialize, JsonSchema, Debug)]
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
-enum DirectiveAction {
+pub enum DirectiveAction {
     // Switch to the data segment
     DataSegment,
     // Switch to the code segment
@@ -370,8 +370,8 @@ enum DirectiveAction {
 }
 
 /// Memory layout attribute keys
-#[derive(Deserialize, JsonSchema, Debug)]
-enum MemoryLayoutKeys {
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
+pub enum MemoryLayoutKeys {
     #[serde(rename = "text start")]
     TextStart,
     #[serde(rename = "text end")]
@@ -411,5 +411,21 @@ impl<'a> Architecture<'a> {
     /// doesn't conform to the specification
     pub fn from_json(src: &str) -> serde_json::Result<Architecture> {
         serde_json::from_str(src)
+    }
+
+    /// Find the directive name with the given action
+    ///
+    /// # Parameters
+    ///
+    /// * `action`: action to search for
+    #[must_use]
+    pub fn find_directive(&self, action: DirectiveAction) -> Option<&str> {
+        self.directives.iter().find_map(|&directive| {
+            if directive.action == action {
+                Some(directive.name)
+            } else {
+                None
+            }
+        })
     }
 }

@@ -13,11 +13,13 @@ fn main() {
         return;
     }
     let filename = args.next().expect("Expected file argument");
-    let src = std::fs::read_to_string(&filename).expect("We should be able to read the file");
+    let arch = std::fs::read_to_string(filename).expect("We should be able to read the file");
+    let arch = Architecture::from_json(&arch).expect("The input JSON should be correct");
     if operation == 1 {
-        let arch = Architecture::from_json(&src).expect("The input JSON should be correct");
         println!("{arch:#?}");
     } else {
-        parser::parse(&filename, &src);
+        let filename = args.next().expect("Expected file argument");
+        let src = std::fs::read_to_string(&filename).expect("We should be able to read the file");
+        parser::parse(&arch, &filename, &src);
     }
 }

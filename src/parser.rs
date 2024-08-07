@@ -5,6 +5,8 @@ use std::fmt;
 mod expression;
 use expression::Expr;
 
+use crate::architecture::{Architecture, DirectiveAction};
+
 #[derive(Debug, PartialEq, Clone, Hash, Eq)]
 enum Token {
     Number(String),
@@ -117,7 +119,9 @@ enum ASTNode {
     DataSegment(Vec<DataNode>),
 }
 
-fn parser() -> impl Parser<Token, Vec<ASTNode>, Error = Simple<Token>> {
+fn parser<'a>(
+    arch: &'a Architecture,
+) -> impl Parser<Token, Vec<ASTNode>, Error = Simple<Token>> + 'a {
     let ident = select! { Token::Identifier(ident) => ident }.labelled("identifier");
     // TODO: allow new lines between labels
     let label = ident.then_ignore(just(Token::Ctrl(':'))).labelled("label");
@@ -142,14 +146,21 @@ fn parser() -> impl Parser<Token, Vec<ASTNode>, Error = Simple<Token>> {
         .map(|((labels, name), args)| DataNode { labels, name, args })
         .labelled("data directive");
 
+    let data_segment_directive = arch
+        .find_directive(DirectiveAction::DataSegment)
+        .expect("The data segment directive should be defined");
+    let code_segment_directive = arch
+        .find_directive(DirectiveAction::CodeSegment)
+        .expect("The code segment directive should be defined");
+
     let data_segment = directive
         .clone()
         .then_ignore(just(Token::Ctrl('\n')))
-        .try_map(|name: String, span| {
-            if name == ".data" {
+        .try_map(move |name: String, span| {
+            if name == data_segment_directive {
                 Ok(())
             } else {
-                Err(Simple::custom(span, "TODO: error message"))
+                Err(Simple::custom(span, "TODO: error message data"))
             }
         })
         .ignore_then(data_directive.repeated())
@@ -164,11 +175,11 @@ fn parser() -> impl Parser<Token, Vec<ASTNode>, Error = Simple<Token>> {
     let code_segment = directive
         .clone()
         .then_ignore(just(Token::Ctrl('\n')))
-        .try_map(|name: String, span| {
-            if name == ".text" {
+        .try_map(move |name: String, span| {
+            if name == code_segment_directive {
                 Ok(())
             } else {
-                Err(Simple::custom(span, "TODO: error message"))
+                Err(Simple::custom(span, "TODO: error message code"))
             }
         })
         .ignore_then(instruction.repeated())
@@ -177,13 +188,13 @@ fn parser() -> impl Parser<Token, Vec<ASTNode>, Error = Simple<Token>> {
     data_segment.or(code_segment).repeated().then_ignore(end())
 }
 
-pub fn parse(filename: &String, src: &str) {
+pub fn parse(arch: &Architecture, filename: &String, src: &str) {
     let (tokens, errs) = lexer().parse_recovery(src);
 
     let parse_errs = tokens.map_or_else(Vec::new, |tokens| {
         let len = src.chars().count();
         #[allow(clippy::range_plus_one)] // Chumsky requires an inclusive range to avoid type errors
-        let (ast, parse_errs) = parser().parse_recovery(chumsky::stream::Stream::from_iter(
+        let (ast, parse_errs) = parser(arch).parse_recovery(chumsky::stream::Stream::from_iter(
             len..len + 1,
             tokens.into_iter(),
         ));
