@@ -7,7 +7,7 @@ use expression::Expr;
 
 use crate::architecture::{Architecture, DirectiveAction};
 
-#[derive(Debug, PartialEq, Clone, Hash, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 enum Token {
     Number(String),
     String(String),
@@ -35,7 +35,7 @@ type Span = std::ops::Range<usize>;
 type Spanned<T> = (T, Span);
 
 fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
-    // let newline = text::newline().to('\n');
+    let newline = text::newline().to('\n');
 
     // Numbers
     let num = text::int(10).map(Token::Number).labelled("number");
@@ -46,7 +46,8 @@ fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
         .labelled("operator");
 
     // Control characters used in the grammar
-    let ctrl = one_of(":,.\n")
+    let ctrl = one_of(":,.")
+        .or(newline)
         .map(Token::Ctrl)
         .labelled("control character");
 
@@ -123,8 +124,11 @@ fn parser<'a>(
     arch: &'a Architecture,
 ) -> impl Parser<Token, Vec<ASTNode>, Error = Simple<Token>> + 'a {
     let ident = select! { Token::Identifier(ident) => ident }.labelled("identifier");
-    // TODO: allow new lines between labels
-    let label = ident.then_ignore(just(Token::Ctrl(':'))).labelled("label");
+    let newline = || just(Token::Ctrl('\n'));
+    let label = ident
+        .then_ignore(just(Token::Ctrl(':')))
+        .padded_by(newline().repeated())
+        .labelled("label");
 
     let directive = just(Token::Ctrl('.'))
         .ignore_then(ident)
@@ -137,12 +141,19 @@ fn parser<'a>(
         .clone()
         .then(directive.clone())
         .then(
-            expression::parser()
-                // TODO: allow new lines between values
+            newline()
+                .repeated()
+                .ignore_then(expression::parser())
+                .then_ignore(
+                    newline()
+                        .repeated()
+                        .then(just(Token::Ctrl(',')).rewind())
+                        .or_not(),
+                )
                 .separated_by(just(Token::Ctrl(',')))
                 .labelled("parameters"),
         )
-        .then_ignore(just(Token::Ctrl('\n')))
+        .then_ignore(newline())
         .map(|((labels, name), args)| DataNode { labels, name, args })
         .labelled("data directive");
 
@@ -155,7 +166,7 @@ fn parser<'a>(
 
     let data_segment = directive
         .clone()
-        .then_ignore(just(Token::Ctrl('\n')))
+        .then_ignore(newline())
         .try_map(move |name: String, span| {
             if name == data_segment_directive {
                 Ok(())
@@ -168,13 +179,13 @@ fn parser<'a>(
 
     let instruction = labels
         .then(ident)
-        .then(take_until(just(Token::Ctrl('\n'))).map_with_span(|(args, _), span| (args, span)))
+        .then(take_until(newline()).map_with_span(|(args, _), span| (args, span)))
         .map(|((labels, name), args)| InstructionNode { labels, name, args })
         .labelled("instruction");
 
     let code_segment = directive
         .clone()
-        .then_ignore(just(Token::Ctrl('\n')))
+        .then_ignore(newline())
         .try_map(move |name: String, span| {
             if name == code_segment_directive {
                 Ok(())
