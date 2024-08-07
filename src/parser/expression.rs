@@ -24,6 +24,7 @@ pub enum BinaryOp {
 #[derive(Debug)]
 pub enum Expr {
     Number(i32),
+    Character(char),
     UnaryOp {
         op: UnaryOp,
         operand: Box<Expr>,
@@ -40,6 +41,7 @@ impl Expr {
     pub const fn value(&self) -> i32 {
         match self {
             Self::Number(value) => *value,
+            Self::Character(c) => *c as i32,
             Self::UnaryOp { op, operand } => match op {
                 UnaryOp::Plus => operand.value(),
                 UnaryOp::Minus => -operand.value(),
@@ -83,7 +85,10 @@ where
 #[must_use]
 pub fn parser() -> impl Parser<Token, Expr, Error = Simple<Token>> + Clone {
     recursive(|expr| {
-        let int = select! {Token::Number(x) => Expr::Number(x.parse().expect("We already parsed it as a number"))};
+        let int = select! {
+            Token::Number(x) => Expr::Number(x.parse().expect("We already parsed it as a number")),
+            Token::Character(c) => Expr::Character(c)
+        };
         let atom = int.or(expr.delimited_by(just(Token::Ctrl('(')), just(Token::Ctrl(')'))));
 
         let op = select! {
@@ -120,7 +125,8 @@ pub fn parser() -> impl Parser<Token, Expr, Error = Simple<Token>> + Clone {
                 Token::Operator('+') => BinaryOp::Add,
                 Token::Operator('-') => BinaryOp::Sub,
             },
-        ).labelled("expression")
+        )
+        .labelled("expression")
     })
 }
 
@@ -137,6 +143,12 @@ mod expr_eval_tests {
     fn number() {
         let expr = Expr::Number(16);
         assert_eq!(expr.value(), 16);
+    }
+
+    #[test]
+    fn character() {
+        let expr = Expr::Character('a');
+        assert_eq!(expr.value(), 97);
     }
 
     fn bin_op(op: BinaryOp, lhs: i32, rhs: i32) -> Expr {
