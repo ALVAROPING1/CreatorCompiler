@@ -73,17 +73,19 @@ pub fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
         just('0').to('\0'),
     )));
 
+    // Characters allowed inside string/character literals
+    let char = filter(|c| *c != '\\' && *c != '"').or(escape);
+
     // Literal strings (`"..."`)
-    let string = just('"')
-        .ignore_then(filter(|c| *c != '\\' && *c != '"').or(escape).repeated())
-        .then_ignore(just('"'))
+    let string = char
+        .repeated()
+        .delimited_by(just('"'), just('"'))
         .collect::<String>()
         .map(Token::String);
 
     // Literal characters (`'c'`)
-    let character = just('\'')
-        .ignore_then(filter(|c| *c != '\\' && *c != '\'').or(escape))
-        .then_ignore(just('\''))
+    let character = char
+        .delimited_by(just('\''), just('\''))
         .map(Token::Character);
 
     // Any of the previous patterns can be a token
