@@ -57,19 +57,33 @@ pub fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
         .map(Token::Identifier)
         .labelled("identifier");
 
-    // TODO: implement escape sequences
+    // Escape sequences in strings
+    let escape = just('\\').ignore_then(choice((
+        just('\\'),
+        just('/'),
+        just('"'),
+        just('\''),
+        just('a').to('\x07'),
+        just('b').to('\x08'),
+        just('e').to('\x1B'),
+        just('f').to('\x0C'),
+        just('n').to('\n'),
+        just('r').to('\r'),
+        just('t').to('\t'),
+        just('0').to('\0'),
+    )));
+
     // Literal strings (`"..."`)
     let string = just('"')
-        .ignore_then(just('"').not().repeated())
+        .ignore_then(filter(|c| *c != '\\' && *c != '"').or(escape).repeated())
         .then_ignore(just('"'))
         .collect::<String>()
         .map(Token::String);
 
     // Literal characters (`'c'`)
     let character = just('\'')
-        .ignore_then(just('\'').not())
+        .ignore_then(filter(|c| *c != '\\' && *c != '\'').or(escape))
         .then_ignore(just('\''))
-        .or(just("'\\\''").to('\''))
         .map(Token::Character);
 
     // Any of the previous patterns can be a token
@@ -88,6 +102,7 @@ pub fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
             filter(|c: &char| c.is_whitespace() && *c != '\n')
                 .ignored()
                 .repeated(),
-        ).repeated()
+        )
+        .repeated()
         .then_ignore(end())
 }
