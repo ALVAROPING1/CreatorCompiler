@@ -20,6 +20,9 @@ fn main() {
     } else {
         let filename = args.next().expect("Expected file argument");
         let src = std::fs::read_to_string(&filename).expect("We should be able to read the file");
-        parser::parse(&arch, &filename, &src);
+        match parser::parse(&arch, &src) {
+            Ok(ast) => println!("{ast:#?}"),
+            Err(errors) => errors.print(&filename, &src),
+        }
     }
 }

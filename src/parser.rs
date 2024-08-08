@@ -1,11 +1,13 @@
-use ariadne::{sources, Color, Label, Report, ReportKind};
-use chumsky::prelude::*;
+use chumsky::{prelude::*, stream::Stream};
 
 mod expression;
 use expression::Expr;
 
 mod lexer;
 use lexer::{lexer, Token};
+
+mod error;
+pub use error::Error as ParseError;
 
 use crate::architecture::{Architecture, DirectiveAction};
 
@@ -25,21 +27,21 @@ enum Data {
 }
 
 #[derive(Debug)]
-struct InstructionNode {
+pub struct InstructionNode {
     labels: Vec<String>,
     name: String,
     args: Spanned<Vec<Token>>,
 }
 
 #[derive(Debug)]
-struct DataNode {
+pub struct DataNode {
     labels: Vec<String>,
     name: String,
     args: Vec<Data>,
 }
 
 #[derive(Debug)]
-enum ASTNode {
+pub enum ASTNode {
     CodeSegment(Vec<InstructionNode>),
     DataSegment(Vec<DataNode>),
 }
@@ -144,45 +146,10 @@ fn parser<'a>(arch: &'a Architecture) -> Parser!(Token, Vec<ASTNode>, 'a) {
     data_segment.or(code_segment).repeated().then_ignore(end())
 }
 
-pub fn parse(arch: &Architecture, filename: &String, src: &str) {
-    let (tokens, errs) = lexer().parse_recovery(src);
-
-    let parse_errs = tokens.map_or_else(Vec::new, |tokens| {
-        let len = src.chars().count();
-        #[allow(clippy::range_plus_one)] // Chumsky requires an inclusive range to avoid type errors
-        let (ast, parse_errs) = parser(arch).parse_recovery(chumsky::stream::Stream::from_iter(
-            len..len + 1,
-            tokens.into_iter(),
-        ));
-        if let Some(ast) = ast {
-            println!("ast: {ast:#?}");
-        }
-        parse_errs
-    });
-    errs.into_iter()
-        .map(|e| e.map(|c| c.to_string()))
-        .chain(parse_errs.into_iter().map(|e| e.map(|tok| tok.to_string())))
-        .for_each(|e| {
-            Report::build(ReportKind::Error, filename, e.span().start)
-                .with_message(e.to_string())
-                .with_label(
-                    Label::new((
-                        filename.clone(),
-                        std::convert::Into::<std::ops::Range<_>>::into(e.span()),
-                    ))
-                    .with_message(format!("{:?}", e.reason()))
-                    .with_color(Color::Red),
-                )
-                .with_labels(e.label().map_or_else(Vec::new, |label| {
-                    vec![Label::new((
-                        filename.clone(),
-                        std::convert::Into::<std::ops::Range<_>>::into(e.span()),
-                    ))
-                    .with_message(format!("while parsing this {label}"))
-                    .with_color(Color::Yellow)]
-                }))
-                .finish()
-                .print(sources([(filename.clone(), src)]))
-                .expect("we should be able to print to stdout");
-        });
+pub fn parse(arch: &Architecture, src: &str) -> Result<Vec<ASTNode>, ParseError> {
+    let tokens = lexer().parse(src)?;
+    let len = src.chars().count();
+    #[allow(clippy::range_plus_one)] // Chumsky requires an inclusive range to avoid type errors
+    let stream = Stream::from_iter(len..len + 1, tokens.into_iter());
+    Ok(parser(arch).parse(stream)?)
 }
