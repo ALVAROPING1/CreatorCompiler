@@ -44,6 +44,7 @@ enum ASTNode {
     DataSegment(Vec<DataNode>),
 }
 
+#[must_use]
 fn parser<'a>(arch: &'a Architecture) -> Parser!(Token, Vec<ASTNode>, 'a) {
     // Identifiers
     let ident = select! { Token::Identifier(ident) => ident }.labelled("identifier");

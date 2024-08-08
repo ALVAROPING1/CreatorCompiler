@@ -65,6 +65,7 @@ impl Expr {
     }
 }
 
+#[must_use]
 fn binary_parser(elem: Parser!(Token, Expr), op: Parser!(Token, BinaryOp)) -> Parser!(Token, Expr) {
     elem.clone()
         .then(op.then(elem).repeated())

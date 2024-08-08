@@ -27,6 +27,7 @@ impl fmt::Display for Token {
     }
 }
 
+#[must_use]
 pub fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
     let newline = text::newline().to('\n');
 
