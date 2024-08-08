@@ -1,6 +1,6 @@
 use chumsky::prelude::*;
 
-use super::Token;
+use super::{Parser, Token};
 
 #[derive(Debug, Clone, Copy)]
 pub enum UnaryOp {
@@ -65,17 +65,10 @@ impl Expr {
     }
 }
 
-fn binary_parser<PI, Op>(
-    elem: PI,
-    op: Op,
-) -> impl Parser<Token, Expr, Error = Simple<Token>> + Clone
-where
-    PI: Parser<Token, Expr, Error = Simple<Token>> + Clone,
-    Op: Parser<Token, BinaryOp, Error = Simple<Token>> + Clone,
-{
+fn binary_parser(elem: Parser!(Token, Expr), op: Parser!(Token, BinaryOp)) -> Parser!(Token, Expr) {
     elem.clone()
         .then(op.then(elem).repeated())
-        .foldl(move |lhs, (op, rhs)| Expr::BinaryOp {
+        .foldl(|lhs, (op, rhs)| Expr::BinaryOp {
             op,
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),

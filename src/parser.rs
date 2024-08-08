@@ -12,6 +12,12 @@ use crate::architecture::{Architecture, DirectiveAction};
 type Span = std::ops::Range<usize>;
 type Spanned<T> = (T, Span);
 
+macro_rules! Parser {
+    ($i:ty, $o:ty) => { impl Parser<$i, $o, Error = Simple<$i>> + Clone };
+    ($i:ty, $o:ty, $lt:lifetime) => { impl Parser<$i, $o, Error = Simple<$i>> + Clone + $lt };
+}
+use Parser;
+
 #[derive(Debug)]
 enum Data {
     String(String),
@@ -38,9 +44,7 @@ enum ASTNode {
     DataSegment(Vec<DataNode>),
 }
 
-fn parser<'a>(
-    arch: &'a Architecture,
-) -> impl Parser<Token, Vec<ASTNode>, Error = Simple<Token>> + 'a {
+fn parser<'a>(arch: &'a Architecture) -> Parser!(Token, Vec<ASTNode>, 'a) {
     // Identifiers
     let ident = select! { Token::Identifier(ident) => ident }.labelled("identifier");
     // Newline token
