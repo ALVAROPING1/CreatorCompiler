@@ -96,6 +96,7 @@ fn parser<'a>(arch: &'a Architecture) -> Parser!(Token, Vec<ASTNode>, 'a) {
                 .labelled("parameters"),
         )
         .then_ignore(newline())
+        .padded_by(newline().repeated())
         .map(|((labels, name), args)| DataNode { labels, name, args })
         .labelled("data directive");
 
@@ -126,6 +127,7 @@ fn parser<'a>(arch: &'a Architecture) -> Parser!(Token, Vec<ASTNode>, 'a) {
     let instruction = labels
         .then(ident)
         .then(take_until(newline()).map_with_span(|(args, _), span| (args, span)))
+        .padded_by(newline().repeated())
         .map(|((labels, name), args)| InstructionNode { labels, name, args })
         .labelled("instruction");
 
