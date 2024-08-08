@@ -13,6 +13,12 @@ type Span = std::ops::Range<usize>;
 type Spanned<T> = (T, Span);
 
 #[derive(Debug)]
+enum Data {
+    String(String),
+    Number(Expr),
+}
+
+#[derive(Debug)]
 struct InstructionNode {
     labels: Vec<String>,
     name: String,
@@ -23,7 +29,7 @@ struct InstructionNode {
 struct DataNode {
     labels: Vec<String>,
     name: String,
-    args: Vec<Expr>,
+    args: Vec<Data>,
 }
 
 #[derive(Debug)]
@@ -67,7 +73,11 @@ fn parser<'a>(
             // otherwise the first newline is used as the statement end)
             newline()
                 .repeated()
-                .ignore_then(expression::parser())
+                .ignore_then(
+                    expression::parser()
+                        .map(Data::Number)
+                        .or(select! {Token::String(s) => Data::String(s)}),
+                )
                 .then_ignore(
                     newline()
                         .repeated()
