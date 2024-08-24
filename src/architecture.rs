@@ -19,8 +19,9 @@ pub struct Architecture<'a> {
     /// name
     #[serde(borrow)]
     arch_conf: [Pair<'a, MetadataKeys>; 8],
-    /// Components (register banks) of the architecture
-    components: [Component<'a>; 3],
+    /// Components (register banks) of the architecture. It's assumed that the first register of
+    /// the first bank will contain the program counter
+    components: Vec<Component<'a>>,
     /// Instructions allowed
     instructions: Vec<Instruction<'a>>,
     /// Pseudoinstructions allowed
