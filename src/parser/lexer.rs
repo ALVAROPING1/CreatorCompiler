@@ -93,10 +93,7 @@ pub fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
     let token = choice((num, op, ctrl, identifier, string, character, literal)).labelled("token");
 
     // Single line comments
-    let comment = just("#")
-        .then(just('\n').not().repeated())
-        .padded()
-        .labelled("comment");
+    let comment = just("#").then(newline.not().repeated()).labelled("comment");
 
     token
         .map_with_span(|tok, span| (tok, span))
