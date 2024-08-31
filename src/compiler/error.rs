@@ -36,6 +36,7 @@ pub enum Error {
         expected: DirectiveArgumentType,
         found: DirectiveArgumentType,
     },
+    DivisionBy0,
 }
 
 impl std::fmt::Display for Error {
@@ -79,6 +80,7 @@ impl std::fmt::Display for Error {
                 f,
                 "Incorrect argument type, expected \"{expected:?}\" but found \"{found:?}\""
             ),
+            Self::DivisionBy0 => write!(f, "Can't divide by 0"),
         }
     }
 }

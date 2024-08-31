@@ -161,7 +161,7 @@ impl DataToken {
 
     fn to_number(&self) -> Result<i32, CompileError> {
         match self {
-            Self::Number(expr) => Ok(expr.value()),
+            Self::Number(expr) => expr.value().ok_or(CompileError::DivisionBy0),
             Self::String(_) => Err(CompileError::IncorrectDirectiveArgumentType {
                 expected: DirectiveArgumentType::Number,
                 found: DirectiveArgumentType::String,
@@ -351,7 +351,9 @@ pub fn compile(
                     | InstructionFieldType::OffsetBytes
                     | InstructionFieldType::OffsetWords) => {
                         let value = match value {
-                            Argument::Number(expr) => expr.value(),
+                            Argument::Number(expr) => {
+                                expr.value().ok_or(CompileError::DivisionBy0)?
+                            }
                             Argument::Identifier(label) => label_table
                                 .get(&label)
                                 .ok_or(CompileError::UnknownLabel(label))?

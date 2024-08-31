@@ -38,30 +38,30 @@ pub enum Expr {
 
 impl Expr {
     #[must_use]
-    pub const fn value(&self) -> i32 {
-        match self {
+    pub fn value(&self) -> Option<i32> {
+        Some(match self {
             Self::Number(value) => *value,
             Self::Character(c) => *c as i32,
             Self::UnaryOp { op, operand } => match op {
-                UnaryOp::Plus => operand.value(),
-                UnaryOp::Minus => -operand.value(),
-                UnaryOp::Complement => !operand.value(),
+                UnaryOp::Plus => operand.value()?,
+                UnaryOp::Minus => -operand.value()?,
+                UnaryOp::Complement => !operand.value()?,
             },
             Self::BinaryOp { op, lhs, rhs } => {
-                let lhs = lhs.value();
-                let rhs = rhs.value();
+                let lhs = lhs.value()?;
+                let rhs = rhs.value()?;
                 match op {
                     BinaryOp::Add => lhs + rhs,
                     BinaryOp::Sub => lhs - rhs,
                     BinaryOp::Mul => lhs * rhs,
-                    BinaryOp::Div => lhs / rhs,
+                    BinaryOp::Div => lhs.checked_div(rhs)?,
                     BinaryOp::Rem => lhs % rhs,
                     BinaryOp::BitwiseOR => lhs | rhs,
                     BinaryOp::BitwiseAND => lhs & rhs,
                     BinaryOp::BitwiseXOR => lhs ^ rhs,
                 }
             }
-        }
+        })
     }
 }
 
@@ -136,13 +136,13 @@ mod expr_eval_tests {
     #[test]
     fn number() {
         let expr = Expr::Number(16);
-        assert_eq!(expr.value(), 16);
+        assert_eq!(expr.value(), Some(16));
     }
 
     #[test]
     fn character() {
         let expr = Expr::Character('a');
-        assert_eq!(expr.value(), 97);
+        assert_eq!(expr.value(), Some(97));
     }
 
     fn bin_op(op: BinaryOp, lhs: i32, rhs: i32) -> Expr {
@@ -159,7 +159,7 @@ mod expr_eval_tests {
             op: UnaryOp::Plus,
             operand: num(2),
         };
-        assert_eq!(expr.value(), 2);
+        assert_eq!(expr.value(), Some(2));
     }
 
     #[test]
@@ -168,47 +168,61 @@ mod expr_eval_tests {
             op: UnaryOp::Minus,
             operand: Box::new(Expr::Number(2)),
         };
-        assert_eq!(expr.value(), -2);
+        assert_eq!(expr.value(), Some(-2));
     }
 
     #[test]
     fn binary_add() {
-        assert_eq!(bin_op(BinaryOp::Add, 5, 7).value(), 12);
+        assert_eq!(bin_op(BinaryOp::Add, 5, 7).value(), Some(12));
     }
 
     #[test]
     fn binary_sub() {
-        assert_eq!(bin_op(BinaryOp::Sub, 5, 7).value(), -2);
+        assert_eq!(bin_op(BinaryOp::Sub, 5, 7).value(), Some(-2));
     }
 
     #[test]
     fn binary_mul() {
-        assert_eq!(bin_op(BinaryOp::Mul, 5, 7).value(), 35);
+        assert_eq!(bin_op(BinaryOp::Mul, 5, 7).value(), Some(35));
     }
 
     #[test]
     fn binary_div() {
-        assert_eq!(bin_op(BinaryOp::Div, 8, 2).value(), 4);
+        assert_eq!(bin_op(BinaryOp::Div, 8, 2).value(), Some(4));
+    }
+
+    #[test]
+    fn div_by_0() {
+        assert_eq!(bin_op(BinaryOp::Div, 10, 0).value(), None);
     }
 
     #[test]
     fn binary_rem() {
-        assert_eq!(bin_op(BinaryOp::Rem, 7, 5).value(), 2);
+        assert_eq!(bin_op(BinaryOp::Rem, 7, 5).value(), Some(2));
     }
 
     #[test]
     fn binary_or() {
-        assert_eq!(bin_op(BinaryOp::BitwiseOR, 0b0100, 0b1100).value(), 0b1100);
+        assert_eq!(
+            bin_op(BinaryOp::BitwiseOR, 0b0100, 0b1100).value(),
+            Some(0b1100)
+        );
     }
 
     #[test]
     fn binary_and() {
-        assert_eq!(bin_op(BinaryOp::BitwiseAND, 0b0110, 0b1100).value(), 0b0100);
+        assert_eq!(
+            bin_op(BinaryOp::BitwiseAND, 0b0110, 0b1100).value(),
+            Some(0b0100)
+        );
     }
 
     #[test]
     fn binary_xor() {
-        assert_eq!(bin_op(BinaryOp::BitwiseXOR, 0b0101, 0b1100).value(), 0b1001);
+        assert_eq!(
+            bin_op(BinaryOp::BitwiseXOR, 0b0101, 0b1100).value(),
+            Some(0b1001)
+        );
     }
 
     #[test]
@@ -255,6 +269,6 @@ mod expr_eval_tests {
                 }),
             }),
         };
-        assert_eq!(expr.value(), -1);
+        assert_eq!(expr.value(), Some(-1));
     }
 }
