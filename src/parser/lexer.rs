@@ -18,9 +18,10 @@ impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Number(n) => write!(f, "{n}"),
-            Self::String(s) => write!(f, "{s}"),
+            Self::String(s) => write!(f, "\"{s}\""),
+            Self::Character(s) => write!(f, "'{s}'"),
             Self::Identifier(i) => write!(f, "{i}"),
-            Self::Ctrl(c) | Self::Operator(c) | Self::Literal(c) | Self::Character(c) => {
+            Self::Ctrl(c) | Self::Operator(c) | Self::Literal(c) => {
                 write!(f, "{c}")
             }
         }

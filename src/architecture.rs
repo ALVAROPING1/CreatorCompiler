@@ -67,15 +67,15 @@ pub enum MetadataKeys {
 
 /// Register bank
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Clone)]
-struct Component<'a> {
+pub struct Component<'a> {
     /// Name of the register bank
     name: &'a str,
     /// Type of the registers
     r#type: ComponentType,
     /// Whether the registers have double the word size
-    double_precision: bool,
+    pub double_precision: bool,
     /// If the registers have double the word size, how this size is achieved
-    double_precision_type: Option<PrecisionType>,
+    pub double_precision_type: Option<PrecisionType>,
     /// Registers in this bank
     elements: Vec<Register<'a>>,
 }
@@ -106,7 +106,7 @@ pub enum PrecisionType {
 
 /// Register specification
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Clone)]
-struct Register<'a> {
+pub struct Register<'a> {
     /// List of aliases
     name: Vec<&'a str>,
     /// Size
@@ -151,7 +151,7 @@ pub enum RegisterProperty {
 
 /// Instruction specification
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
-struct Instruction<'a> {
+pub struct Instruction<'a> {
     /// Name of the instruction
     name: &'a str,
     /// Type of the instruction
@@ -160,26 +160,26 @@ struct Instruction<'a> {
     /// the field with index i of the instruction, although the number is ignored and `signature_raw`
     /// is used instead. Other characters are interpreted literally
     /// Ex: `F0 F3 F1 (F2)`
-    signature_definition: &'a str,
+    pub signature_definition: &'a str,
     /// Comma-separated list of the type of each field in the instruction, in the order in which
     /// they appear in the instruction. Valid values are those in `InstructionFieldType`, except
     /// `Co` and `Cop`. Instruction opcode is specified literally, other characters are interpreted
     /// literally so that `signature_definition` can capture the value corresponding to each field
     /// when used as a regex
-    signature: &'a str,
+    pub signature: &'a str,
     /// Same as `signature`, but with a space-separated list of field names
     #[serde(rename = "signatureRaw")]
-    signature_raw: &'a str,
+    pub signature_raw: &'a str,
     /// Binary op code
-    co: &'a str,
+    pub co: &'a str,
     /// Binary extended op code
     cop: &'a str,
     /// Size of the instruction
-    nwords: Integer,
+    pub nwords: u8,
     /// Execution time of the instruction
     clk_cycles: Option<Integer>,
     /// Parameters of the instruction
-    fields: Vec<InstructionField<'a, BitPosition>>,
+    pub fields: Vec<InstructionField<'a, BitPosition>>,
     /// Code to execute for the instruction
     // Can't be a reference because there might be escape sequences, which require
     // modifying the data on deserialization
@@ -228,29 +228,29 @@ pub enum InstructionProperties {
 
 /// Instruction field specification
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
-struct InstructionField<'a, BitPos> {
+pub struct InstructionField<'a, BitPos> {
     /// Name of the field
-    name: &'a str,
+    pub name: &'a str,
     /// Type of the field
-    r#type: InstructionFieldType,
+    pub r#type: InstructionFieldType,
     /// Starting position of the field. Ignored for pseudoinstructions
-    startbit: BitPos,
+    pub startbit: BitPos,
     /// End position of the field. Ignored for pseudoinstructions
-    stopbit: BitPos,
+    pub stopbit: BitPos,
     /// Fixed value of this field in the binary instruction (specified as a binary string). Only
     /// used for `Cop` fields
     #[serde(rename = "valueField")]
-    value_field: Option<&'a str>,
+    pub value_field: Option<&'a str>,
 }
 
 /// Position of the start/end bit of a field in a binary instruction
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
 #[serde(untagged)]
-enum BitPosition {
+pub enum BitPosition {
     // Field uses a single, contiguous bit range
-    Single(Integer),
+    Single(u8),
     // Field uses multiple, discontiguous bit ranges
-    Multiple(Vec<Integer>),
+    Multiple(Vec<u8>),
 }
 
 /// Allowed instruction field types
@@ -325,13 +325,13 @@ struct Pseudoinstruction<'a> {
 
 /// Directive specification
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
-struct Directive<'a> {
+pub struct Directive<'a> {
     /// Name of the directive
-    name: &'a str,
+    pub name: &'a str,
     /// Action of the directive
-    action: DirectiveAction,
+    pub action: DirectiveAction,
     /// Size in bytes of values associated with this directive
-    size: Option<&'a str>,
+    pub size: Option<&'a str>,
 }
 
 /// Allowed acytions for directives
@@ -344,11 +344,11 @@ pub enum DirectiveAction {
     CodeSegment,
     // Store symbols in an external symbols table
     GlobalSymbol,
-    // Store n * directive.size null bytes in the data segment. Also sets current alignment to 1
+    // Store n * directive.size null bytes in the data segment
     Space,
-    // Set current alignment to 2^n bytes
+    // Align next element to 2^n bytes
     Align,
-    // Set current alignment to n bytes
+    // Align next element to n bytes
     Balign,
     // Store ascii string with a terminating null byte (`\0`) in the data segment. Also sets
     // current alignment to 1
@@ -428,5 +428,136 @@ impl<'a> Architecture<'a> {
                 None
             }
         })
+    }
+
+    /// Finds the directive with the given name
+    ///
+    /// # Parameters
+    ///
+    /// * `name`: name to search for
+    #[must_use]
+    pub fn get_directive(&self, name: &str) -> Option<&Directive> {
+        self.directives
+            .iter()
+            .find(|&directive| directive.name == name)
+    }
+
+    /// Gets the word size of the architecture
+    #[must_use]
+    pub fn word_size(&self) -> u8 {
+        self.arch_conf[1].value.parse().unwrap()
+    }
+
+    #[must_use]
+    pub const fn main_label(&self) -> &str {
+        self.arch_conf[5].value
+    }
+
+    /// Gets the section start/end addresses
+    ///
+    /// # Parameters
+    ///
+    /// * `i`: index of the section to get (text, data, stack)
+    #[must_use]
+    fn section_limits(&self, i: usize) -> (u64, u64) {
+        let parse = |value: &str| u64::from_str_radix(value.trim_start_matches("0x"), 16).unwrap();
+        (
+            parse(self.memory_layout[2 * i].value),
+            parse(self.memory_layout[2 * i + 1].value),
+        )
+    }
+
+    /// Gets the code sections start/end addresses
+    #[must_use]
+    pub fn code_section_limits(&self) -> (u64, u64) {
+        self.section_limits(0)
+    }
+
+    /// Gets the data sections start/end addresses
+    #[must_use]
+    pub fn data_section_limits(&self) -> (u64, u64) {
+        self.section_limits(1)
+    }
+
+    /// Gets the instructions with the given name
+    ///
+    /// # Parameters
+    ///
+    /// * `name`: name to search for
+    pub fn find_instructions<'b: 'c, 'c>(
+        &'b self,
+        name: &'c str,
+    ) -> impl Iterator<Item = &'b Instruction> + 'c {
+        self.instructions
+            .iter()
+            .filter(move |instruction| instruction.name == name)
+    }
+
+    /// Gets the register bank with the given type and precision
+    ///
+    /// # Parameters
+    ///
+    /// * `type`: type of the bank wanted
+    /// * `double_precision`: whether the registers should have single (`false`) or double (`true`)
+    ///   precision
+    #[must_use]
+    pub fn find_bank(&self, r#type: ComponentType, double_precision: bool) -> Option<&Component> {
+        self.components.iter().find(|bank| {
+            bank.r#type == r#type
+                && if double_precision {
+                    bank.double_precision_type.is_none()
+                } else {
+                    matches!(
+                        bank.double_precision_type,
+                        Some(PrecisionType::Extended) | None
+                    )
+                }
+        })
+    }
+}
+
+impl<'a> Component<'a> {
+    /// Finds the register with the given name
+    ///
+    /// # Parameters
+    ///
+    /// * `name`: name of the register to search for
+    #[must_use]
+    pub fn find_register(&self, name: &str) -> Option<(usize, &Register)> {
+        self.elements
+            .iter()
+            .enumerate()
+            .find(|(_, reg)| reg.name.contains(&name))
+    }
+}
+
+impl BitPosition {
+    /// Calculates the size of this field in bits
+    ///
+    /// # Parameters
+    ///
+    /// * `end`: bit position specifying the end of the ranges
+    #[must_use]
+    pub fn size(&self, end: &Self) -> usize {
+        let range_size = |start: &u8, end: &u8| {
+            usize::try_from(i32::from(*start) - i32::from(*end) + 1).unwrap()
+        };
+        match (self, end) {
+            (Self::Single(start), Self::Single(end)) => range_size(start, end),
+            (Self::Multiple(starts), Self::Multiple(ends)) => {
+                assert_eq!(
+                    starts.len(),
+                    ends.len(),
+                    "Inconsistent instruction field location definition"
+                );
+                starts
+                    .iter()
+                    .zip(ends.iter())
+                    .map(|(start, end)| range_size(start, end))
+                    .reduce(|acc, val| acc + val)
+                    .unwrap()
+            }
+            _ => panic!("Inconsistent instruction field location definition"),
+        }
     }
 }

@@ -1,18 +1,18 @@
 use chumsky::{prelude::*, stream::Stream};
 
 mod expression;
-use expression::Expr;
+pub use expression::Expr;
 
 mod lexer;
-use lexer::{lexer, Token};
+pub use lexer::{lexer, Token};
 
 mod error;
 pub use error::Error as ParseError;
 
 use crate::architecture::{Architecture, DirectiveAction};
 
-type Span = std::ops::Range<usize>;
-type Spanned<T> = (T, Span);
+pub type Span = std::ops::Range<usize>;
+pub type Spanned<T> = (T, Span);
 
 macro_rules! Parser {
     ($i:ty, $o:ty) => { impl Parser<$i, $o, Error = Simple<$i>> + Clone };
@@ -21,23 +21,23 @@ macro_rules! Parser {
 use Parser;
 
 #[derive(Debug)]
-enum Data {
+pub enum Data {
     String(String),
     Number(Expr),
 }
 
 #[derive(Debug)]
 pub struct InstructionNode {
-    labels: Vec<String>,
-    name: String,
-    args: Spanned<Vec<Token>>,
+    pub labels: Vec<String>,
+    pub name: String,
+    pub args: Spanned<Vec<Token>>,
 }
 
 #[derive(Debug)]
 pub struct DataNode {
-    labels: Vec<String>,
-    name: String,
-    args: Vec<Data>,
+    pub labels: Vec<String>,
+    pub name: String,
+    pub args: Vec<Data>,
 }
 
 #[derive(Debug)]
@@ -154,4 +154,31 @@ pub fn parse(arch: &Architecture, src: &str) -> Result<Vec<ASTNode>, ParseError>
     #[allow(clippy::range_plus_one)] // Chumsky requires an inclusive range to avoid type errors
     let stream = Stream::from_iter(len..len + 1, tokens.into_iter());
     Ok(parser(arch).parse(stream)?)
+}
+
+pub enum Argument {
+    Identifier(String),
+    Number(Expr),
+}
+
+pub fn parse_expr(src: &str) -> Result<Argument, ParseError> {
+    let tokens = lexer().parse(src)?;
+    let len = src.chars().count();
+    #[allow(clippy::range_plus_one)] // Chumsky requires an inclusive range to avoid type errors
+    let stream = Stream::from_iter(len..len + 1, tokens.into_iter());
+    Ok(expression::parser()
+        .map(Argument::Number)
+        .or(select! {Token::Identifier(i) => Argument::Identifier(i)})
+        .then_ignore(end())
+        .parse(stream)?)
+}
+
+pub fn parse_identifier(src: &str) -> Result<Argument, ParseError> {
+    let tokens = lexer().parse(src)?;
+    let len = src.chars().count();
+    #[allow(clippy::range_plus_one)] // Chumsky requires an inclusive range to avoid type errors
+    let stream = Stream::from_iter(len..len + 1, tokens.into_iter());
+    Ok(select! {Token::Identifier(i) => Argument::Identifier(i)}
+        .then_ignore(end::<Simple<Token>>())
+        .parse(stream)?)
 }

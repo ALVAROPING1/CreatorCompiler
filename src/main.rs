@@ -1,4 +1,4 @@
-use creator_parser::{architecture::Architecture, parser};
+use creator_parser::{architecture::Architecture, compiler, parser};
 
 fn main() {
     let mut args = std::env::args();
@@ -21,8 +21,20 @@ fn main() {
         let filename = args.next().expect("Expected file argument");
         let src = std::fs::read_to_string(&filename).expect("We should be able to read the file");
         match parser::parse(&arch, &src) {
-            Ok(ast) => println!("{ast:#?}"),
             Err(errors) => errors.print(&filename, &src),
+            Ok(ast) => {
+                println!("{ast:#?}");
+                if operation == 3 {
+                    match compiler::compile(&arch, ast) {
+                        Ok((label_table, instructions, data)) => {
+                            println!("{label_table:#?}");
+                            println!("{instructions:#?}");
+                            println!("{data:#?}");
+                        }
+                        Err(e) => println!("{e}")
+                    };
+                }
+            }
         }
     }
 }
