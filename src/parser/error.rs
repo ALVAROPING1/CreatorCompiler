@@ -22,7 +22,7 @@ impl From<Vec<Simple<Token>>> for Error {
 }
 
 impl Error {
-    pub fn print(self, filename: &String, src: &str) {
+    pub fn print(self, filename: &str, src: &str) {
         let (lex, parse) = match self {
             Self::Lexer(errs) => (errs, vec![]),
             Self::Parser(errs) => (vec![], errs),
@@ -34,23 +34,17 @@ impl Error {
                 Report::build(ReportKind::Error, filename, e.span().start)
                     .with_message(e.to_string())
                     .with_label(
-                        Label::new((
-                            filename.clone(),
-                            std::convert::Into::<std::ops::Range<_>>::into(e.span()),
-                        ))
-                        .with_message(format!("{:?}", e.reason()))
-                        .with_color(Color::Red),
+                        Label::new((filename, e.span()))
+                            .with_message(format!("{:?}", e.reason()))
+                            .with_color(Color::Red),
                     )
                     .with_labels(e.label().map_or_else(Vec::new, |label| {
-                        vec![Label::new((
-                            filename.clone(),
-                            std::convert::Into::<std::ops::Range<_>>::into(e.span()),
-                        ))
-                        .with_message(format!("while parsing this {label}"))
-                        .with_color(Color::Yellow)]
+                        vec![Label::new((filename, e.span()))
+                            .with_message(format!("while parsing this {label}"))
+                            .with_color(Color::Yellow)]
                     }))
                     .finish()
-                    .print(sources([(filename.clone(), src)]))
+                    .print(sources([(filename, src)]))
                     .expect("we should be able to print to stdout");
             });
     }
