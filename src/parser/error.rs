@@ -1,4 +1,4 @@
-use ariadne::{sources, Color, Label, Report, ReportKind};
+use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::error::Simple;
 
 use super::Token;
@@ -44,7 +44,7 @@ impl Error {
                             .with_color(Color::Yellow)]
                     }))
                     .finish()
-                    .print(sources([(filename, src)]))
+                    .print((filename, Source::from(src)))
                     .expect("we should be able to print to stdout");
             });
     }
