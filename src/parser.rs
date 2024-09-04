@@ -49,21 +49,11 @@ pub enum ASTNode {
 #[must_use]
 fn parser<'a>(arch: &'a Architecture) -> Parser!(Token, Vec<ASTNode>, 'a) {
     // Identifiers
-    let ident = select! { Token::Identifier(ident) => ident }.labelled("identifier");
+    let ident = select! {Token::Identifier(ident) => ident}.labelled("identifier");
+    let label = select! {Token::Label(name) => name}.labelled("label");
+    let directive = select! {Token::Directive(name) => name}.labelled("directive name");
     // Newline token
     let newline = || just(Token::Ctrl('\n'));
-
-    // Labels: `label -> ident:`
-    let label = ident
-        .then_ignore(just(Token::Ctrl(':')))
-        .padded_by(newline().repeated())
-        .labelled("label");
-
-    // Directives: `directive -> .ident`
-    let directive = just(Token::Ctrl('.'))
-        .ignore_then(ident)
-        .map(|ident| format!(".{ident}"))
-        .labelled("directive name");
 
     // Any amount of labels: `labels -> label*`
     let labels = label
@@ -75,8 +65,7 @@ fn parser<'a>(arch: &'a Architecture) -> Parser!(Token, Vec<ASTNode>, 'a) {
     // Data statement: statements within the data segment
     // `data_statement -> labels directive expression (, expression)*`
     let data_statement = labels
-        .clone()
-        .then(directive.clone().map_with_span(|name, span| (name, span)))
+        .then(directive.map_with_span(|name, span| (name, span)))
         .then(
             // Arguments of the directive. Comma-separated list of expressions. Each expression can
             // have any amount of newlines prefixing it, and any amount of newlines following it if
@@ -117,7 +106,6 @@ fn parser<'a>(arch: &'a Architecture) -> Parser!(Token, Vec<ASTNode>, 'a) {
 
     // Data segment: `data_segment -> data_segment_directive data_statement*`
     let data_segment = directive
-        .clone()
         .then_ignore(newline())
         .try_map(move |name: String, span| {
             if name == data_segment_directive {
@@ -139,7 +127,6 @@ fn parser<'a>(arch: &'a Architecture) -> Parser!(Token, Vec<ASTNode>, 'a) {
 
     // Code segment: `code_segment -> code_segment_directive instruction*`
     let code_segment = directive
-        .clone()
         .then_ignore(newline())
         .try_map(move |name: String, span| {
             if name == code_segment_directive {

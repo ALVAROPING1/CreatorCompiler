@@ -9,6 +9,8 @@ pub enum Token {
     String(String),
     Character(char),
     Identifier(String),
+    Label(String),
+    Directive(String),
     Operator(char),
     Ctrl(char),
     Literal(char),
@@ -20,7 +22,7 @@ impl fmt::Display for Token {
             Self::Number(n) => write!(f, "{n}"),
             Self::String(s) => write!(f, "\"{s}\""),
             Self::Character(s) => write!(f, "'{s}'"),
-            Self::Identifier(i) => write!(f, "{i}"),
+            Self::Identifier(i) | Self::Label(i) | Self::Directive(i) => write!(f, "{i}"),
             Self::Ctrl(c) | Self::Operator(c) | Self::Literal(c) => {
                 write!(f, "{c}")
             }
@@ -41,7 +43,7 @@ pub fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
         .labelled("operator");
 
     // Control characters used in the grammar
-    let ctrl = one_of(":,.()")
+    let ctrl = one_of(",()")
         .or(newline)
         .map(Token::Ctrl)
         .labelled("control character");
@@ -52,12 +54,29 @@ pub fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
         .map(Token::Literal)
         .labelled("literal");
 
-    // Name identifiers
-    let identifier = filter(|c: &char| c.is_ascii_alphabetic())
+    // Generic identifiers
+    let ident = filter(|c: &char| c.is_ascii_alphabetic())
         .chain(filter(|c: &char| c.is_ascii_alphanumeric() || *c == '_' || *c == '.').repeated())
-        .collect::<String>()
-        .map(Token::Identifier)
         .labelled("identifier");
+
+    // Name identifiers
+    let identifier = ident.collect::<String>().map(Token::Identifier);
+
+    // Label names
+    let label = just('.')
+        .or_not()
+        .chain::<char, _, _>(ident)
+        .collect::<String>()
+        .then_ignore(just(':'))
+        .map(Token::Label)
+        .labelled("label");
+
+    // Directive names
+    let directive = just('.')
+        .chain(ident)
+        .collect::<String>()
+        .map(Token::Directive)
+        .labelled("directive name");
 
     // Escape sequences in strings
     let escape = just('\\').ignore_then(choice((
@@ -91,7 +110,10 @@ pub fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
         .map(Token::Character);
 
     // Any of the previous patterns can be a token
-    let token = choice((num, op, ctrl, identifier, string, character, literal)).labelled("token");
+    let token = choice((
+        num, op, ctrl, label, directive, identifier, string, character, literal,
+    ))
+    .labelled("token");
 
     // Single line comments
     let comment = just("#").then(newline.not().repeated()).labelled("comment");
