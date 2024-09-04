@@ -31,7 +31,7 @@ fn main() {
                             println!("{instructions:#?}");
                             println!("{data:#?}");
                         }
-                        Err(e) => println!("{e}")
+                        Err(e) => e.print(&filename, &src),
                     };
                 }
             }

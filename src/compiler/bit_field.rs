@@ -1,4 +1,4 @@
-use super::{CompileError, Integer};
+use super::{ErrorKind, Integer};
 use crate::architecture::BitPosition;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,14 +39,14 @@ impl BitField {
     ///
     /// # Errors
     ///
-    /// Returns a `CompileError::ValueTooBig` if the data doesn't fit in the bit ranges
+    /// Returns a `ErrorKind::ValueTooBig` if the data doesn't fit in the bit ranges
     pub fn replace(
         &mut self,
         start: &BitPosition,
         end: &BitPosition,
         data: i64,
         signed: bool,
-    ) -> Result<(), CompileError> {
+    ) -> Result<(), ErrorKind> {
         let field_size = start.size(end);
         let data = Integer::build(data, field_size, None, Some(signed))?.to_string();
         let mut data = &data[data.len() - field_size..];
@@ -80,7 +80,7 @@ impl BitField {
 
 #[cfg(test)]
 mod test {
-    use super::{BitField, BitPosition, CompileError};
+    use super::{BitField, BitPosition, ErrorKind};
 
     #[test]
     fn new() {
@@ -138,11 +138,11 @@ mod test {
                 18,
                 false,
             ),
-            Err(CompileError::IntegerTooBig(18, 0..16))
+            Err(ErrorKind::IntegerTooBig(18, 0..16))
         );
         assert_eq!(
             field.replace(&BitPosition::Single(15), &BitPosition::Single(12), 8, true,),
-            Err(CompileError::IntegerTooBig(8, -8..8))
+            Err(ErrorKind::IntegerTooBig(8, -8..8))
         );
     }
 }

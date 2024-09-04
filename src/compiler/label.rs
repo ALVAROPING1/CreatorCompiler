@@ -1,12 +1,13 @@
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
 
-use super::error::Error as CompileError;
+use super::{CompileError, ErrorKind};
+use crate::parser::Span;
 
 /// Label semantic data
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Label {
     address: u64,
-    // definition: Span, // Maybe this is good for error reporting?
+    definition: Span,
 }
 
 impl Label {
@@ -15,8 +16,11 @@ impl Label {
     /// # Parameters
     ///
     /// * `address`: memory address the label points at
-    pub const fn new(address: u64) -> Self {
-        Self { address }
+    pub const fn new(address: u64, definition: Span) -> Self {
+        Self {
+            address,
+            definition,
+        }
     }
 
     /// Gets the address this label is pointing in
@@ -39,16 +43,18 @@ impl Table {
     ///
     /// # Errors
     ///
-    /// Errors if the label has already been inserted
+    /// Errors with `ErrorKind::DuplicateLabel` if the label has already been inserted
     pub fn insert(&mut self, label: String, data: Label) -> Result<(), CompileError> {
         match self.0.entry(label) {
-            std::collections::hash_map::Entry::Vacant(e) => {
+            Entry::Vacant(e) => {
                 e.insert(data);
                 Ok(())
             }
-            std::collections::hash_map::Entry::Occupied(e) => {
-                Err(CompileError::DuplicateLabel(e.key().clone()))
-            }
+            Entry::Occupied(e) => Err(ErrorKind::DuplicateLabel(
+                e.key().clone(),
+                e.get().definition.clone(),
+            )
+            .add_span(data.definition)),
         }
     }
 
@@ -64,30 +70,42 @@ impl Table {
 
 #[cfg(test)]
 mod test {
-    use super::{CompileError, Label, Table};
+    use super::{ErrorKind, Label, Table};
 
     #[test]
     fn insert() {
         let mut table = Table::default();
-        assert_eq!(table.insert("test".to_string(), Label::new(12)), Ok(()));
-        assert_eq!(table.insert("test2".to_string(), Label::new(0)), Ok(()));
         assert_eq!(
-            table.insert("test".to_string(), Label::new(4)),
-            Err(CompileError::DuplicateLabel("test".to_string()))
+            table.insert("test".to_string(), Label::new(12, 0..2)),
+            Ok(())
         );
         assert_eq!(
-            table.insert("test2".to_string(), Label::new(128)),
-            Err(CompileError::DuplicateLabel("test2".to_string()))
+            table.insert("test2".to_string(), Label::new(0, 6..10)),
+            Ok(())
+        );
+        assert_eq!(
+            table.insert("test".to_string(), Label::new(4, 13..17)),
+            Err(ErrorKind::DuplicateLabel("test".to_string(), 0..2).add_span(13..17))
+        );
+        assert_eq!(
+            table.insert("test2".to_string(), Label::new(128, 20..22)),
+            Err(ErrorKind::DuplicateLabel("test2".to_string(), 6..10).add_span(20..22))
         );
     }
 
     #[test]
     fn get() {
         let mut table = Table::default();
-        assert_eq!(table.insert("test".to_string(), Label::new(12)), Ok(()));
-        assert_eq!(table.insert("test2".to_string(), Label::new(0)), Ok(()));
-        assert_eq!(table.get("test"), Some(&Label::new(12)));
-        assert_eq!(table.get("test2"), Some(&Label::new(0)));
+        assert_eq!(
+            table.insert("test".to_string(), Label::new(12, 2..4)),
+            Ok(())
+        );
+        assert_eq!(
+            table.insert("test2".to_string(), Label::new(0, 5..10)),
+            Ok(())
+        );
+        assert_eq!(table.get("test"), Some(&Label::new(12, 2..4)));
+        assert_eq!(table.get("test2"), Some(&Label::new(0, 5..10)));
         assert_eq!(table.get("none"), None);
     }
 }

@@ -1,4 +1,4 @@
-use super::CompileError;
+use super::ErrorKind;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Type {
@@ -28,13 +28,13 @@ impl Integer {
     ///
     /// # Errors
     ///
-    /// Returns a `CompileError::ValueTooBig` if the value doesn't fit in the specified size
+    /// Returns a `ErrorKind::ValueTooBig` if the value doesn't fit in the specified size
     pub fn build(
         value: i64,
         size: usize,
         r#type: Option<Type>,
         signed: Option<bool>,
-    ) -> Result<Self, CompileError> {
+    ) -> Result<Self, ErrorKind> {
         let pow = |n: usize| 1 << n;
         let bounds = signed.map_or_else(
             || -pow(size - 1)..pow(size),
@@ -48,7 +48,7 @@ impl Integer {
             },
         );
         if !bounds.contains(&value) {
-            return Err(CompileError::IntegerTooBig(value, bounds));
+            return Err(ErrorKind::IntegerTooBig(value, bounds));
         };
         #[allow(clippy::cast_sign_loss)]
         Ok(Self {
@@ -71,7 +71,7 @@ impl std::fmt::Display for Integer {
 #[allow(clippy::unwrap_used)]
 #[cfg(test)]
 mod test {
-    use super::{CompileError, Integer, Type as IntegerType};
+    use super::{ErrorKind, Integer, Type as IntegerType};
 
     #[test]
     fn bits_signed() {
@@ -91,7 +91,7 @@ mod test {
         for x in [8, -9] {
             assert_eq!(
                 Integer::build(x, 4, None, Some(true)),
-                Err(CompileError::IntegerTooBig(x, -8..8))
+                Err(ErrorKind::IntegerTooBig(x, -8..8))
             );
         }
     }
@@ -114,7 +114,7 @@ mod test {
         for x in [-1, 16] {
             assert_eq!(
                 Integer::build(x, 4, None, Some(false)),
-                Err(CompileError::IntegerTooBig(x, 0..16))
+                Err(ErrorKind::IntegerTooBig(x, 0..16))
             );
         }
     }
@@ -137,7 +137,7 @@ mod test {
         for x in [-9, 16] {
             assert_eq!(
                 Integer::build(x, 4, Some(IntegerType::Byte), None),
-                Err(CompileError::IntegerTooBig(x, -8..16))
+                Err(ErrorKind::IntegerTooBig(x, -8..16))
             );
         }
     }

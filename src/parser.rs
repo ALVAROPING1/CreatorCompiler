@@ -28,16 +28,16 @@ pub enum Data {
 
 #[derive(Debug)]
 pub struct InstructionNode {
-    pub labels: Vec<String>,
-    pub name: String,
+    pub labels: Vec<Spanned<String>>,
+    pub name: Spanned<String>,
     pub args: Spanned<Vec<Token>>,
 }
 
 #[derive(Debug)]
 pub struct DataNode {
-    pub labels: Vec<String>,
-    pub name: String,
-    pub args: Vec<Data>,
+    pub labels: Vec<Spanned<String>>,
+    pub name: Spanned<String>,
+    pub args: Spanned<Vec<Spanned<Data>>>,
 }
 
 #[derive(Debug)]
@@ -66,13 +66,17 @@ fn parser<'a>(arch: &'a Architecture) -> Parser!(Token, Vec<ASTNode>, 'a) {
         .labelled("directive name");
 
     // Any amount of labels: `labels -> label*`
-    let labels = label.repeated().collect().labelled("labels");
+    let labels = label
+        .map_with_span(|x, span| (x, span))
+        .repeated()
+        .collect()
+        .labelled("labels");
 
     // Data statement: statements within the data segment
     // `data_statement -> labels directive expression (, expression)*`
     let data_statement = labels
         .clone()
-        .then(directive.clone())
+        .then(directive.clone().map_with_span(|name, span| (name, span)))
         .then(
             // Arguments of the directive. Comma-separated list of expressions. Each expression can
             // have any amount of newlines prefixing it, and any amount of newlines following it if
@@ -83,7 +87,8 @@ fn parser<'a>(arch: &'a Architecture) -> Parser!(Token, Vec<ASTNode>, 'a) {
                 .ignore_then(
                     expression::parser()
                         .map(Data::Number)
-                        .or(select! {Token::String(s) => Data::String(s)}),
+                        .or(select! {Token::String(s) => Data::String(s)})
+                        .map_with_span(|x, span| (x, span)),
                 )
                 .then_ignore(
                     newline()
@@ -93,6 +98,7 @@ fn parser<'a>(arch: &'a Architecture) -> Parser!(Token, Vec<ASTNode>, 'a) {
                 )
                 .separated_by(just(Token::Ctrl(',')))
                 .at_least(1)
+                .map_with_span(|x, span| (x, span))
                 .labelled("parameters"),
         )
         .then_ignore(newline())
@@ -125,7 +131,7 @@ fn parser<'a>(arch: &'a Architecture) -> Parser!(Token, Vec<ASTNode>, 'a) {
 
     // Instruction: `instruction -> labels ident [^\n]*`
     let instruction = labels
-        .then(ident)
+        .then(ident.map_with_span(|name, span| (name, span)))
         .then(take_until(newline()).map_with_span(|(args, _), span| (args, span)))
         .padded_by(newline().repeated())
         .map(|((labels, name), args)| InstructionNode { labels, name, args })

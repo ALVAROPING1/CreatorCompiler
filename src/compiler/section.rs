@@ -1,4 +1,4 @@
-use super::error::Error as CompileError;
+use super::ErrorKind;
 
 /// Memory section manager
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,13 +37,13 @@ impl Section {
     ///
     /// # Errors
     ///
-    /// Returns a `CompileError::MemorySectionFull` if the there is not enough space in the section
+    /// Returns a `ErrorKind::MemorySectionFull` if the there is not enough space in the section
     /// left for the requested allocation
-    pub fn try_reserve(&mut self, size: u64) -> Result<u64, CompileError> {
+    pub fn try_reserve(&mut self, size: u64) -> Result<u64, ErrorKind> {
         let res = self.address;
         self.address += size;
         if self.address > self.end {
-            Err(CompileError::MemorySectionFull(self.name))
+            Err(ErrorKind::MemorySectionFull(self.name))
         } else {
             Ok(res)
         }
@@ -58,9 +58,9 @@ impl Section {
     ///
     /// # Errors
     ///
-    /// Returns a `CompileError::MemorySectionFull` if the there is not enough space in the section
+    /// Returns a `ErrorKind::MemorySectionFull` if the there is not enough space in the section
     /// left for the requested alignment
-    pub fn try_align(&mut self, align_size: u64) -> Result<Option<(u64, u64)>, CompileError> {
+    pub fn try_align(&mut self, align_size: u64) -> Result<Option<(u64, u64)>, ErrorKind> {
         let offset = self.address % align_size;
         if offset == 0 {
             return Ok(None);
@@ -79,12 +79,12 @@ impl Section {
     ///
     /// # Errors
     ///
-    /// Returns a `CompileError::MemorySectionFull` if the there is not enough space in the section
-    /// left for the requested allocation, or a `CompileError::DataUnaligned` if the region isn't
+    /// Returns a `ErrorKind::MemorySectionFull` if the there is not enough space in the section
+    /// left for the requested allocation, or a `ErrorKind::DataUnaligned` if the region isn't
     /// aligned
-    pub fn try_reserve_aligned(&mut self, size: u64) -> Result<u64, CompileError> {
+    pub fn try_reserve_aligned(&mut self, size: u64) -> Result<u64, ErrorKind> {
         if self.address % size != 0 {
-            Err(CompileError::DataUnaligned {
+            Err(ErrorKind::DataUnaligned {
                 address: self.address,
                 alignment: size,
             })
@@ -96,7 +96,7 @@ impl Section {
 
 #[cfg(test)]
 mod test {
-    use super::{CompileError, Section};
+    use super::{ErrorKind, Section};
 
     #[test]
     fn reserve1() {
@@ -107,7 +107,7 @@ mod test {
         assert_eq!(section.try_reserve(1), Ok(3));
         assert_eq!(
             section.try_reserve(1),
-            Err(CompileError::MemorySectionFull("test"))
+            Err(ErrorKind::MemorySectionFull("test"))
         );
     }
 
@@ -120,7 +120,7 @@ mod test {
             assert_eq!(section.try_reserve(4), Ok(i + 4));
             assert_eq!(
                 section.try_reserve(4),
-                Err(CompileError::MemorySectionFull("test2"))
+                Err(ErrorKind::MemorySectionFull("test2"))
             );
         }
     }
@@ -134,7 +134,7 @@ mod test {
             assert_eq!(section.try_reserve(6), Ok(i + 6));
             assert_eq!(
                 section.try_reserve(6),
-                Err(CompileError::MemorySectionFull("test3"))
+                Err(ErrorKind::MemorySectionFull("test3"))
             );
         }
     }
@@ -166,7 +166,7 @@ mod test {
             assert_eq!(section.try_reserve(i), Ok(0));
             assert_eq!(
                 section.try_align(4),
-                Err(CompileError::MemorySectionFull("test6"))
+                Err(ErrorKind::MemorySectionFull("test6"))
             );
         }
     }
