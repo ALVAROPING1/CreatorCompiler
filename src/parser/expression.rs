@@ -23,7 +23,7 @@ pub enum BinaryOp {
 
 #[derive(Debug)]
 pub enum Expr {
-    Number(i32),
+    Number(u32),
     Character(char),
     UnaryOp {
         op: UnaryOp,
@@ -38,8 +38,9 @@ pub enum Expr {
 
 impl Expr {
     pub fn value(&self) -> Result<i32, Span> {
+        #[allow(clippy::cast_possible_wrap)]
         Ok(match self {
-            Self::Number(value) => *value,
+            Self::Number(value) => *value as i32,
             Self::Character(c) => *c as i32,
             Self::UnaryOp { op, operand } => match op {
                 UnaryOp::Plus => operand.0.value()?,
@@ -153,7 +154,7 @@ mod expr_eval_tests {
     }
 
     #[allow(clippy::unnecessary_box_returns)]
-    fn num(x: i32) -> Box<Spanned<Expr>> {
+    fn num(x: u32) -> Box<Spanned<Expr>> {
         span(Expr::Number(x))
     }
 
@@ -169,7 +170,7 @@ mod expr_eval_tests {
         assert_eq!(expr.value(), Ok(97));
     }
 
-    fn bin_op(op: BinaryOp, lhs: i32, rhs: i32) -> Expr {
+    fn bin_op(op: BinaryOp, lhs: u32, rhs: u32) -> Expr {
         Expr::BinaryOp {
             op,
             lhs: num(lhs),
