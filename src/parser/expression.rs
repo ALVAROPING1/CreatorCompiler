@@ -52,9 +52,9 @@ impl Expr {
                 let span = rhs.1.clone();
                 let rhs = rhs.0.value()?;
                 match op {
-                    BinaryOp::Add => lhs + rhs,
-                    BinaryOp::Sub => lhs - rhs,
-                    BinaryOp::Mul => lhs * rhs,
+                    BinaryOp::Add => lhs.overflowing_add(rhs).0,
+                    BinaryOp::Sub => lhs.overflowing_sub(rhs).0,
+                    BinaryOp::Mul => lhs.overflowing_mul(rhs).0,
                     BinaryOp::Div => lhs.checked_div(rhs).ok_or(span)?,
                     BinaryOp::Rem => lhs % rhs,
                     BinaryOp::BitwiseOR => lhs | rhs,
@@ -199,16 +199,28 @@ mod expr_eval_tests {
     #[test]
     fn binary_add() {
         assert_eq!(bin_op(BinaryOp::Add, 5, 7).value(), Ok(12));
+        assert_eq!(
+            bin_op(BinaryOp::Add, i32::MAX as u32, 1).value(),
+            Ok(i32::MIN)
+        );
     }
 
     #[test]
     fn binary_sub() {
         assert_eq!(bin_op(BinaryOp::Sub, 5, 7).value(), Ok(-2));
+        assert_eq!(
+            bin_op(BinaryOp::Sub, i32::MAX as u32, i32::MAX as u32).value(),
+            Ok(0)
+        );
     }
 
     #[test]
     fn binary_mul() {
         assert_eq!(bin_op(BinaryOp::Mul, 5, 7).value(), Ok(35));
+        assert_eq!(
+            bin_op(BinaryOp::Mul, i32::MAX as u32, 1 << 31).value(),
+            Ok(i32::MIN)
+        );
     }
 
     #[test]
