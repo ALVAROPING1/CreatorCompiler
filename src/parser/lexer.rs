@@ -95,17 +95,17 @@ pub fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
     )));
 
     // Characters allowed inside string/character literals
-    let char = filter(|c| *c != '\\' && *c != '"').or(escape);
+    let char = |delimiter| filter(move |c| *c != '\\' && *c != delimiter).or(escape);
 
     // Literal strings (`"..."`)
-    let string = char
+    let string = char('"')
         .repeated()
         .delimited_by(just('"'), just('"'))
         .collect::<String>()
         .map(Token::String);
 
     // Literal characters (`'c'`)
-    let character = char
+    let character = char('\'')
         .delimited_by(just('\''), just('\''))
         .map(Token::Character);
 
