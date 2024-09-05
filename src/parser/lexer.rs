@@ -35,8 +35,22 @@ pub fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
     let newline = text::newline().to('\n');
 
     // Numbers
-    let num = text::int(10)
-        .map(|x: String| Token::Number(x.parse().expect("We already parsed it as a number")))
+
+    // Decimal
+    let decimal =
+        text::int(10).map(|x: String| x.parse().expect("We already parsed it as a number"));
+    // Generic base N literals
+    let base_n = |n| {
+        text::digits(n).map(move |x: String| {
+            u32::from_str_radix(&x, n).expect("We already parsed it as a number with this base")
+        })
+    };
+    let hex = just("0x").or(just("0X")).ignore_then(base_n(16));
+    let bin = just("0b").or(just("0B")).ignore_then(base_n(2));
+    let octal = just("0").ignore_then(base_n(8));
+    // Number token
+    let num = choice((hex, bin, octal, decimal))
+        .map(Token::Number)
         .labelled("number");
 
     // Expression operators
