@@ -97,7 +97,6 @@ pub fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
     // Escape sequences in strings
     let escape = just('\\').ignore_then(choice((
         just('\\'),
-        just('/'),
         just('"'),
         just('\''),
         just('a').to('\x07'),
