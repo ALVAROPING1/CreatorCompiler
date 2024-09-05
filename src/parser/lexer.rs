@@ -5,7 +5,7 @@ use super::Spanned;
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Token {
-    Number(String),
+    Number(u32),
     String(String),
     Character(char),
     Identifier(String),
@@ -35,7 +35,9 @@ pub fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
     let newline = text::newline().to('\n');
 
     // Numbers
-    let num = text::int(10).map(Token::Number).labelled("number");
+    let num = text::int(10)
+        .map(|x: String| Token::Number(x.parse().expect("We already parsed it as a number")))
+        .labelled("number");
 
     // Expression operators
     let op = one_of("+-*/%|&^~")

@@ -90,7 +90,7 @@ fn binary_parser(
 pub fn parser() -> Parser!(Token, Expr) {
     recursive(|expr| {
         let int = select! {
-            Token::Number(x) => Expr::Number(x.parse().expect("We already parsed it as a number")),
+            Token::Number(x) => Expr::Number(x),
             Token::Character(c) => Expr::Character(c)
         };
         let atom = int
