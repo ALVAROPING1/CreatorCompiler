@@ -49,7 +49,7 @@ fn int_lexer() -> Parser!(char, Token) {
     // Decimal
     let decimal = text::int(10)
         // Disambiguate integer literals from the integer part of a floating point literal
-        .then_ignore(none_of(".eE").rewind())
+        .then_ignore(none_of(".eE").rewind().to(()).or(end()))
         .from_str()
         .try_map(try_to_int);
 
