@@ -1,7 +1,7 @@
 use chumsky::prelude::*;
 use std::{fmt, num::IntErrorKind, str::FromStr};
 
-use super::Spanned;
+use super::{Parser, Spanned};
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Token {
@@ -33,10 +33,7 @@ impl fmt::Display for Token {
 }
 
 #[must_use]
-pub fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
-    let newline = text::newline().to('\n');
-
-    // Integers
+fn int_lexer() -> Parser!(char, Token) {
     let try_to_int = |res: Result<u32, <u32 as FromStr>::Err>, span| {
         res.map_err(|err| {
             Simple::custom(
@@ -55,6 +52,7 @@ pub fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
         .then_ignore(none_of(".eE").rewind())
         .from_str()
         .try_map(try_to_int);
+
     // Generic base N literals
     let base_n = |n| {
         text::digits(n)
@@ -64,18 +62,20 @@ pub fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
     let hex = just("0x").or(just("0X")).ignore_then(base_n(16));
     let bin = just("0b").or(just("0B")).ignore_then(base_n(2));
     let octal = just("0").ignore_then(base_n(8));
-    // Integer token
-    let int = choice((hex, bin, octal, decimal))
-        .map(Token::Integer)
-        .labelled("integer");
 
-    // Float
-    let int_part = text::int(10);
+    // Integer token
+    choice((hex, bin, octal, decimal))
+        .map(Token::Integer)
+        .labelled("integer")
+}
+
+#[must_use]
+fn float_lexer() -> Parser!(char, Token) {
+    let int = text::int(10);
     let frac = just('.').then(text::digits(10));
     let sign = one_of("+-").or_not().map(|sign| sign.unwrap_or('+'));
-    let exp = just('e').or(just('E')).then(sign.clone()).then(int_part);
-    let float = int_part
-        .then(frac.or_not())
+    let exp = just('e').or(just('E')).then(sign.clone()).then(int);
+    int.then(frac.or_not())
         .then(exp.or_not())
         .map(|((int, frac), exp)| {
             format!(
@@ -91,7 +91,51 @@ pub fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
                     .to_bits(),
             )
         })
-        .labelled("float");
+        .labelled("float")
+}
+
+#[must_use]
+fn str_lexer() -> (Parser!(char, Token), Parser!(char, Token)) {
+    // Escape sequences in strings
+    let escape = just('\\').ignore_then(choice((
+        just('\\'),
+        just('"'),
+        just('\''),
+        just('a').to('\x07'),
+        just('b').to('\x08'),
+        just('e').to('\x1B'),
+        just('f').to('\x0C'),
+        just('n').to('\n'),
+        just('r').to('\r'),
+        just('t').to('\t'),
+        just('0').to('\0'),
+    )));
+
+    // Characters allowed inside string/character literals
+    let char = |delimiter| filter(move |c| *c != '\\' && *c != delimiter).or(escape);
+
+    // Literal strings (`"..."`)
+    let string = char('"')
+        .repeated()
+        .delimited_by(just('"'), just('"'))
+        .collect::<String>()
+        .map(Token::String);
+
+    // Literal characters (`'c'`)
+    let character = char('\'')
+        .delimited_by(just('\''), just('\''))
+        .map(Token::Character);
+    (string, character)
+}
+
+#[must_use]
+pub fn lexer() -> Parser!(char, Vec<Spanned<Token>>) {
+    let newline = text::newline().to('\n');
+
+    // Integer literals
+    let int = int_lexer();
+    // Float literals
+    let float = float_lexer();
 
     // Expression operators
     let op = one_of("+-*/%|&^~")
@@ -134,35 +178,8 @@ pub fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
         .map(Token::Directive)
         .labelled("directive name");
 
-    // Escape sequences in strings
-    let escape = just('\\').ignore_then(choice((
-        just('\\'),
-        just('"'),
-        just('\''),
-        just('a').to('\x07'),
-        just('b').to('\x08'),
-        just('e').to('\x1B'),
-        just('f').to('\x0C'),
-        just('n').to('\n'),
-        just('r').to('\r'),
-        just('t').to('\t'),
-        just('0').to('\0'),
-    )));
-
-    // Characters allowed inside string/character literals
-    let char = |delimiter| filter(move |c| *c != '\\' && *c != delimiter).or(escape);
-
-    // Literal strings (`"..."`)
-    let string = char('"')
-        .repeated()
-        .delimited_by(just('"'), just('"'))
-        .collect::<String>()
-        .map(Token::String);
-
-    // Literal characters (`'c'`)
-    let character = char('\'')
-        .delimited_by(just('\''), just('\''))
-        .map(Token::Character);
+    // String/character literals
+    let (string, character) = str_lexer();
 
     // Any of the previous patterns can be a token
     let token = choice((
