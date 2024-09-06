@@ -23,7 +23,8 @@ pub enum BinaryOp {
 
 #[derive(Debug)]
 pub enum Expr {
-    Number(u32),
+    Integer(u32),
+    Float(f64),
     Character(char),
     UnaryOp {
         op: UnaryOp,
@@ -40,7 +41,8 @@ impl Expr {
     pub fn value(&self) -> Result<i32, Span> {
         #[allow(clippy::cast_possible_wrap)]
         Ok(match self {
-            Self::Number(value) => *value as i32,
+            Self::Integer(value) => *value as i32,
+            Self::Float(value) => todo!(),
             Self::Character(c) => *c as i32,
             Self::UnaryOp { op, operand } => match op {
                 UnaryOp::Plus => operand.0.value()?,
@@ -89,11 +91,12 @@ fn binary_parser(
 #[must_use]
 pub fn parser() -> Parser!(Token, Expr) {
     recursive(|expr| {
-        let int = select! {
-            Token::Number(x) => Expr::Number(x),
+        let literal_num = select! {
+            Token::Integer(x) => Expr::Integer(x),
+            Token::Float(x) => Expr::Float(f64::from_bits(x)),
             Token::Character(c) => Expr::Character(c)
         };
-        let atom = int
+        let atom = literal_num
             .or(expr.delimited_by(just(Token::Ctrl('(')), just(Token::Ctrl(')'))))
             .map_with_span(|atom, span: Span| (atom, span));
 
@@ -155,12 +158,12 @@ mod expr_eval_tests {
 
     #[allow(clippy::unnecessary_box_returns)]
     fn num(x: u32) -> Box<Spanned<Expr>> {
-        span(Expr::Number(x))
+        span(Expr::Integer(x))
     }
 
     #[test]
     fn number() {
-        let expr = Expr::Number(16);
+        let expr = Expr::Integer(16);
         assert_eq!(expr.value(), Ok(16));
     }
 

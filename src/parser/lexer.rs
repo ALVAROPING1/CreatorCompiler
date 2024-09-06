@@ -5,7 +5,8 @@ use super::Spanned;
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Token {
-    Number(u32),
+    Integer(u32),
+    Float(u64),
     String(String),
     Character(char),
     Identifier(String),
@@ -19,7 +20,8 @@ pub enum Token {
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::Number(n) => write!(f, "{n}"),
+            Self::Integer(n) => write!(f, "{n}"),
+            Self::Float(n) => write!(f, "{}", f64::from_bits(*n)),
             Self::String(s) => write!(f, "\"{s}\""),
             Self::Character(s) => write!(f, "'{s}'"),
             Self::Identifier(i) | Self::Label(i) | Self::Directive(i) => write!(f, "{i}"),
@@ -34,21 +36,25 @@ impl fmt::Display for Token {
 pub fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
     let newline = text::newline().to('\n');
 
-    // Numbers
+    // Integers
     let try_to_int = |res: Result<u32, <u32 as FromStr>::Err>, span| {
         res.map_err(|err| {
             Simple::custom(
                 span,
                 match err.kind() {
                     IntErrorKind::PosOverflow => "integer literal too big",
-                    _ => unreachable!("We already parsed the string as a number, and don't allow negative literals")
+                    _ => unreachable!("We already parsed the string as an integer, and don't allow negative literals")
                 },
             )
         })
     };
 
     // Decimal
-    let decimal = text::int(10).from_str().try_map(try_to_int);
+    let decimal = text::int(10)
+        // Disambiguate integer literals from the integer part of a floating point literal
+        .then_ignore(none_of(".eE").rewind())
+        .from_str()
+        .try_map(try_to_int);
     // Generic base N literals
     let base_n = |n| {
         text::digits(n)
@@ -58,10 +64,34 @@ pub fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
     let hex = just("0x").or(just("0X")).ignore_then(base_n(16));
     let bin = just("0b").or(just("0B")).ignore_then(base_n(2));
     let octal = just("0").ignore_then(base_n(8));
-    // Number token
-    let num = choice((hex, bin, octal, decimal))
-        .map(Token::Number)
-        .labelled("number");
+    // Integer token
+    let int = choice((hex, bin, octal, decimal))
+        .map(Token::Integer)
+        .labelled("integer");
+
+    // Float
+    let int_part = text::int(10);
+    let frac = just('.').then(text::digits(10));
+    let sign = one_of("+-").or_not().map(|sign| sign.unwrap_or('+'));
+    let exp = just('e').or(just('E')).then(sign.clone()).then(int_part);
+    let float = int_part
+        .then(frac.or_not())
+        .then(exp.or_not())
+        .map(|((int, frac), exp)| {
+            format!(
+                "{int}{}{}",
+                frac.map_or(String::new(), |(_, frac)| format!(".{frac}")),
+                exp.map_or(String::new(), |((_, sign), exp)| format!("e{sign}{exp}"))
+            )
+        })
+        .from_str()
+        .map(|res: Result<f64, _>| {
+            Token::Float(
+                res.expect("We already parsed it as a float literal")
+                    .to_bits(),
+            )
+        })
+        .labelled("float");
 
     // Expression operators
     let op = one_of("+-*/%|&^~")
@@ -136,7 +166,7 @@ pub fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
 
     // Any of the previous patterns can be a token
     let token = choice((
-        num, op, ctrl, label, directive, identifier, string, character, literal,
+        int, float, op, ctrl, label, directive, identifier, string, character, literal,
     ))
     .labelled("token");
 
