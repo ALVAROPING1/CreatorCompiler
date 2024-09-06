@@ -1,5 +1,5 @@
 use chumsky::prelude::*;
-use std::fmt;
+use std::{fmt, num::IntErrorKind, str::FromStr};
 
 use super::Spanned;
 
@@ -35,15 +35,25 @@ pub fn lexer() -> impl Parser<char, Vec<Spanned<Token>>, Error = Simple<char>> {
     let newline = text::newline().to('\n');
 
     // Numbers
+    let try_to_int = |res: Result<u32, <u32 as FromStr>::Err>, span| {
+        res.map_err(|err| {
+            Simple::custom(
+                span,
+                match err.kind() {
+                    IntErrorKind::PosOverflow => "integer literal too big",
+                    _ => unreachable!("We already parsed the string as a number, and don't allow negative literals")
+                },
+            )
+        })
+    };
 
     // Decimal
-    let decimal =
-        text::int(10).map(|x: String| x.parse().expect("We already parsed it as a number"));
+    let decimal = text::int(10).from_str().try_map(try_to_int);
     // Generic base N literals
     let base_n = |n| {
-        text::digits(n).map(move |x: String| {
-            u32::from_str_radix(&x, n).expect("We already parsed it as a number with this base")
-        })
+        text::digits(n)
+            .map(move |x: String| u32::from_str_radix(&x, n))
+            .try_map(try_to_int)
     };
     let hex = just("0x").or(just("0X")).ignore_then(base_n(16));
     let bin = just("0b").or(just("0B")).ignore_then(base_n(2));

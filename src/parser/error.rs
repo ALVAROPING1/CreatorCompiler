@@ -1,5 +1,5 @@
 use ariadne::{Color, Label, Report, ReportKind, Source};
-use chumsky::error::Simple;
+use chumsky::error::{Simple, SimpleReason};
 
 use super::Token;
 
@@ -32,10 +32,19 @@ impl Error {
             .chain(parse.into_iter().map(|e| e.map(|tok| tok.to_string())))
             .for_each(|e| {
                 Report::build(ReportKind::Error, filename, e.span().start)
-                    .with_message(e.to_string())
+                    .with_message(match e.reason() {
+                        SimpleReason::Custom(msg) => msg.clone(),
+                        _ => e.to_string(),
+                    })
                     .with_label(
                         Label::new((filename, e.span()))
-                            .with_message(format!("{:?}", e.reason()))
+                            .with_message(match e.reason() {
+                                SimpleReason::Unexpected => "Unexpected input",
+                                SimpleReason::Custom(_) => "Caused by this",
+                                SimpleReason::Unclosed { .. } => {
+                                    unreachable!("We don't use this error")
+                                }
+                            })
                             .with_color(Color::Red),
                     )
                     .with_labels(e.label().map_or_else(Vec::new, |label| {
