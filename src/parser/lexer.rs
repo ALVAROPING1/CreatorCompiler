@@ -75,7 +75,8 @@ fn float_lexer() -> Parser!(char, Token) {
     let frac = just('.').then(text::digits(10));
     let sign = one_of("+-").or_not().map(|sign| sign.unwrap_or('+'));
     let exp = just('e').or(just('E')).then(sign.clone()).then(int);
-    int.then(frac.or_not())
+    let float = int
+        .then(frac.or_not())
         .then(exp.or_not())
         .map(|((int, frac), exp)| {
             format!(
@@ -85,12 +86,18 @@ fn float_lexer() -> Parser!(char, Token) {
             )
         })
         .from_str()
-        .map(|res: Result<f64, _>| {
-            Token::Float(
-                res.expect("We already parsed it as a float literal")
-                    .to_bits(),
-            )
+        .map(|res: Result<f64, _>| res.expect("We already parsed it as a float literal"));
+
+    let named_constant = text::ident().try_map(|ident: String, span| {
+        Ok(match ident.to_lowercase().as_str() {
+            "inf" | "infinity" => f64::INFINITY,
+            "nan" => f64::NAN,
+            _ => return Err(Simple::custom(span, "Unallowed float literal")),
         })
+    });
+
+    choice((float, named_constant))
+        .map(|x| Token::Float(x.to_bits()))
         .labelled("float")
 }
 
