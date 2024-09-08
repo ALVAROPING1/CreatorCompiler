@@ -349,7 +349,8 @@ pub enum DirectiveAction {
     // Align next element to 2^n bytes
     Align,
     // Align next element to n bytes
-    Balign,
+    #[serde(rename = "balign")]
+    ByteAlign,
     // Store ascii string with a terminating null byte (`\0`) in the data segment. Also sets
     // current alignment to 1
     AsciiNullEnd,

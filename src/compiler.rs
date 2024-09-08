@@ -213,7 +213,7 @@ pub fn compile(
                         DirectiveAction::DataSegment
                         | DirectiveAction::CodeSegment
                         | DirectiveAction::GlobalSymbol => unreachable!(),
-                        DirectiveAction::Balign | DirectiveAction::Align => {
+                        DirectiveAction::ByteAlign | DirectiveAction::Align => {
                             let (args, span) = data_node.args;
                             if args.len() != 1 {
                                 return Err(ErrorKind::IncorrectDirectiveArgumentNumber {
@@ -262,7 +262,7 @@ pub fn compile(
                         DirectiveAction::DataSegment
                         | DirectiveAction::CodeSegment
                         | DirectiveAction::GlobalSymbol
-                        | DirectiveAction::Balign
+                        | DirectiveAction::ByteAlign
                         | DirectiveAction::Align => unreachable!(),
                         DirectiveAction::Space => {
                             let (args, span) = data_node.args;
