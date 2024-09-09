@@ -1,5 +1,6 @@
 use ariadne::{Color, Fmt, Label, Report, ReportKind, Source};
 
+use std::fmt;
 use std::fmt::Write as _;
 use std::ops::Range;
 
@@ -94,6 +95,16 @@ impl Kind {
         })
     }
 
+    fn hint(&self) -> Option<String> {
+        Some(match self {
+            Self::DuplicateLabel(..) => "Consider renaming either of the labels".into(),
+            Self::MissingMainLabel(main) => {
+                format!("Consider adding a label called {main} to an instruction")
+            }
+            _ => return None,
+        })
+    }
+
     fn label(&self) -> String {
         match self {
             Self::UnknownDirective(..) => "Unknown directive".into(),
@@ -130,8 +141,8 @@ impl Kind {
     }
 }
 
-impl std::fmt::Display for Kind {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl fmt::Display for Kind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::UnknownDirective(s) => write!(f, "Directive \"{s}\" isn't defined"),
             Self::UnknownInstruction(s) => write!(f, "Instruction \"{s}\" isn't defined"),
@@ -183,6 +194,9 @@ impl Error {
             }));
         if let Some(note) = self.kind.note() {
             report.set_note(note);
+        }
+        if let Some(hint) = self.kind.hint() {
+            report.set_help(hint);
         }
 
         report
