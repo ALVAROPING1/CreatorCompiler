@@ -48,12 +48,14 @@ pub enum ASTNode {
 
 #[must_use]
 fn parser<'a>(arch: &'a Architecture) -> Parser!(Token, Vec<ASTNode>, 'a) {
-    // Identifiers
-    let ident = select! {Token::Identifier(ident) => ident}.labelled("identifier");
-    let label = select! {Token::Label(name) => name}.labelled("label");
-    let directive = select! {Token::Directive(name) => name}.labelled("directive name");
     // Newline token
     let newline = || just(Token::Ctrl('\n'));
+    // Identifiers
+    let ident = select! {Token::Identifier(ident) => ident}.labelled("identifier");
+    let label = select! {Token::Label(name) => name}
+        .padded_by(newline().repeated())
+        .labelled("label");
+    let directive = select! {Token::Directive(name) => name}.labelled("directive name");
 
     // Any amount of labels: `labels -> label*`
     let labels = label
@@ -65,6 +67,7 @@ fn parser<'a>(arch: &'a Architecture) -> Parser!(Token, Vec<ASTNode>, 'a) {
     // Data statement: statements within the data segment
     // `data_statement -> labels directive expression (, expression)*`
     let data_statement = labels
+        .clone()
         .then(directive.map_with_span(|name, span| (name, span)))
         .then(
             // Arguments of the directive. Comma-separated list of expressions. Each expression can
