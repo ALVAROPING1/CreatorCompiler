@@ -13,6 +13,14 @@ pub enum DirectiveArgumentType {
     Number,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperationKind {
+    UnaryNegation,
+    BitwiseOR,
+    BitwiseAND,
+    BitwiseXOR,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Kind {
     UnknownDirective(String),
@@ -42,6 +50,8 @@ pub enum Kind {
         found: DirectiveArgumentType,
     },
     DivisionBy0,
+    UnallowedFloat,
+    UnallowedFloatOperation(OperationKind),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,6 +83,8 @@ impl Kind {
             Self::IncorrectDirectiveArgumentNumber { .. } => 13,
             Self::IncorrectDirectiveArgumentType { .. } => 14,
             Self::DivisionBy0 => 15,
+            Self::UnallowedFloat => 16,
+            Self::UnallowedFloatOperation(..) => 17,
         }
     }
 
@@ -128,6 +140,8 @@ impl Kind {
                 format!("This argument has type \"{found:?}\"")
             }
             Self::DivisionBy0 => "This expression has value 0".into(),
+            Self::UnallowedFloat => "This value can't be used".into(),
+            Self::UnallowedFloatOperation(..) => "This operation can't be performed".into(),
         }
     }
 
@@ -137,6 +151,17 @@ impl Kind {
                 vec![(span.clone(), "Label previously defined here")]
             }
             _ => Vec::new(),
+        }
+    }
+}
+
+impl fmt::Display for OperationKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnaryNegation => write!(f, "unary negation (`!`)"),
+            Self::BitwiseOR => write!(f, "bitwise OR (`|`)"),
+            Self::BitwiseAND => write!(f, "bitwise AND (`&`)"),
+            Self::BitwiseXOR => write!(f, "bitwise XOR (`^`)"),
         }
     }
 }
@@ -172,6 +197,13 @@ impl fmt::Display for Kind {
                 "Incorrect argument type, expected \"{expected:?}\" but found \"{found:?}\""
             ),
             Self::DivisionBy0 => write!(f, "Can't divide by 0"),
+            Self::UnallowedFloat => {
+                write!(f, "Can't use floating point values in integer expressions")
+            }
+            Self::UnallowedFloatOperation(op) => write!(
+                f,
+                "Can't perform the {op} operation with floating point numbers"
+            ),
         }
     }
 }

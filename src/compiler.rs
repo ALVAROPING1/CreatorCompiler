@@ -6,14 +6,14 @@ use crate::architecture::{
     InstructionFieldType,
 };
 use crate::parser::{
-    parse_expr, parse_identifier, ASTNode, Argument, Data as DataToken, Span, Spanned, Token,
+    parse_expr, parse_identifier, ASTNode, Argument, Data as DataToken, Expr, Span, Spanned, Token,
 };
 
 mod label;
 use label::{Label, Table as LabelTable};
 
 mod error;
-pub use error::{DirectiveArgumentType, Error as CompileError, Kind as ErrorKind};
+pub use error::{DirectiveArgumentType, Error as CompileError, Kind as ErrorKind, OperationKind};
 
 mod bit_field;
 use bit_field::BitField;
@@ -174,17 +174,22 @@ impl DataToken {
         }
     }
 
-    fn to_number(&self, span: Span) -> Result<i32, CompileError> {
+    const fn to_expr(&self) -> Result<&Expr, ErrorKind> {
         match self {
-            Self::Number(expr) => expr
-                .value()
-                .map_err(|span| ErrorKind::DivisionBy0.add_span(span)),
+            Self::Number(expr) => Ok(expr),
             Self::String(_) => Err(ErrorKind::IncorrectDirectiveArgumentType {
                 expected: DirectiveArgumentType::Number,
                 found: DirectiveArgumentType::String,
-            }
-            .add_span(span)),
+            }),
         }
+    }
+
+    fn to_int(&self, span: Span) -> Result<i32, CompileError> {
+        self.to_expr().map_err(|e| e.add_span(span))?.int()
+    }
+
+    fn to_float(&self, span: Span) -> Result<f64, CompileError> {
+        self.to_expr().map_err(|e| e.add_span(span))?.float()
     }
 }
 
@@ -223,7 +228,7 @@ pub fn compile(
                                 .add_span(span));
                             };
                             let (value, span) = &args[0];
-                            let value = value.to_number(span.clone())?;
+                            let value = value.to_int(span.clone())?;
                             let value = u32::try_from(value).map_err(|_| {
                                 ErrorKind::UnallowedNegativeValue(value.into())
                                     .add_span(span.clone())
@@ -274,7 +279,7 @@ pub fn compile(
                                 .add_span(span));
                             };
                             let (value, span) = &args[0];
-                            let value = value.to_number(span.clone())?;
+                            let value = value.to_int(span.clone())?;
                             let size = u64::try_from(value).map_err(|_| {
                                 ErrorKind::UnallowedNegativeValue(value.into())
                                     .add_span(span.clone())
@@ -301,7 +306,7 @@ pub fn compile(
                             };
                             let size = directive.size.unwrap().parse().unwrap();
                             for (value, span) in data_node.args.0 {
-                                let value = value.to_number(span.clone())?;
+                                let value = value.to_int(span.clone())?;
                                 data_memory.push(Data {
                                     address: data_section
                                         .try_reserve_aligned(size)
@@ -321,7 +326,23 @@ pub fn compile(
                             }
                         }
                         DirectiveAction::Float | DirectiveAction::Double => {
-                            todo!("Complete after float support is added")
+                            for (value, span) in data_node.args.0 {
+                                let value = value.to_float(span.clone())?;
+                                #[allow(clippy::cast_possible_truncation)]
+                                let (value, size) = if directive.action == DirectiveAction::Float {
+                                    (Value::Float(value as f32), 4)
+                                } else {
+                                    (Value::Double(value), 8)
+                                };
+                                data_memory.push(Data {
+                                    address: data_section
+                                        .try_reserve_aligned(size)
+                                        .map_err(|e| e.add_span(span.clone()))?,
+                                    labels: data_node.labels.into_iter().map(|x| x.0).collect(),
+                                    value,
+                                });
+                                data_node.labels = Vec::new();
+                            }
                         }
                         DirectiveAction::AsciiNullEnd | DirectiveAction::AsciiNotNullEnd => {
                             for (value, span) in data_node.args.0 {
@@ -402,9 +423,7 @@ pub fn compile(
                     | InstructionFieldType::OffsetBytes
                     | InstructionFieldType::OffsetWords) => {
                         let value = match value {
-                            Argument::Number(expr) => expr
-                                .value()
-                                .map_err(|span| ErrorKind::DivisionBy0.add_span(span))?,
+                            Argument::Number(expr) => expr.int()?,
                             Argument::Identifier(label) => label_table
                                 .get(&label)
                                 .ok_or(ErrorKind::UnknownLabel(label).add_span(span.clone()))?
