@@ -94,7 +94,6 @@ fn parse_instruction<'a>(
                     .iter()
                     .find(|field| field.name == field_name)
                     .unwrap();
-                // TODO: actually parse the arguments
                 parsed_args.push((
                     match field.r#type {
                         InstructionFieldType::Cop => {
