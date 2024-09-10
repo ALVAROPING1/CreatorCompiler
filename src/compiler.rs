@@ -164,32 +164,26 @@ pub struct Data {
 }
 
 impl DataToken {
-    fn into_string(self) -> Result<String, ErrorKind> {
+    fn into_string(self, span: Span) -> Result<String, CompileError> {
         match self {
             Self::String(s) => Ok(s),
             Self::Number(_) => Err(ErrorKind::IncorrectDirectiveArgumentType {
                 expected: DirectiveArgumentType::String,
                 found: DirectiveArgumentType::Number,
-            }),
+            }
+            .add_span(span)),
         }
     }
 
-    const fn to_expr(&self) -> Result<&Expr, ErrorKind> {
+    const fn to_expr(&self, span: Span) -> Result<&Expr, CompileError> {
         match self {
             Self::Number(expr) => Ok(expr),
             Self::String(_) => Err(ErrorKind::IncorrectDirectiveArgumentType {
                 expected: DirectiveArgumentType::Number,
                 found: DirectiveArgumentType::String,
-            }),
+            }
+            .add_span(span)),
         }
-    }
-
-    fn to_int(&self, span: Span) -> Result<i32, CompileError> {
-        self.to_expr().map_err(|e| e.add_span(span))?.int()
-    }
-
-    fn to_float(&self, span: Span) -> Result<f64, CompileError> {
-        self.to_expr().map_err(|e| e.add_span(span))?.float()
     }
 }
 
@@ -228,7 +222,7 @@ pub fn compile(
                                 .add_span(span));
                             };
                             let (value, span) = &args[0];
-                            let value = value.to_int(span.clone())?;
+                            let value = value.to_expr(span.clone())?.int()?;
                             let value = u32::try_from(value).map_err(|_| {
                                 ErrorKind::UnallowedNegativeValue(value.into())
                                     .add_span(span.clone())
@@ -279,7 +273,7 @@ pub fn compile(
                                 .add_span(span));
                             };
                             let (value, span) = &args[0];
-                            let value = value.to_int(span.clone())?;
+                            let value = value.to_expr(span.clone())?.int()?;
                             let size = u64::try_from(value).map_err(|_| {
                                 ErrorKind::UnallowedNegativeValue(value.into())
                                     .add_span(span.clone())
@@ -306,7 +300,7 @@ pub fn compile(
                             };
                             let size = directive.size.unwrap().parse().unwrap();
                             for (value, span) in data_node.args.0 {
-                                let value = value.to_int(span.clone())?;
+                                let value = value.to_expr(span.clone())?.int()?;
                                 data_memory.push(Data {
                                     address: data_section
                                         .try_reserve_aligned(size)
@@ -327,7 +321,7 @@ pub fn compile(
                         }
                         DirectiveAction::Float | DirectiveAction::Double => {
                             for (value, span) in data_node.args.0 {
-                                let value = value.to_float(span.clone())?;
+                                let value = value.to_expr(span.clone())?.float()?;
                                 #[allow(clippy::cast_possible_truncation)]
                                 let (value, size) = if directive.action == DirectiveAction::Float {
                                     (Value::Float(value as f32), 4)
@@ -346,8 +340,7 @@ pub fn compile(
                         }
                         DirectiveAction::AsciiNullEnd | DirectiveAction::AsciiNotNullEnd => {
                             for (value, span) in data_node.args.0 {
-                                let data =
-                                    value.into_string().map_err(|e| e.add_span(span.clone()))?;
+                                let data = value.into_string(span.clone())?;
                                 let null_terminated =
                                     directive.action == DirectiveAction::AsciiNullEnd;
 
