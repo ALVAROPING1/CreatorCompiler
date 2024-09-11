@@ -194,17 +194,19 @@ pub fn lexer() -> Parser!(char, Vec<Spanned<Token>>) {
     ))
     .labelled("token");
 
-    // Single line comments
-    let comment = just("#").then(newline.not().repeated()).labelled("comment");
+    // Comments
+    let line_comment = just("#").then(newline.not().repeated()).ignored();
+    let multiline_comment = just("/*").then(take_until(just("*/"))).ignored();
+    let comment = line_comment
+        .or(multiline_comment)
+        .ignored()
+        .labelled("comment");
+
+    let whitespace = filter(|c: &char| c.is_whitespace() && *c != '\n').ignored();
 
     token
         .map_with_span(|tok, span| (tok, span))
-        .padded_by(comment.repeated())
-        .padded_by(
-            filter(|c: &char| c.is_whitespace() && *c != '\n')
-                .ignored()
-                .repeated(),
-        )
+        .padded_by(comment.or(whitespace).repeated())
         .repeated()
         .then_ignore(end())
 }
