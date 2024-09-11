@@ -158,7 +158,7 @@ impl Kind {
 impl fmt::Display for OperationKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::UnaryNegation => write!(f, "unary negation (`!`)"),
+            Self::UnaryNegation => write!(f, "unary negation (`~`)"),
             Self::BitwiseOR => write!(f, "bitwise OR (`|`)"),
             Self::BitwiseAND => write!(f, "bitwise AND (`&`)"),
             Self::BitwiseXOR => write!(f, "bitwise XOR (`^`)"),
