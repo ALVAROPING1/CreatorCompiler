@@ -60,6 +60,16 @@ pub struct Error {
     kind: Kind,
 }
 
+macro_rules! plural {
+    ($x:expr) => {
+        if $x > 1 {
+            "s"
+        } else {
+            ""
+        }
+    };
+}
+
 impl Kind {
     #[must_use]
     pub const fn add_span(self, span: Span) -> Error {
@@ -113,6 +123,15 @@ impl Kind {
             Self::MissingMainLabel(main) => {
                 format!("Consider adding a label called {main} to an instruction")
             }
+            Self::IncorrectDirectiveArgumentNumber { expected, found } => {
+                let expected = usize::from(*expected);
+                let (msg, n) = if expected > *found {
+                    ("adding the missing", expected - found)
+                } else {
+                    ("removing the extra", found - expected)
+                };
+                format!("Consider {msg} {n} argument{}", plural!(n))
+            }
             _ => return None,
         })
     }
@@ -134,7 +153,7 @@ impl Kind {
             Self::MemorySectionFull(..) => "This value doesn't fit in the available space".into(),
             Self::DataUnaligned { .. } => "This value isn't aligned".into(),
             Self::IncorrectDirectiveArgumentNumber { found, .. } => {
-                format!("This directive has {found} arguments")
+                format!("This directive has {found} argument{}", plural!(*found))
             }
             Self::IncorrectDirectiveArgumentType { found, .. } => {
                 format!("This argument has type \"{found:?}\"")
