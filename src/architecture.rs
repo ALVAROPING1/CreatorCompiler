@@ -507,13 +507,13 @@ impl<'a> Architecture<'a> {
         )
     }
 
-    /// Gets the code sections start/end addresses
+    /// Gets the code section's start/end addresses
     #[must_use]
     pub const fn code_section_limits(&self) -> (u64, u64) {
         self.section_limits(0)
     }
 
-    /// Gets the data sections start/end addresses
+    /// Gets the data section's start/end addresses
     #[must_use]
     pub const fn data_section_limits(&self) -> (u64, u64) {
         self.section_limits(1)
