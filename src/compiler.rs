@@ -425,15 +425,12 @@ pub fn compile(
                                 .try_into()
                                 .unwrap(),
                         };
+                        let offset = i64::from(value) - i64::try_from(address).unwrap();
                         let value = match val_type {
                             InstructionFieldType::OffsetWords => {
-                                (i64::from(value) - i64::try_from(address).unwrap())
-                                    / (i64::from(word_size))
-                                    - 1
+                                offset / (i64::from(word_size)) - 1
                             }
-                            InstructionFieldType::OffsetBytes => {
-                                i64::from(value) - i64::try_from(address).unwrap()
-                            }
+                            InstructionFieldType::OffsetBytes => offset,
                             _ => value.into(),
                         };
                         (value, value.to_string())
