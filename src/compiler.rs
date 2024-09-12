@@ -203,10 +203,10 @@ pub fn compile(
         match node {
             ASTNode::DataSegment(data) => {
                 for mut data_node in data {
-                    let directive = arch.get_directive(&data_node.name.0).ok_or(
+                    let directive = arch.get_directive(&data_node.name.0).ok_or_else(|| {
                         ErrorKind::UnknownDirective(data_node.name.0)
-                            .add_span(data_node.name.1.clone()),
-                    )?;
+                            .add_span(data_node.name.1.clone())
+                    })?;
                     match directive.action {
                         DirectiveAction::DataSegment
                         | DirectiveAction::CodeSegment
@@ -418,7 +418,9 @@ pub fn compile(
                             Argument::Number(expr) => expr.int()?,
                             Argument::Identifier(label) => label_table
                                 .get(&label)
-                                .ok_or(ErrorKind::UnknownLabel(label).add_span(span.clone()))?
+                                .ok_or_else(|| {
+                                    ErrorKind::UnknownLabel(label).add_span(span.clone())
+                                })?
                                 .address()
                                 .try_into()
                                 .unwrap(),
@@ -455,9 +457,9 @@ pub fn compile(
                         };
                         let bank = arch
                             .find_bank(bank_type, val_type == InstructionFieldType::DoubleFPReg)
-                            .ok_or(
-                                ErrorKind::UnknownRegisterBank(bank_type).add_span(span.clone()),
-                            )?;
+                            .ok_or_else(|| {
+                                ErrorKind::UnknownRegisterBank(bank_type).add_span(span.clone())
+                            })?;
                         let (i, _) = bank.find_register(&name).ok_or_else(|| {
                             ErrorKind::UnknownRegister {
                                 name: name.clone(),
