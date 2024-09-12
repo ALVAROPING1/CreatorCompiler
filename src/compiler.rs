@@ -276,7 +276,7 @@ pub fn compile(
                             let size = u64::try_from(value).map_err(|_| {
                                 ErrorKind::UnallowedNegativeValue(value.into())
                                     .add_span(span.clone())
-                            })? * directive.size.unwrap().parse::<u64>().unwrap();
+                            })? * u64::from(directive.size.unwrap());
                             data_memory.push(Data {
                                 address: data_section
                                     .try_reserve(size)
@@ -297,18 +297,18 @@ pub fn compile(
                                 DirectiveAction::DoubleWord => IntegerType::DoubleWord,
                                 _ => unreachable!(),
                             };
-                            let size = directive.size.unwrap().parse().unwrap();
+                            let size = directive.size.unwrap();
                             for (value, span) in data_node.args.0 {
                                 let value = value.to_expr(span.clone())?.int()?;
                                 data_memory.push(Data {
                                     address: data_section
-                                        .try_reserve_aligned(size)
+                                        .try_reserve_aligned(size.into())
                                         .map_err(|e| e.add_span(span.clone()))?,
                                     labels: data_node.labels.into_iter().map(|x| x.0).collect(),
                                     value: Value::Integer(
                                         Integer::build(
                                             value.into(),
-                                            (size * 8).try_into().unwrap(),
+                                            (size * 8).into(),
                                             Some(variant),
                                             None,
                                         )

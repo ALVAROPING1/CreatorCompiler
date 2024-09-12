@@ -1,5 +1,7 @@
 use schemars::{schema_for, JsonSchema};
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
+
+use core::{fmt::Display, str::FromStr};
 
 type Integer = i64;
 
@@ -10,6 +12,41 @@ enum Number {
     Float(f64),
 }
 
+#[derive(JsonSchema, Debug, PartialEq, Clone, Copy)]
+struct Hex(u64);
+
+impl<'de> Deserialize<'de> for Hex {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s: &str = Deserialize::deserialize(deserializer)?;
+        u64::from_str_radix(s.trim_start_matches("0x"), 16)
+            .map(Self)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+fn optional_from_string<'de, T, D>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: FromStr + Deserialize<'de>,
+    <T as FromStr>::Err: Display,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrT<T> {
+        String(String),
+        T(T),
+    }
+
+    match Deserialize::deserialize(deserializer)? {
+        None => Ok(None),
+        Some(StringOrT::T(i)) => Ok(Some(i)),
+        Some(StringOrT::String(s)) => s.parse::<T>().map(Some).map_err(serde::de::Error::custom),
+    }
+}
+
 /// Architecture description
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Clone)]
 pub struct Architecture<'a> {
@@ -18,7 +55,7 @@ pub struct Architecture<'a> {
     /// memory alignment, main function, passing convention, and sensitive register
     /// name
     #[serde(borrow)]
-    arch_conf: [Pair<'a, MetadataKeys>; 8],
+    arch_conf: [Pair<MetadataKeys, &'a str>; 8],
     /// Components (register banks) of the architecture. It's assumed that the first register of
     /// the first bank will contain the program counter
     components: Vec<Component<'a>>,
@@ -30,13 +67,14 @@ pub struct Architecture<'a> {
     directives: Vec<Directive<'a>>,
     /// Memory layout of the architecture
     /// Order of elements is assumed to be text start/end, data start/end, and stack start/end
-    memory_layout: [Pair<'a, MemoryLayoutKeys>; 6],
+    #[schemars(with = "[Pair<MemoryLayoutKeys, String>; 6]")]
+    memory_layout: [Pair<MemoryLayoutKeys, Hex>; 6],
 }
 
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
-struct Pair<'a, Keys> {
+struct Pair<Keys, Value> {
     name: Keys,
-    value: &'a str,
+    value: Value,
 }
 
 /// Architecture metadata attribute types
@@ -331,7 +369,9 @@ pub struct Directive<'a> {
     /// Action of the directive
     pub action: DirectiveAction,
     /// Size in bytes of values associated with this directive
-    pub size: Option<&'a str>,
+    #[serde(deserialize_with = "optional_from_string")]
+    #[schemars(with = "Option<String>")]
+    pub size: Option<u8>,
 }
 
 /// Allowed acytions for directives
@@ -460,23 +500,22 @@ impl<'a> Architecture<'a> {
     ///
     /// * `i`: index of the section to get (text, data, stack)
     #[must_use]
-    fn section_limits(&self, i: usize) -> (u64, u64) {
-        let parse = |value: &str| u64::from_str_radix(value.trim_start_matches("0x"), 16).unwrap();
+    const fn section_limits(&self, i: usize) -> (u64, u64) {
         (
-            parse(self.memory_layout[2 * i].value),
-            parse(self.memory_layout[2 * i + 1].value),
+            self.memory_layout[2 * i].value.0,
+            self.memory_layout[2 * i + 1].value.0,
         )
     }
 
     /// Gets the code sections start/end addresses
     #[must_use]
-    pub fn code_section_limits(&self) -> (u64, u64) {
+    pub const fn code_section_limits(&self) -> (u64, u64) {
         self.section_limits(0)
     }
 
     /// Gets the data sections start/end addresses
     #[must_use]
-    pub fn data_section_limits(&self) -> (u64, u64) {
+    pub const fn data_section_limits(&self) -> (u64, u64) {
         self.section_limits(1)
     }
 
