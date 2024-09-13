@@ -75,6 +75,7 @@ fn float_lexer() -> Parser!(char, Token) {
     let sign = one_of("+-").or_not().map(|sign| sign.unwrap_or('+'));
     let exp = one_of("eE").then(sign).then(int);
     let float = int
+        .then_ignore(one_of(".eE").rewind())
         .then(frac.or_not())
         .then(exp.or_not())
         .map(|((int, frac), exp)| {
@@ -143,6 +144,8 @@ pub fn lexer() -> Parser!(char, Vec<Spanned<Token>>) {
     // Float literals
     let float = float_lexer();
 
+    let num = int.or(float);
+
     // Expression operators
     let op = one_of("+-*/%|&^~")
         .map(Token::Operator)
@@ -189,7 +192,7 @@ pub fn lexer() -> Parser!(char, Vec<Spanned<Token>>) {
 
     // Any of the previous patterns can be a token
     let token = choice((
-        int, float, op, ctrl, label, directive, identifier, string, character, literal,
+        num, op, ctrl, label, directive, identifier, string, character, literal,
     ))
     .labelled("token");
 
