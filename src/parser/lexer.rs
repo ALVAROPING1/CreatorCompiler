@@ -59,14 +59,13 @@ fn int_lexer() -> Parser!(char, Token) {
             .map(move |x: String| u32::from_str_radix(&x, n))
             .try_map(try_to_int)
     };
-    let hex = just("0x").or(just("0X")).ignore_then(base_n(16));
-    let bin = just("0b").or(just("0B")).ignore_then(base_n(2));
-    let octal = just("0").ignore_then(base_n(8));
+    let hex = one_of("xX").ignore_then(base_n(16));
+    let bin = one_of("bB").ignore_then(base_n(2));
+    let octal = base_n(8);
+    let base_n = just("0").ignore_then(choice((hex, bin, octal)));
 
     // Integer token
-    choice((hex, bin, octal, decimal))
-        .map(Token::Integer)
-        .labelled("integer")
+    base_n.or(decimal).map(Token::Integer).labelled("integer")
 }
 
 #[must_use]
