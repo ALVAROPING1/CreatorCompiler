@@ -22,7 +22,7 @@ pub enum BinaryOp {
     BitwiseXOR,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Integer(u32),
     Float(Spanned<f64>),

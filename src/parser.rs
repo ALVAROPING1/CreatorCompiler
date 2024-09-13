@@ -1,5 +1,8 @@
 use chumsky::{prelude::*, stream::Stream};
 
+use once_cell::sync::Lazy;
+use regex::Regex;
+
 mod expression;
 pub use expression::Expr;
 
@@ -30,7 +33,7 @@ pub enum Data {
 pub struct InstructionNode {
     pub labels: Vec<Spanned<String>>,
     pub name: Spanned<String>,
-    pub args: Spanned<Vec<Token>>,
+    pub args: Spanned<Vec<Spanned<Token>>>,
 }
 
 #[derive(Debug)]
@@ -123,7 +126,13 @@ fn parser<'a>(arch: &'a Architecture) -> Parser!(Token, Vec<ASTNode>, 'a) {
     // Instruction: `instruction -> labels ident [^\n]*`
     let instruction = labels
         .then(ident.map_with_span(|name, span| (name, span)))
-        .then(take_until(newline()).map_with_span(|(args, _), span| (args, span)))
+        .then(
+            newline()
+                .not()
+                .map_with_span(|token, span| (token, span))
+                .repeated()
+                .map_with_span(|args, span| (args, span)),
+        )
         .padded_by(newline().repeated())
         .map(|((labels, name), args)| InstructionNode { labels, name, args })
         .labelled("instruction");
@@ -152,29 +161,50 @@ pub fn parse(arch: &Architecture, src: &str) -> Result<Vec<ASTNode>, ParseError>
     Ok(parser(arch).parse(stream)?)
 }
 
+#[derive(Debug, Clone)]
 pub enum Argument {
     Identifier(String),
     Number(Expr),
 }
 
-pub fn parse_expr(src: &str) -> Result<Argument, ParseError> {
-    let tokens = lexer().parse(src)?;
-    let len = src.chars().count();
-    #[allow(clippy::range_plus_one)] // Chumsky requires an inclusive range to avoid type errors
-    let stream = Stream::from_iter(len..len + 1, tokens.into_iter());
-    Ok(expression::parser()
-        .map(Argument::Number)
-        .or(select! {Token::Identifier(i) => Argument::Identifier(i)})
-        .then_ignore(end())
-        .parse(stream)?)
+fn instruction_arg_parser(fmt: &str) -> Parser!(Token, Vec<Spanned<Argument>>) {
+    static FIELD: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"^[fF][0-9]+$").expect("This shouldn't fail"));
+
+    let mut parser = any()
+        .ignored()
+        .or(end())
+        .rewind()
+        .to(vec![(Argument::Identifier(String::new()), 0..0)])
+        .boxed();
+    let fmt = fmt.replace(" (", "(").replace(' ', ",");
+    let tokens = lexer()
+        .parse(fmt)
+        .expect("The lexer shouldn't fail on instruction formats");
+    for (token, _) in tokens {
+        parser = match token {
+            Token::Identifier(ident) if FIELD.is_match(&ident) => parser
+                .chain(
+                    expression::parser()
+                        .map(Argument::Number)
+                        .or(select! {Token::Identifier(i) => Argument::Identifier(i)})
+                        .map_with_span(|arg, span| (arg, span)),
+                )
+                .boxed(),
+            _ => parser.then_ignore(just(token).ignored()).boxed(),
+        }
+    }
+    parser.then_ignore(end())
 }
 
-pub fn parse_identifier(src: &str) -> Result<Argument, ParseError> {
-    let tokens = lexer().parse(src)?;
-    let len = src.chars().count();
+#[must_use]
+pub fn parse_inst_args(
+    fmt: &str,
+    code: Spanned<Vec<Spanned<Token>>>,
+) -> Result<Vec<Spanned<Argument>>, ParseError> {
+    let end = code.1.end;
     #[allow(clippy::range_plus_one)] // Chumsky requires an inclusive range to avoid type errors
-    let stream = Stream::from_iter(len..len + 1, tokens.into_iter());
-    Ok(select! {Token::Identifier(i) => Argument::Identifier(i)}
-        .then_ignore(end::<Simple<Token>>())
-        .parse(stream)?)
+    let stream = Stream::from_iter(end..end + 1, code.0.into_iter());
+    let parser = instruction_arg_parser(fmt);
+    Ok(parser.parse(stream)?)
 }

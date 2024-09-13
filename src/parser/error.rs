@@ -3,7 +3,7 @@ use chumsky::error::{Simple, SimpleReason};
 
 use super::Token;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Error {
     Lexer(Vec<Simple<char>>),
     Parser(Vec<Simple<Token>>),

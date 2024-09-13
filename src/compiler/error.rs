@@ -5,12 +5,13 @@ use std::fmt::Write as _;
 use std::ops::Range;
 
 use crate::architecture::ComponentType;
-use crate::parser::Span;
+use crate::parser::{ParseError, Span};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DirectiveArgumentType {
+pub enum ArgumentType {
     String,
-    Number,
+    Expression,
+    RegisterName,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,7 +32,7 @@ pub enum Kind {
         name: String,
         bank: ComponentType,
     },
-    IncorrectInstructionSyntax(Vec<String>),
+    IncorrectInstructionSyntax(Vec<(String, ParseError)>),
     DuplicateLabel(String, Span),
     MissingMainLabel(String),
     IntegerTooBig(i64, Range<i64>),
@@ -45,9 +46,9 @@ pub enum Kind {
         expected: u8,
         found: usize,
     },
-    IncorrectDirectiveArgumentType {
-        expected: DirectiveArgumentType,
-        found: DirectiveArgumentType,
+    IncorrectArgumentType {
+        expected: ArgumentType,
+        found: ArgumentType,
     },
     DivisionBy0,
     UnallowedFloat,
@@ -91,7 +92,7 @@ impl Kind {
             Self::DataUnaligned { .. } => 11,
             Self::UnallowedNegativeValue(..) => 12,
             Self::IncorrectDirectiveArgumentNumber { .. } => 13,
-            Self::IncorrectDirectiveArgumentType { .. } => 14,
+            Self::IncorrectArgumentType { .. } => 14,
             Self::DivisionBy0 => 15,
             Self::UnallowedFloat => 16,
             Self::UnallowedFloatOperation(..) => 17,
@@ -103,9 +104,9 @@ impl Kind {
             Self::IntegerTooBig(_, bounds) => {
                 format!("Allowed range is [{}, {}]", bounds.start, bounds.end - 1)
             }
-            Self::IncorrectInstructionSyntax(syntaxes) => {
+            Self::IncorrectInstructionSyntax(errs) => {
                 let mut res = "Allowed formats:".to_string();
-                for syntax in syntaxes {
+                for (syntax, _) in errs {
                     // NOTE: using line jumps messes ariadne's formatting of notes, so we have to
                     // replicate the margin manually for each new line
                     write!(res, "\n   {} {syntax}", "│".fg(Color::Fixed(240)))
@@ -155,7 +156,7 @@ impl Kind {
             Self::IncorrectDirectiveArgumentNumber { found, .. } => {
                 format!("This directive has {found} argument{}", plural!(*found))
             }
-            Self::IncorrectDirectiveArgumentType { found, .. } => {
+            Self::IncorrectArgumentType { found, .. } => {
                 format!("This argument has type \"{found:?}\"")
             }
             Self::DivisionBy0 => "This expression has value 0".into(),
@@ -195,7 +196,7 @@ impl fmt::Display for Kind {
             Self::UnknownRegister { name, bank } => {
                 write!(f, "Register \"{name}\" isn't defined in bank type {bank:?}")
             }
-            Self::IncorrectInstructionSyntax(_) => write!(f, "Incorrect instruction syntax"),
+            Self::IncorrectInstructionSyntax(..) => write!(f, "Incorrect instruction syntax"),
             Self::DuplicateLabel(s, _) => write!(f, "Label \"{s}\" is already defined"),
             Self::MissingMainLabel(s) => write!(f, "Label \"{s}\" not found"),
             Self::IntegerTooBig(val, _) => {
@@ -211,7 +212,7 @@ impl fmt::Display for Kind {
                 f,
                 "Incorrect amount of arguments, expected {expected} but found {found}"
             ),
-            Self::IncorrectDirectiveArgumentType { expected, found } => write!(
+            Self::IncorrectArgumentType { expected, found } => write!(
                 f,
                 "Incorrect argument type, expected \"{expected:?}\" but found \"{found:?}\""
             ),
@@ -254,5 +255,12 @@ impl Error {
             .finish()
             .print((filename, Source::from(src)))
             .expect("we should be able to print to stdout");
+
+        if let Kind::IncorrectInstructionSyntax(errs) = self.kind {
+            for (syntax, err) in errs {
+                println!("\nThe syntax `{syntax}` failed with the following reason:\n");
+                err.print(filename, src);
+            }
+        }
     }
 }

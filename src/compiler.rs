@@ -6,14 +6,14 @@ use crate::architecture::{
     InstructionFieldType,
 };
 use crate::parser::{
-    parse_expr, parse_identifier, ASTNode, Argument, Data as DataToken, Expr, Span, Spanned, Token,
+    parse_inst_args, ASTNode, Argument, Data as DataToken, Expr, Span, Spanned, Token,
 };
 
 mod label;
 use label::{Label, Table as LabelTable};
 
 mod error;
-pub use error::{DirectiveArgumentType, Error as CompileError, Kind as ErrorKind, OperationKind};
+pub use error::{ArgumentType, Error as CompileError, Kind as ErrorKind, OperationKind};
 
 mod bit_field;
 use bit_field::BitField;
@@ -33,15 +33,6 @@ macro_rules! iter_captures {
     };
 }
 
-macro_rules! iter_captures_spanned {
-    ($var:ident) => {
-        $var.iter().skip(1).map(|cap| {
-            let cap = cap.expect("This shouldn't fail because none of the captures are optional");
-            (cap.as_str(), cap.range())
-        })
-    };
-}
-
 /* TODO:
 *  - Refactor code
 *  - Remove uses of unwrap, propagating errors accordingly
@@ -55,76 +46,25 @@ static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"[fF][0-9]+").expect("This sho
 fn parse_instruction<'a>(
     arch: &'a Architecture,
     (name, name_span): Spanned<&str>,
-    args: &Spanned<Vec<Token>>,
+    args: Spanned<Vec<Spanned<Token>>>,
 ) -> Result<(&'a InstructionDefinition<'a>, Vec<Spanned<Argument>>), CompileError> {
-    // TODO: reimplement with an actual parser for better errors
-
-    // Format code as a string
-    let mut code = format!("{name} ");
-    let mut iter = args.0.iter().peekable();
-    while let Some(token) = iter.next() {
-        match (token, iter.peek()) {
-            (Token::Ctrl(','), _) => continue,
-            (tok, Some(&&Token::Ctrl(')') | &&Token::Literal('}' | ']')) | None)
-            | (tok @ (Token::Ctrl('(') | Token::Literal('{' | '[')), _) => {
-                code.push_str(&tok.to_string());
-            }
-            (tok, Some(_)) => code.push_str(&format!("{tok} ")),
-        };
-    }
-
-    let mut found = false;
+    let mut errs = Vec::new();
     for inst in arch.find_instructions(name) {
-        found = true;
-        let signature_definition = Regex::new(&format!(
-            "^{}$",
-            RE.replace_all(&regex::escape(inst.signature_definition), "(.*?)")
-        ))
-        .unwrap();
-        let field_names = signature_definition.captures(inst.signature_raw).unwrap();
-        let fields = signature_definition.captures(&code);
-        if let Some(fields) = fields {
-            let mut parsed_args = Vec::new();
-            // FIXME: get correct span offset
-            for (field_name, (code, span)) in
-                iter_captures!(field_names).zip(iter_captures_spanned!(fields))
-            {
-                let field = inst
-                    .fields
-                    .iter()
-                    .find(|field| field.name == field_name)
-                    .unwrap();
-                parsed_args.push((
-                    match field.r#type {
-                        InstructionFieldType::Cop => {
-                            panic!("This field type shouldn't be used for arguments")
-                        }
-                        InstructionFieldType::Co => Argument::Identifier(name.to_string()),
-                        InstructionFieldType::Address
-                        | InstructionFieldType::InmSigned
-                        | InstructionFieldType::InmUnsigned
-                        | InstructionFieldType::OffsetBytes
-                        | InstructionFieldType::OffsetWords => parse_expr(code).unwrap(),
-                        InstructionFieldType::IntReg
-                        | InstructionFieldType::CtrlReg
-                        | InstructionFieldType::SingleFPReg
-                        | InstructionFieldType::DoubleFPReg => parse_identifier(code).unwrap(),
-                    },
-                    (name_span.start + span.start)..(name_span.start + span.end),
-                ));
-            }
-            return Ok((inst, parsed_args));
+        let result = parse_inst_args(
+            inst.signature_definition
+                .trim_start_matches(|c| c != ' ')
+                .trim_start_matches(' '),
+            args.clone(),
+        );
+        match result {
+            Ok(parsed_args) => return Ok((inst, parsed_args)),
+            Err(e) => errs.push((inst.signature_raw.to_string(), e)),
         }
     }
-    Err(if found {
-        ErrorKind::IncorrectInstructionSyntax(
-            arch.find_instructions(name)
-                .map(|inst| inst.signature_raw.to_string())
-                .collect(),
-        )
-        .add_span(args.1.clone())
-    } else {
+    Err(if errs.is_empty() {
         ErrorKind::UnknownInstruction(name.to_string()).add_span(name_span)
+    } else {
+        ErrorKind::IncorrectInstructionSyntax(errs).add_span(args.1)
     })
 }
 
@@ -166,9 +106,9 @@ impl DataToken {
     fn into_string(self, span: Span) -> Result<String, CompileError> {
         match self {
             Self::String(s) => Ok(s),
-            Self::Number(_) => Err(ErrorKind::IncorrectDirectiveArgumentType {
-                expected: DirectiveArgumentType::String,
-                found: DirectiveArgumentType::Number,
+            Self::Number(_) => Err(ErrorKind::IncorrectArgumentType {
+                expected: ArgumentType::String,
+                found: ArgumentType::Expression,
             }
             .add_span(span)),
         }
@@ -177,9 +117,9 @@ impl DataToken {
     const fn to_expr(&self, span: Span) -> Result<&Expr, CompileError> {
         match self {
             Self::Number(expr) => Ok(expr),
-            Self::String(_) => Err(ErrorKind::IncorrectDirectiveArgumentType {
-                expected: DirectiveArgumentType::Number,
-                found: DirectiveArgumentType::String,
+            Self::String(_) => Err(ErrorKind::IncorrectArgumentType {
+                expected: ArgumentType::Expression,
+                found: ArgumentType::String,
             }
             .add_span(span)),
         }
@@ -363,7 +303,7 @@ pub fn compile(
                 for instruction_node in instructions {
                     let (name, span) = instruction_node.name;
                     let (def, args) =
-                        parse_instruction(arch, (&name, span.clone()), &instruction_node.args)?;
+                        parse_instruction(arch, (&name, span.clone()), instruction_node.args)?;
                     let addr = code_section
                         .try_reserve(u64::from(word_size) * u64::from(def.nwords))
                         .map_err(|e| e.add_span(span.clone()))?;
@@ -441,7 +381,11 @@ pub fn compile(
                     | InstructionFieldType::DoubleFPReg) => {
                         let name = match value {
                             Argument::Number(_) => {
-                                unreachable!("Register names are always parsed as identifiers")
+                                return Err(ErrorKind::IncorrectArgumentType {
+                                    expected: ArgumentType::RegisterName,
+                                    found: ArgumentType::Expression,
+                                }
+                                .add_span(span))
                             }
                             Argument::Identifier(name) => name,
                         };
