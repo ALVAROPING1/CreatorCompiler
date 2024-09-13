@@ -73,7 +73,7 @@ fn float_lexer() -> Parser!(char, Token) {
     let int = text::int(10);
     let frac = just('.').then(text::digits(10));
     let sign = one_of("+-").or_not().map(|sign| sign.unwrap_or('+'));
-    let exp = one_of("eE").then(sign.clone()).then(int);
+    let exp = one_of("eE").then(sign).then(int);
     let float = int
         .then(frac.or_not())
         .then(exp.or_not())
