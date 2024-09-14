@@ -1,51 +1,8 @@
 use schemars::{schema_for, JsonSchema};
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 
-use core::{fmt::Display, str::FromStr};
-
-type Integer = i64;
-
-#[derive(Deserialize, JsonSchema, Debug, PartialEq, Clone, Copy)]
-#[serde(untagged)]
-enum Number {
-    Int(Integer),
-    Float(f64),
-}
-
-#[derive(JsonSchema, Debug, PartialEq, Clone, Copy)]
-struct Hex(u64);
-
-impl<'de> Deserialize<'de> for Hex {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s: &str = Deserialize::deserialize(deserializer)?;
-        u64::from_str_radix(s.trim_start_matches("0x"), 16)
-            .map(Self)
-            .map_err(serde::de::Error::custom)
-    }
-}
-
-fn optional_from_string<'de, T, D>(deserializer: D) -> Result<Option<T>, D::Error>
-where
-    D: Deserializer<'de>,
-    T: FromStr + Deserialize<'de>,
-    <T as FromStr>::Err: Display,
-{
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum StringOrT<T> {
-        String(String),
-        T(T),
-    }
-
-    match Deserialize::deserialize(deserializer)? {
-        None => Ok(None),
-        Some(StringOrT::T(i)) => Ok(Some(i)),
-        Some(StringOrT::String(s)) => s.parse::<T>().map(Some).map_err(serde::de::Error::custom),
-    }
-}
+mod utils;
+use utils::{Hex, Integer, Number, Pair, StringOrT};
 
 /// Architecture description
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Clone)]
@@ -69,12 +26,6 @@ pub struct Architecture<'a> {
     /// Order of elements is assumed to be text start/end, data start/end, and stack start/end
     #[schemars(with = "[Pair<MemoryLayoutKeys, String>; 6]")]
     memory_layout: [Pair<MemoryLayoutKeys, Hex>; 6],
-}
-
-#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
-struct Pair<Keys, Value> {
-    name: Keys,
-    value: Value,
 }
 
 /// Architecture metadata attribute types
@@ -369,8 +320,8 @@ pub struct Directive<'a> {
     /// Action of the directive
     pub action: DirectiveAction,
     /// Size in bytes of values associated with this directive
-    #[serde(deserialize_with = "optional_from_string")]
-    #[schemars(with = "Option<String>")]
+    #[serde(deserialize_with = "utils::optional_from_str")]
+    #[schemars(with = "Option<StringOrT<u8>>")]
     pub size: Option<u8>,
 }
 
