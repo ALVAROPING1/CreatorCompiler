@@ -319,8 +319,18 @@ pub fn compile(
             }
         }
     }
-    if label_table.get(arch.main_label()).is_none() {
-        return Err(ErrorKind::MissingMainLabel(arch.main_label().to_owned()).add_span(0..0));
+    match label_table.get(arch.main_label()) {
+        None => {
+            // TODO: what span should this use?
+            return Err(ErrorKind::MissingMainLabel(arch.main_label().to_owned()).add_span(0..0));
+        }
+        Some(main) => {
+            let (start, end) = arch.code_section_limits();
+            if !(start..=end).contains(&main.address()) {
+                return Err(ErrorKind::MainOutsideCode(arch.main_label().to_owned())
+                    .add_span(main.span().clone()));
+            }
+        }
     }
     parsed_instructions
         .into_iter()

@@ -27,6 +27,11 @@ impl Label {
     pub const fn address(&self) -> u64 {
         self.address
     }
+
+    /// Gets the address this label is pointing in
+    pub const fn span(&self) -> &Span {
+        &self.definition
+    }
 }
 
 /// Symbol table for labels

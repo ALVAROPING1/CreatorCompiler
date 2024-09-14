@@ -35,6 +35,7 @@ pub enum Kind {
     IncorrectInstructionSyntax(Vec<(String, ParseError)>),
     DuplicateLabel(String, Span),
     MissingMainLabel(String),
+    MainOutsideCode(String),
     IntegerTooBig(i64, Range<i64>),
     MemorySectionFull(&'static str),
     DataUnaligned {
@@ -87,15 +88,16 @@ impl Kind {
             Self::IncorrectInstructionSyntax(..) => 6,
             Self::DuplicateLabel(..) => 7,
             Self::MissingMainLabel(..) => 8,
-            Self::IntegerTooBig(..) => 9,
-            Self::MemorySectionFull(..) => 10,
-            Self::DataUnaligned { .. } => 11,
-            Self::UnallowedNegativeValue(..) => 12,
-            Self::IncorrectDirectiveArgumentNumber { .. } => 13,
-            Self::IncorrectArgumentType { .. } => 14,
-            Self::DivisionBy0 => 15,
-            Self::UnallowedFloat => 16,
-            Self::UnallowedFloatOperation(..) => 17,
+            Self::MainOutsideCode(..) => 9,
+            Self::IntegerTooBig(..) => 10,
+            Self::MemorySectionFull(..) => 11,
+            Self::DataUnaligned { .. } => 12,
+            Self::UnallowedNegativeValue(..) => 13,
+            Self::IncorrectDirectiveArgumentNumber { .. } => 14,
+            Self::IncorrectArgumentType { .. } => 15,
+            Self::DivisionBy0 => 16,
+            Self::UnallowedFloat => 17,
+            Self::UnallowedFloatOperation(..) => 18,
         }
     }
 
@@ -124,6 +126,9 @@ impl Kind {
             Self::MissingMainLabel(main) => {
                 format!("Consider adding a label called {main} to an instruction")
             }
+            Self::MainOutsideCode(..) => {
+                format!("Consider moving the label to an instruction")
+            }
             Self::IncorrectDirectiveArgumentNumber { expected, found } => {
                 let expected = usize::from(*expected);
                 let (msg, n) = if expected > *found {
@@ -148,6 +153,7 @@ impl Kind {
             Self::IncorrectInstructionSyntax(..) => "Incorrect syntax".into(),
             Self::DuplicateLabel(..) => "Duplicate label".into(),
             Self::MissingMainLabel(..) => "TODO: missing main label".into(),
+            Self::MainOutsideCode(..) => "Label defined here".into(),
             Self::IntegerTooBig(val, _) | Self::UnallowedNegativeValue(val) => {
                 format!("This expression has value {val}")
             }
@@ -199,6 +205,9 @@ impl fmt::Display for Kind {
             Self::IncorrectInstructionSyntax(..) => write!(f, "Incorrect instruction syntax"),
             Self::DuplicateLabel(s, _) => write!(f, "Label \"{s}\" is already defined"),
             Self::MissingMainLabel(s) => write!(f, "Label \"{s}\" not found"),
+            Self::MainOutsideCode(s) => {
+                write!(f, "Main label \"{s}\" defined outside of the text segment")
+            }
             Self::IntegerTooBig(val, _) => {
                 write!(f, "Field is too small to contain value \"{val}\"")
             }
