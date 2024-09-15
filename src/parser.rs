@@ -12,7 +12,7 @@ pub use lexer::{lexer, Token};
 mod error;
 pub use error::Error as ParseError;
 
-use crate::architecture::{Architecture, DirectiveAction};
+use crate::architecture::{Architecture, DirectiveSegment};
 
 pub type Span = std::ops::Range<usize>;
 pub type Spanned<T> = (T, Span);
@@ -102,13 +102,9 @@ fn parser<'a>(arch: &'a Architecture) -> Parser!(Token, Vec<ASTNode>, 'a) {
         .labelled("data directive");
 
     // Name of the directive changing to the data segment
-    let data_segment_directive = arch
-        .find_directive(DirectiveAction::DataSegment)
-        .expect("The data segment directive should be defined");
+    let data_segment_directive = arch.get_directive_segment(DirectiveSegment::Data);
     // Name of the directive changing to the code segment
-    let code_segment_directive = arch
-        .find_directive(DirectiveAction::CodeSegment)
-        .expect("The code segment directive should be defined");
+    let code_segment_directive = arch.get_directive_segment(DirectiveSegment::Code);
 
     // Data segment: `data_segment -> data_segment_directive data_statement*`
     let data_segment = directive

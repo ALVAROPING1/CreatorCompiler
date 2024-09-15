@@ -2,8 +2,8 @@ use once_cell::sync::Lazy;
 use regex::{NoExpand, Regex};
 
 use crate::architecture::{
-    Architecture, ComponentType, DirectiveAction, Instruction as InstructionDefinition,
-    InstructionFieldType,
+    Architecture, ComponentType, DirectiveAction, DirectiveAlignment, DirectiveData, FloatType,
+    Instruction as InstructionDefinition, InstructionFieldType, StringType,
 };
 use crate::parser::{
     parse_inst_args, ASTNode, Argument, Data as DataToken, Expr, Span, Spanned, Token,
@@ -22,7 +22,7 @@ mod section;
 use section::Section;
 
 mod integer;
-pub use integer::{Integer, Type as IntegerType};
+pub use integer::Integer;
 
 macro_rules! iter_captures {
     ($var:ident) => {
@@ -143,15 +143,15 @@ pub fn compile(
         match node {
             ASTNode::DataSegment(data) => {
                 for mut data_node in data {
-                    let directive = arch.get_directive(&data_node.name.0).ok_or_else(|| {
+                    let action = arch.find_directive(&data_node.name.0).ok_or_else(|| {
                         ErrorKind::UnknownDirective(data_node.name.0)
                             .add_span(data_node.name.1.clone())
                     })?;
-                    match directive.action {
-                        DirectiveAction::DataSegment
-                        | DirectiveAction::CodeSegment
-                        | DirectiveAction::GlobalSymbol => unreachable!(),
-                        DirectiveAction::ByteAlign | DirectiveAction::Align => {
+                    match action {
+                        DirectiveAction::Segment(_) | DirectiveAction::GlobalSymbol(_) => {
+                            unreachable!()
+                        }
+                        DirectiveAction::Alignment(align_type) => {
                             let (args, span) = data_node.args;
                             if args.len() != 1 {
                                 return Err(ErrorKind::IncorrectDirectiveArgumentNumber {
@@ -167,10 +167,9 @@ pub fn compile(
                                     .add_span(span.clone())
                             })?;
                             alignment = Some((
-                                if directive.action == DirectiveAction::Align {
-                                    2_u64.pow(value)
-                                } else {
-                                    value.into()
+                                match align_type {
+                                    DirectiveAlignment::Exponential => 2_u64.pow(value),
+                                    DirectiveAlignment::Byte => value.into(),
                                 },
                                 data_node.name.1,
                             ));
@@ -196,13 +195,11 @@ pub fn compile(
                             Label::new(data_section.get(), span.clone()),
                         )?;
                     }
-                    match directive.action {
-                        DirectiveAction::DataSegment
-                        | DirectiveAction::CodeSegment
-                        | DirectiveAction::GlobalSymbol
-                        | DirectiveAction::ByteAlign
-                        | DirectiveAction::Align => unreachable!(),
-                        DirectiveAction::Space => {
+                    match action {
+                        DirectiveAction::Segment(_)
+                        | DirectiveAction::GlobalSymbol(_)
+                        | DirectiveAction::Alignment(_) => unreachable!(),
+                        DirectiveAction::Data(DirectiveData::Space(size)) => {
                             let (args, span) = data_node.args;
                             if args.len() != 1 {
                                 return Err(ErrorKind::IncorrectDirectiveArgumentNumber {
@@ -216,7 +213,7 @@ pub fn compile(
                             let size = u64::try_from(value).map_err(|_| {
                                 ErrorKind::UnallowedNegativeValue(value.into())
                                     .add_span(span.clone())
-                            })? * u64::from(directive.size.unwrap());
+                            })? * u64::from(size);
                             data_memory.push(Data {
                                 address: data_section
                                     .try_reserve(size)
@@ -225,19 +222,7 @@ pub fn compile(
                                 value: Value::Space(size),
                             });
                         }
-                        DirectiveAction::Byte
-                        | DirectiveAction::HalfWord
-                        | DirectiveAction::Word
-                        | DirectiveAction::DoubleWord => {
-                            #[allow(clippy::cast_sign_loss)]
-                            let variant = match directive.action {
-                                DirectiveAction::Byte => IntegerType::Byte,
-                                DirectiveAction::HalfWord => IntegerType::HalfWord,
-                                DirectiveAction::Word => IntegerType::Word,
-                                DirectiveAction::DoubleWord => IntegerType::DoubleWord,
-                                _ => unreachable!(),
-                            };
-                            let size = directive.size.unwrap();
+                        DirectiveAction::Data(DirectiveData::Int(size, int_type)) => {
                             for (value, span) in data_node.args.0 {
                                 let value = value.to_expr(span.clone())?.int()?;
                                 data_memory.push(Data {
@@ -249,7 +234,7 @@ pub fn compile(
                                         Integer::build(
                                             value.into(),
                                             (size * 8).into(),
-                                            Some(variant),
+                                            Some(int_type),
                                             None,
                                         )
                                         .map_err(|e| e.add_span(span))?,
@@ -258,14 +243,13 @@ pub fn compile(
                                 data_node.labels = Vec::new();
                             }
                         }
-                        DirectiveAction::Float | DirectiveAction::Double => {
+                        DirectiveAction::Data(DirectiveData::Float(float_type)) => {
                             for (value, span) in data_node.args.0 {
                                 let value = value.to_expr(span.clone())?.float()?;
                                 #[allow(clippy::cast_possible_truncation)]
-                                let (value, size) = if directive.action == DirectiveAction::Float {
-                                    (Value::Float(value as f32), 4)
-                                } else {
-                                    (Value::Double(value), 8)
+                                let (value, size) = match float_type {
+                                    FloatType::Float => (Value::Float(value as f32), 4),
+                                    FloatType::Double => (Value::Double(value), 8),
                                 };
                                 data_memory.push(Data {
                                     address: data_section
@@ -277,12 +261,10 @@ pub fn compile(
                                 data_node.labels = Vec::new();
                             }
                         }
-                        DirectiveAction::AsciiNullEnd | DirectiveAction::AsciiNotNullEnd => {
+                        DirectiveAction::Data(DirectiveData::String(str_type)) => {
                             for (value, span) in data_node.args.0 {
                                 let data = value.into_string(span.clone())?;
-                                let null_terminated =
-                                    directive.action == DirectiveAction::AsciiNullEnd;
-
+                                let null_terminated = str_type == StringType::AsciiNullEnd;
                                 data_memory.push(Data {
                                     address: data_section
                                         .try_reserve(data.len() as u64 + u64::from(null_terminated))

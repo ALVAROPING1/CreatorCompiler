@@ -2,7 +2,9 @@ use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
 
 mod utils;
-use utils::{Hex, Integer, Number, Pair, StringOrT};
+use utils::{Hex, Integer, Number, Pair};
+
+mod json;
 
 /// Architecture description
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Clone)]
@@ -21,6 +23,7 @@ pub struct Architecture<'a> {
     /// Pseudoinstructions allowed
     pseudoinstructions: Vec<Pseudoinstruction<'a>>,
     /// Directives allowed
+    #[schemars(with = "Vec<json::Directive>")]
     directives: Vec<Directive<'a>>,
     /// Memory layout of the architecture
     /// Order of elements is assumed to be text start/end, data start/end, and stack start/end
@@ -313,52 +316,97 @@ struct Pseudoinstruction<'a> {
 }
 
 /// Directive specification
-#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
+#[serde(try_from = "json::Directive")]
 pub struct Directive<'a> {
     /// Name of the directive
     pub name: &'a str,
     /// Action of the directive
-    pub action: DirectiveAction,
-    /// Size in bytes of values associated with this directive
-    #[serde(deserialize_with = "utils::optional_from_str")]
-    #[schemars(with = "Option<StringOrT<u8>>")]
-    pub size: Option<u8>,
+    pub action: DirectiveAction<DirectiveData>,
 }
 
-/// Allowed acytions for directives
+/// Allowed actions for directives
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
+#[serde(untagged)]
+#[serde(rename_all = "snake_case")]
+pub enum DirectiveAction<DirectiveData> {
+    /// Switch to the given segment
+    Segment(DirectiveSegment),
+    /// Store symbols in an external symbols table
+    GlobalSymbol(GlobalSymbol),
+    /// Align the next data value to a given size
+    Alignment(DirectiveAlignment),
+    /// Add data to the data segment
+    Data(DirectiveData),
+}
+
+/// Store symbols in an external symbols table
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
-pub enum DirectiveAction {
-    // Switch to the data segment
-    DataSegment,
-    // Switch to the code segment
-    CodeSegment,
-    // Store symbols in an external symbols table
+pub enum GlobalSymbol {
     GlobalSymbol,
-    // Store n * directive.size null bytes in the data segment
-    Space,
-    // Align next element to 2^n bytes
-    Align,
-    // Align next element to n bytes
+}
+
+/// Memory segment to switch to
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
+pub enum DirectiveSegment {
+    #[serde(rename = "code_segment")]
+    Code,
+    #[serde(rename = "data_segment")]
+    Data,
+}
+
+/// Data alignment modes
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
+pub enum DirectiveAlignment {
+    /// Align next element to n bytes
     #[serde(rename = "balign")]
-    ByteAlign,
-    // Store ascii string with a terminating null byte (`\0`) in the data segment. Also sets
-    // current alignment to 1
-    AsciiNullEnd,
-    // Store ascii string without a terminating null byte (`\0`) in the data segment. Also sets
-    // current alignment to 1
-    AsciiNotNullEnd,
-    // Store byte values in the data segment. Also sets current alignment to 1
     Byte,
-    // Store half word values in the data segment. Also sets current alignment to 1
+    /// Align next element to 2^n bytes
+    #[serde(rename = "align")]
+    Exponential,
+}
+
+/// Data segment types
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum DirectiveData {
+    /// Store n * size null bytes in the data segment
+    Space(u8),
+    /// Store string
+    String(StringType),
+    /// Store integer
+    Int(u8, IntegerType),
+    /// Store floating point value
+    Float(FloatType),
+}
+
+/// Types of strings allowed
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum StringType {
+    /// Ascii string with a terminating null byte (`\0`)
+    AsciiNullEnd,
+    /// Ascii string without a terminating null byte (`\0`)
+    AsciiNotNullEnd,
+}
+
+/// Types of integers allowed
+#[derive(Deserialize, JsonSchema, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum IntegerType {
+    Byte,
     HalfWord,
-    // Store word values in the data segment. Also sets current alignment to 1
     Word,
-    // Store double word values in the data segment. Also sets current alignment to 1
     DoubleWord,
-    // Store float values in the data segment. Also sets current alignment to 1
+}
+
+/// Types of floats allowed
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum FloatType {
+    /// 32 bit float
     Float,
-    // Store double floating point values in the data segment. Also sets current alignment to 1
+    /// 64 bit double
     Double,
 }
 
@@ -406,32 +454,31 @@ impl<'a> Architecture<'a> {
         serde_json::from_str(src)
     }
 
-    /// Find the directive name with the given action
+    /// Find the directive name that switches to the given segment
     ///
     /// # Parameters
     ///
-    /// * `action`: action to search for
+    /// * `segment`: action to search for
     #[must_use]
-    pub fn find_directive(&self, action: DirectiveAction) -> Option<&str> {
-        self.directives.iter().find_map(|&directive| {
-            if directive.action == action {
-                Some(directive.name)
-            } else {
-                None
-            }
-        })
+    pub fn get_directive_segment(&self, segment: DirectiveSegment) -> &str {
+        self.directives
+            .iter()
+            .find(|&directive| directive.action == DirectiveAction::Segment(segment))
+            .expect("There should be a directive defined for all segment types")
+            .name
     }
 
-    /// Finds the directive with the given name
+    /// Finds the action associated with the directive with the given name
     ///
     /// # Parameters
     ///
     /// * `name`: name to search for
     #[must_use]
-    pub fn get_directive(&self, name: &str) -> Option<&Directive> {
+    pub fn find_directive(&self, name: &str) -> Option<DirectiveAction<DirectiveData>> {
         self.directives
             .iter()
-            .find(|&directive| directive.name == name)
+            .find(|directive| directive.name == name)
+            .map(|directive| directive.action)
     }
 
     /// Gets the word size of the architecture

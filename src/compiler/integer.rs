@@ -1,18 +1,11 @@
 use super::ErrorKind;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Type {
-    Byte,
-    HalfWord,
-    Word,
-    DoubleWord,
-}
+use crate::architecture::IntegerType;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Integer {
     value: u64,
     size: usize,
-    r#type: Option<Type>,
+    r#type: Option<IntegerType>,
 }
 
 impl Integer {
@@ -32,7 +25,7 @@ impl Integer {
     pub fn build(
         value: i64,
         size: usize,
-        r#type: Option<Type>,
+        r#type: Option<IntegerType>,
         signed: Option<bool>,
     ) -> Result<Self, ErrorKind> {
         let pow = |n: usize| 1 << n;
@@ -71,7 +64,7 @@ impl std::fmt::Display for Integer {
 #[allow(clippy::unwrap_used)]
 #[cfg(test)]
 mod test {
-    use super::{ErrorKind, Integer, Type as IntegerType};
+    use super::{ErrorKind, Integer, IntegerType};
 
     #[test]
     fn bits_signed() {
