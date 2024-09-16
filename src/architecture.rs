@@ -225,14 +225,11 @@ pub struct InstructionField<'a, BitRange> {
     /// Name of the field
     pub name: &'a str,
     /// Type of the field
-    pub r#type: InstructionFieldType,
+    #[serde(flatten)]
+    pub r#type: InstructionFieldType<'a>,
     /// Range of bits of the field. Ignored for pseudoinstructions
     #[serde(flatten)]
     pub range: BitRange,
-    /// Fixed value of this field in the binary instruction (specified as a binary string). Only
-    /// used for `Cop` fields
-    #[serde(rename = "valueField")]
-    pub value_field: Option<&'a str>,
 }
 
 /// Range of bits of a field in a binary instruction
@@ -243,11 +240,16 @@ pub struct BitRange(Vec<(u8, u8)>);
 /// Allowed instruction field types
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
-pub enum InstructionFieldType {
+#[serde(tag = "type")]
+pub enum InstructionFieldType<'a> {
     /// Opcode of the instruction
     Co,
     /// Extended operation code
-    Cop,
+    Cop {
+        /// Fixed value of this field in the binary instruction (specified as a binary string)
+        #[serde(rename = "valueField")]
+        value: &'a str,
+    },
     /// Inmediatte signed integer
     #[serde(rename = "inm-signed")]
     InmSigned,

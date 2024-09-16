@@ -334,7 +334,7 @@ pub fn compile(
                     .unwrap();
                 #[allow(clippy::cast_sign_loss)]
                 let (value, value_str) = match field.r#type {
-                    InstructionFieldType::Cop => {
+                    InstructionFieldType::Cop { .. } => {
                         panic!("This field type shouldn't be used for instruction arguments")
                     }
                     InstructionFieldType::Co => (
@@ -418,17 +418,12 @@ pub fn compile(
                 translated_instruction = RE
                     .replace(&translated_instruction, NoExpand(&value_str))
                     .to_string();
-                for field in def
-                    .fields
-                    .iter()
-                    .filter(|field| field.r#type == InstructionFieldType::Cop)
-                {
+                for (range, value) in def.fields.iter().filter_map(|field| match field.r#type {
+                    InstructionFieldType::Cop { value } => Some((&field.range, value)),
+                    _ => None,
+                }) {
                     binary_instruction
-                        .replace(
-                            &field.range,
-                            i64::from_str_radix(field.value_field.unwrap(), 2).unwrap(),
-                            false,
-                        )
+                        .replace(range, i64::from_str_radix(value, 2).unwrap(), false)
                         .unwrap();
                 }
             }
