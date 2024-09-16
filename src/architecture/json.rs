@@ -62,3 +62,44 @@ impl<'a> TryFrom<Directive<'a>> for super::Directive<'a> {
         })
     }
 }
+
+/// Range of bits of a field in a binary instruction
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
+pub struct BitRange {
+    /// Starting position of the field. Ignored for pseudoinstructions
+    pub startbit: BitPosition,
+    /// End position of the field. Ignored for pseudoinstructions
+    pub stopbit: BitPosition,
+}
+
+/// Position of the start/end bit of a field in a binary instruction
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
+#[serde(untagged)]
+pub enum BitPosition {
+    // Field uses a single, contiguous bit range
+    Single(u8),
+    // Field uses multiple, discontiguous bit ranges
+    Multiple(Vec<u8>),
+}
+
+impl TryFrom<BitRange> for super::BitRange {
+    type Error = &'static str;
+
+    fn try_from(value: BitRange) -> Result<Self, Self::Error> {
+        Ok(Self::new(match (value.startbit, value.stopbit) {
+            (BitPosition::Single(start), BitPosition::Single(end)) => vec![(start, end)],
+            (BitPosition::Multiple(start), BitPosition::Multiple(end)) => {
+                if start.len() != end.len() {
+                    return Err("the startbit and endbit fields must have the same length if they are vectors");
+                }
+                if start.is_empty() {
+                    return Err(
+                        "the startbit and endbit fields must not be empty if they are vectors",
+                    );
+                }
+                std::iter::zip(start, end).collect()
+            }
+            _ => return Err("the type of the startbit and endbit fields should be the same"),
+        }))
+    }
+}

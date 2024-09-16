@@ -171,7 +171,8 @@ pub struct Instruction<'a> {
     /// Execution time of the instruction
     clk_cycles: Option<Integer>,
     /// Parameters of the instruction
-    pub fields: Vec<InstructionField<'a, BitPosition>>,
+    #[schemars(with = "Vec<InstructionField<json::BitRange>>")]
+    pub fields: Vec<InstructionField<'a, BitRange>>,
     /// Code to execute for the instruction
     // Can't be a reference because there might be escape sequences, which require
     // modifying the data on deserialization
@@ -220,30 +221,24 @@ pub enum InstructionProperties {
 
 /// Instruction field specification
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
-pub struct InstructionField<'a, BitPos> {
+pub struct InstructionField<'a, BitRange> {
     /// Name of the field
     pub name: &'a str,
     /// Type of the field
     pub r#type: InstructionFieldType,
-    /// Starting position of the field. Ignored for pseudoinstructions
-    pub startbit: BitPos,
-    /// End position of the field. Ignored for pseudoinstructions
-    pub stopbit: BitPos,
+    /// Range of bits of the field. Ignored for pseudoinstructions
+    #[serde(flatten)]
+    pub range: BitRange,
     /// Fixed value of this field in the binary instruction (specified as a binary string). Only
     /// used for `Cop` fields
     #[serde(rename = "valueField")]
     pub value_field: Option<&'a str>,
 }
 
-/// Position of the start/end bit of a field in a binary instruction
-#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
-#[serde(untagged)]
-pub enum BitPosition {
-    // Field uses a single, contiguous bit range
-    Single(u8),
-    // Field uses multiple, discontiguous bit ranges
-    Multiple(Vec<u8>),
-}
+/// Range of bits of a field in a binary instruction
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+#[serde(try_from = "json::BitRange")]
+pub struct BitRange(Vec<(u8, u8)>);
 
 /// Allowed instruction field types
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
@@ -569,33 +564,22 @@ impl<'a> Component<'a> {
     }
 }
 
-impl BitPosition {
+impl BitRange {
     /// Calculates the size of this field in bits
-    ///
-    /// # Parameters
-    ///
-    /// * `end`: bit position specifying the end of the ranges
     #[must_use]
-    pub fn size(&self, end: &Self) -> usize {
-        let range_size = |start: &u8, end: &u8| {
-            usize::try_from(i32::from(*start) - i32::from(*end) + 1).unwrap()
-        };
-        match (self, end) {
-            (Self::Single(start), Self::Single(end)) => range_size(start, end),
-            (Self::Multiple(starts), Self::Multiple(ends)) => {
-                assert_eq!(
-                    starts.len(),
-                    ends.len(),
-                    "Inconsistent instruction field location definition"
-                );
-                starts
-                    .iter()
-                    .zip(ends.iter())
-                    .map(|(start, end)| range_size(start, end))
-                    .reduce(|acc, val| acc + val)
-                    .unwrap()
-            }
-            _ => panic!("Inconsistent instruction field location definition"),
-        }
+    pub fn size(&self) -> usize {
+        self.iter()
+            .map(|(start, end)| usize::try_from(i32::from(*start) - i32::from(*end) + 1).unwrap())
+            .reduce(|acc, val| acc + val)
+            .expect("There should always be at least 1 field")
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &(u8, u8)> {
+        self.0.iter()
+    }
+
+    #[must_use]
+    pub fn new(ranges: Vec<(u8, u8)>) -> Self {
+        Self(ranges)
     }
 }

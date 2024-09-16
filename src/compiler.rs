@@ -405,8 +405,7 @@ pub fn compile(
                 };
                 binary_instruction
                     .replace(
-                        &field.startbit,
-                        &field.stopbit,
+                        &field.range,
                         value,
                         matches!(
                             field.r#type,
@@ -426,8 +425,7 @@ pub fn compile(
                 {
                     binary_instruction
                         .replace(
-                            &field.startbit,
-                            &field.stopbit,
+                            &field.range,
                             i64::from_str_radix(field.value_field.unwrap(), 2).unwrap(),
                             false,
                         )

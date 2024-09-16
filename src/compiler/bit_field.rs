@@ -1,5 +1,5 @@
 use super::{ErrorKind, Integer};
-use crate::architecture::BitPosition;
+use crate::architecture::BitRange;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BitField(String);
@@ -28,46 +28,26 @@ impl BitField {
         self.0.replace_range(start..end, data);
     }
 
-    /// Replaces a range of bits in the bit field with the given bit ranges
+    /// Replaces a range of bits in the bit field with the given values
     ///
     /// # Parameters
     ///
-    /// * `start`: bit positions of the beginning of the ranges
-    /// * `end`: bit positions of the end of the ranges
+    /// * `range`: ranges of bits to replace
     /// * `data`: data to use as a replacement
     /// * `signed`: whether the data contains a signed or unsigned number
     ///
     /// # Errors
     ///
     /// Returns a `ErrorKind::ValueTooBig` if the data doesn't fit in the bit ranges
-    pub fn replace(
-        &mut self,
-        start: &BitPosition,
-        end: &BitPosition,
-        data: i64,
-        signed: bool,
-    ) -> Result<(), ErrorKind> {
-        let field_size = start.size(end);
+    pub fn replace(&mut self, range: &BitRange, data: i64, signed: bool) -> Result<(), ErrorKind> {
+        let field_size = range.size();
         let data = Integer::build(data, field_size, None, Some(signed))?.to_string();
         let mut data = &data[data.len() - field_size..];
-        match (start, end) {
-            (BitPosition::Single(start), BitPosition::Single(_)) => {
-                self.replace_range((*start).into(), data);
-            }
-            (BitPosition::Multiple(starts), BitPosition::Multiple(ends)) => {
-                assert_eq!(
-                    starts.len(),
-                    ends.len(),
-                    "Inconsistent instruction field location definition"
-                );
-                for (start, end) in starts.iter().zip(ends.iter()) {
-                    let size = usize::from(start - end + 1);
-                    self.replace_range((*start).into(), &data[..size]);
-                    data = &data[size..];
-                }
-            }
-            _ => panic!("Inconsistent instruction field location definition"),
-        };
+        for (start, end) in range.iter() {
+            let size = usize::from(start - end + 1);
+            self.replace_range((*start).into(), &data[..size]);
+            data = &data[size..];
+        }
         Ok(())
     }
 
@@ -80,7 +60,7 @@ impl BitField {
 
 #[cfg(test)]
 mod test {
-    use super::{BitField, BitPosition, ErrorKind};
+    use super::{BitField, BitRange, ErrorKind};
 
     #[test]
     fn new() {
@@ -95,21 +75,11 @@ mod test {
     fn replace_contiguous() {
         let mut field = BitField::new(16);
         assert!(field
-            .replace(
-                &BitPosition::Single(15),
-                &BitPosition::Single(12),
-                0b1111,
-                false,
-            )
+            .replace(&BitRange::new(vec![(15, 12)]), 0b1111, false,)
             .is_ok());
         assert_eq!(field.as_str(), "1111000000000000");
         assert!(field
-            .replace(
-                &BitPosition::Single(2),
-                &BitPosition::Single(0),
-                0b101,
-                false,
-            )
+            .replace(&BitRange::new(vec![(2, 0)]), 0b101, false,)
             .is_ok());
         assert_eq!(field.as_str(), "1111000000000101");
     }
@@ -118,12 +88,7 @@ mod test {
     fn replace_separated() {
         let mut field = BitField::new(16);
         assert!(field
-            .replace(
-                &BitPosition::Multiple(vec![15, 7]),
-                &BitPosition::Multiple(vec![12, 6]),
-                0b10_0111,
-                false,
-            )
+            .replace(&BitRange::new(vec![(15, 12), (7, 6)]), 0b10_0111, false,)
             .is_ok());
         assert_eq!(field.as_str(), "1001000011000000");
     }
@@ -132,16 +97,11 @@ mod test {
     fn replace_error() {
         let mut field = BitField::new(16);
         assert_eq!(
-            field.replace(
-                &BitPosition::Single(15),
-                &BitPosition::Single(12),
-                18,
-                false,
-            ),
+            field.replace(&BitRange::new(vec![(15, 12)]), 18, false,),
             Err(ErrorKind::IntegerTooBig(18, 0..16))
         );
         assert_eq!(
-            field.replace(&BitPosition::Single(15), &BitPosition::Single(12), 8, true,),
+            field.replace(&BitRange::new(vec![(15, 12)]), 8, true),
             Err(ErrorKind::IntegerTooBig(8, -8..8))
         );
     }
