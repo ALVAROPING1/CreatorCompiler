@@ -299,7 +299,7 @@ struct Pseudoinstruction<'a> {
     /// depending on the instructions they are replaced with
     nwords: Integer,
     /// Parameters of the pseudoinstruction. Bit positions of fields are ignored
-    fields: Vec<InstructionField<'a, Option<Integer>>>,
+    fields: Vec<InstructionField<'a, ()>>,
     /// Code to execute for the instruction
     // Can't be a reference because there might be escape sequences, which require
     // modifying the data on deserialization
