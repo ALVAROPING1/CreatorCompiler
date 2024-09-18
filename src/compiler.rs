@@ -335,7 +335,7 @@ pub fn compile(
                 #[allow(clippy::cast_sign_loss)]
                 let (value, value_str) = match field.r#type {
                     InstructionFieldType::Cop { .. } => {
-                        panic!("This field type shouldn't be used for instruction arguments")
+                        unreachable!("This field type shouldn't be used for instruction arguments")
                     }
                     InstructionFieldType::Co => (
                         i64::from_str_radix(def.co, 2).unwrap(),
