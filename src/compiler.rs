@@ -415,15 +415,15 @@ pub fn compile(
                 translated_instruction = RE
                     .replace(&translated_instruction, NoExpand(&value_str))
                     .to_string();
-                for (range, value) in def.fields.iter().filter_map(|field| match field.r#type {
-                    InstructionFieldType::Cop { value } => Some((&field.range, value)),
-                    _ => None,
-                }) {
-                    #[allow(clippy::cast_possible_wrap)]
-                    binary_instruction
-                        .replace(range, value.0 as i64, false)
-                        .unwrap();
-                }
+            }
+            for (range, value) in def.fields.iter().filter_map(|field| match field.r#type {
+                InstructionFieldType::Cop { value } => Some((&field.range, value)),
+                _ => None,
+            }) {
+                #[allow(clippy::cast_possible_wrap)]
+                binary_instruction
+                    .replace(range, value.0 as i64, false)
+                    .unwrap();
             }
             Ok(Instruction {
                 labels,
