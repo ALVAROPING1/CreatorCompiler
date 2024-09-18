@@ -12,8 +12,8 @@ pub enum Number {
     Float(f64),
 }
 
-#[derive(JsonSchema, Debug, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
-pub struct Hex(pub u64);
+#[derive(Debug, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
+pub struct BaseN<const N: u8>(pub u64);
 
 #[derive(Deserialize, JsonSchema)]
 #[serde(untagged)]
@@ -28,10 +28,10 @@ pub struct Pair<Keys, Value> {
     pub value: Value,
 }
 
-impl<'de> Deserialize<'de> for Hex {
+impl<'de, const N: u8> Deserialize<'de> for BaseN<N> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let s: &str = Deserialize::deserialize(deserializer)?;
-        u64::from_str_radix(s.trim_start_matches("0x"), 16)
+        u64::from_str_radix(s.trim_start_matches("0x"), N.into())
             .map(Self)
             .map_err(serde::de::Error::custom)
     }

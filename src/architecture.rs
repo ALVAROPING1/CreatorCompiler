@@ -2,7 +2,7 @@ use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
 
 mod utils;
-use utils::{Hex, Integer, Number, Pair};
+use utils::{BaseN, Integer, Number, Pair};
 
 mod json;
 
@@ -28,7 +28,7 @@ pub struct Architecture<'a> {
     /// Memory layout of the architecture
     /// Order of elements is assumed to be text start/end, data start/end, and stack start/end
     #[schemars(with = "[Pair<MemoryLayoutKeys, String>; 6]")]
-    memory_layout: [Pair<MemoryLayoutKeys, Hex>; 6],
+    memory_layout: [Pair<MemoryLayoutKeys, BaseN<16>>; 6],
 }
 
 /// Architecture metadata attribute types
@@ -163,9 +163,8 @@ pub struct Instruction<'a> {
     #[serde(rename = "signatureRaw")]
     pub signature_raw: &'a str,
     /// Binary op code
-    pub co: &'a str,
-    /// Binary extended op code
-    cop: &'a str,
+    #[schemars(with = "String")]
+    pub co: BaseN<2>,
     /// Size of the instruction
     pub nwords: u8,
     /// Execution time of the instruction
@@ -226,7 +225,7 @@ pub struct InstructionField<'a, BitRange> {
     pub name: &'a str,
     /// Type of the field
     #[serde(flatten)]
-    pub r#type: InstructionFieldType<'a>,
+    pub r#type: InstructionFieldType,
     /// Range of bits of the field. Ignored for pseudoinstructions
     #[serde(flatten)]
     pub range: BitRange,
@@ -241,14 +240,15 @@ pub struct BitRange(Vec<(u8, u8)>);
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
-pub enum InstructionFieldType<'a> {
+pub enum InstructionFieldType {
     /// Opcode of the instruction
     Co,
     /// Extended operation code
     Cop {
         /// Fixed value of this field in the binary instruction (specified as a binary string)
         #[serde(rename = "valueField")]
-        value: &'a str,
+        #[schemars(with = "String")]
+        value: BaseN<2>,
     },
     /// Inmediatte signed integer
     #[serde(rename = "inm-signed")]

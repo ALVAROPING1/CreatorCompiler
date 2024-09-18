@@ -337,10 +337,7 @@ pub fn compile(
                     InstructionFieldType::Cop { .. } => {
                         unreachable!("This field type shouldn't be used for instruction arguments")
                     }
-                    InstructionFieldType::Co => (
-                        i64::from_str_radix(def.co, 2).unwrap(),
-                        field_name.to_string(),
-                    ),
+                    InstructionFieldType::Co => (def.co.0 as i64, field_name.to_string()),
                     val_type @ (InstructionFieldType::Address
                     | InstructionFieldType::InmSigned
                     | InstructionFieldType::InmUnsigned
@@ -422,8 +419,9 @@ pub fn compile(
                     InstructionFieldType::Cop { value } => Some((&field.range, value)),
                     _ => None,
                 }) {
+                    #[allow(clippy::cast_possible_wrap)]
                     binary_instruction
-                        .replace(range, i64::from_str_radix(value, 2).unwrap(), false)
+                        .replace(range, value.0 as i64, false)
                         .unwrap();
                 }
             }
