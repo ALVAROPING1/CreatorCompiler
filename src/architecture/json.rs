@@ -6,7 +6,6 @@ use regex::Regex;
 
 use super::{utils, utils::StringOrT, DirectiveAction, InstructionFieldType};
 use super::{FloatType, IntegerType, StringType};
-use crate::parser::InstructionParser;
 
 /// Directive specification
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
@@ -134,7 +133,7 @@ impl<'a> TryFrom<InstructionSyntax<'a>> for super::InstructionSyntax<'a> {
         static RE: Lazy<Regex> =
             Lazy::new(|| Regex::new(r"[fF][0-9]+").expect("This shouldn't fail"));
         let format = |fmt: &str| fmt.replace(" (", "(").replace(' ', ",");
-        let parser = InstructionParser::build(&format(
+        let parser = crate::parser::Instruction::build(&format(
             value
                 .signature_definition
                 // Remove opcode field

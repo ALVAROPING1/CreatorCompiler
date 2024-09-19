@@ -201,7 +201,7 @@ pub enum InstructionType {
 #[serde(try_from = "json::InstructionSyntax")]
 pub struct InstructionSyntax<'a> {
     /// Parser for the syntax of the instruction
-    pub parser: crate::parser::InstructionParser<'a>,
+    pub parser: crate::parser::Instruction<'a>,
     /// Translated instruction's syntax
     pub output_syntax: &'a str,
     /// User representation of the instruction's syntax
