@@ -5,9 +5,7 @@ use crate::architecture::{
     Architecture, ComponentType, DirectiveAction, DirectiveAlignment, DirectiveData, FloatType,
     Instruction as InstructionDefinition, InstructionFieldType, StringType,
 };
-use crate::parser::{
-    parse_inst_args, ASTNode, Argument, Data as DataToken, Expr, Span, Spanned, Token,
-};
+use crate::parser::{ASTNode, Argument, Data as DataToken, Expr, Span, Spanned, Token};
 
 mod label;
 use label::{Label, Table as LabelTable};
@@ -23,15 +21,6 @@ use section::Section;
 
 mod integer;
 pub use integer::Integer;
-
-macro_rules! iter_captures {
-    ($var:ident) => {
-        $var.iter().skip(1).map(|cap| {
-            cap.expect("This shouldn't fail because none of the captures are optional")
-                .as_str()
-        })
-    };
-}
 
 /* TODO:
 *  - Refactor code
@@ -50,15 +39,10 @@ fn parse_instruction<'a>(
 ) -> Result<(&'a InstructionDefinition<'a>, Vec<Spanned<Argument>>), CompileError> {
     let mut errs = Vec::new();
     for inst in arch.find_instructions(name) {
-        let result = parse_inst_args(
-            inst.signature_definition
-                .trim_start_matches(|c| c != ' ')
-                .trim_start_matches(' '),
-            args.clone(),
-        );
+        let result = inst.syntax.parser.parse(args.clone());
         match result {
             Ok(parsed_args) => return Ok((inst, parsed_args)),
-            Err(e) => errs.push((inst.signature_raw.to_string(), e)),
+            Err(e) => errs.push((inst.syntax.user_syntax.to_string(), e)),
         }
     }
     Err(if errs.is_empty() {
@@ -319,25 +303,15 @@ pub fn compile(
         .map(|(labels, address, (def, args))| {
             let mut binary_instruction =
                 BitField::new(usize::from(word_size) * usize::from(def.nwords) * 8);
-            let mut translated_instruction = def.signature_definition.to_string();
-            let signature_definition = Regex::new(&format!(
-                "^{}$",
-                RE.replace_all(&regex::escape(def.signature_definition), "(.*?)")
-            ))
-            .unwrap();
-            let field_names = signature_definition.captures(def.signature_raw).unwrap();
-            for (field_name, (value, span)) in iter_captures!(field_names).zip(args.into_iter()) {
-                let field = def
-                    .fields
-                    .iter()
-                    .find(|field| field.name == field_name)
-                    .unwrap();
+            let mut translated_instruction = def.syntax.output_syntax.to_string();
+            for ((value, span), field) in args.into_iter().zip(&def.syntax.fields) {
                 #[allow(clippy::cast_sign_loss)]
                 let (value, value_str) = match field.r#type {
                     InstructionFieldType::Cop { .. } => {
                         unreachable!("This field type shouldn't be used for instruction arguments")
                     }
-                    InstructionFieldType::Co => (def.co.0 as i64, field_name.to_string()),
+                    #[allow(clippy::cast_possible_wrap)]
+                    InstructionFieldType::Co => (def.co.0 as i64, def.name.to_string()),
                     val_type @ (InstructionFieldType::Address
                     | InstructionFieldType::InmSigned
                     | InstructionFieldType::InmUnsigned
@@ -416,7 +390,8 @@ pub fn compile(
                     .replace(&translated_instruction, NoExpand(&value_str))
                     .to_string();
             }
-            for (range, value) in def.fields.iter().filter_map(|field| match field.r#type {
+            let fields = def.syntax.fields.iter();
+            for (range, value) in fields.filter_map(|field| match field.r#type {
                 InstructionFieldType::Cop { value } => Some((&field.range, value)),
                 _ => None,
             }) {

@@ -7,7 +7,7 @@ use utils::{BaseN, Integer, Number, Pair};
 mod json;
 
 /// Architecture description
-#[derive(Deserialize, JsonSchema, Debug, PartialEq, Clone)]
+#[derive(Deserialize, JsonSchema, Debug, Clone)]
 pub struct Architecture<'a> {
     /// Metadata about the architecture
     /// Order of elements is assumed to be name, bits, description, data format,
@@ -142,26 +142,16 @@ pub enum RegisterProperty {
 }
 
 /// Instruction specification
-#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
+#[derive(Deserialize, JsonSchema, Debug, Clone)]
 pub struct Instruction<'a> {
     /// Name of the instruction
-    name: &'a str,
+    pub name: &'a str,
     /// Type of the instruction
     r#type: InstructionType,
-    /// Order of the fields/literal characters in the instruction text. `[fF]\d+` is interpreted as
-    /// the field with index i of the instruction, although the number is ignored and `signature_raw`
-    /// is used instead. Other characters are interpreted literally
-    /// Ex: `F0 F3 F1 (F2)`
-    pub signature_definition: &'a str,
-    /// Comma-separated list of the type of each field in the instruction, in the order in which
-    /// they appear in the instruction. Valid values are those in `InstructionFieldType`, except
-    /// `Co` and `Cop`. Instruction opcode is specified literally, other characters are interpreted
-    /// literally so that `signature_definition` can capture the value corresponding to each field
-    /// when used as a regex
-    pub signature: &'a str,
-    /// Same as `signature`, but with a space-separated list of field names
-    #[serde(rename = "signatureRaw")]
-    pub signature_raw: &'a str,
+    /// Syntax of the instruction
+    #[serde(flatten)]
+    #[schemars(with = "json::InstructionSyntax")]
+    pub syntax: InstructionSyntax<'a>,
     /// Binary op code
     #[schemars(with = "String")]
     pub co: BaseN<2>,
@@ -169,9 +159,6 @@ pub struct Instruction<'a> {
     pub nwords: u8,
     /// Execution time of the instruction
     clk_cycles: Option<Integer>,
-    /// Parameters of the instruction
-    #[schemars(with = "Vec<InstructionField<json::BitRange>>")]
-    pub fields: Vec<InstructionField<'a, BitRange>>,
     /// Code to execute for the instruction
     // Can't be a reference because there might be escape sequences, which require
     // modifying the data on deserialization
@@ -207,6 +194,20 @@ pub enum InstructionType {
     #[serde(rename = "Memory access")]
     MemoryAccess,
     Other,
+}
+
+/// Instruction syntax specification
+#[derive(Deserialize, Debug, Clone)]
+#[serde(try_from = "json::InstructionSyntax")]
+pub struct InstructionSyntax<'a> {
+    /// Parser for the syntax of the instruction
+    pub parser: crate::parser::InstructionParser<'a>,
+    /// Translated instruction's syntax
+    pub output_syntax: &'a str,
+    /// User representation of the instruction's syntax
+    pub user_syntax: String,
+    /// Parameters of the instruction
+    pub fields: Vec<InstructionField<'a, BitRange>>,
 }
 
 /// Allowed instruction properties
