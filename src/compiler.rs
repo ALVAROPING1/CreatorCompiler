@@ -62,8 +62,8 @@ pub struct Instruction {
     pub loaded: String,
     /// Instruction encoded in binary
     pub binary: BitField,
-    // /// Span of the instruction in the code
-    // user: Span,
+    /// Span of the instruction in the code
+    pub user: Span,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -268,6 +268,7 @@ pub fn compile(
             ASTNode::CodeSegment(instructions) => {
                 for instruction_node in instructions {
                     let (name, span) = instruction_node.name;
+                    let inst_span = span.start..instruction_node.args.1.end;
                     let (def, args) =
                         parse_instruction(arch, (&name, span.clone()), instruction_node.args)?;
                     let addr = code_section
@@ -279,6 +280,7 @@ pub fn compile(
                     parsed_instructions.push((
                         instruction_node.labels.into_iter().map(|x| x.0).collect(),
                         addr,
+                        inst_span,
                         (def, args),
                     ));
                 }
@@ -300,7 +302,7 @@ pub fn compile(
     }
     parsed_instructions
         .into_iter()
-        .map(|(labels, address, (def, args))| {
+        .map(|(labels, address, inst_span, (def, args))| {
             let mut binary_instruction =
                 BitField::new(usize::from(word_size) * usize::from(def.nwords) * 8);
             let mut translated_instruction = def.syntax.output_syntax.to_string();
@@ -405,6 +407,7 @@ pub fn compile(
                 address,
                 binary: binary_instruction,
                 loaded: translated_instruction,
+                user: inst_span,
             })
         })
         .collect::<Result<Vec<_>, _>>()
