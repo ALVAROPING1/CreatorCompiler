@@ -1,10 +1,7 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use once_cell::sync::Lazy;
-use regex::Regex;
-
-use super::{utils, utils::StringOrT, DirectiveAction, InstructionFieldType};
+use super::{utils, utils::StringOrT, DirectiveAction};
 use super::{FloatType, IntegerType, StringType};
 
 /// Directive specification
@@ -130,44 +127,19 @@ impl<'a> TryFrom<InstructionSyntax<'a>> for super::InstructionSyntax<'a> {
     type Error = &'static str;
 
     fn try_from(value: InstructionSyntax<'a>) -> Result<Self, Self::Error> {
-        static RE: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"[fF][0-9]+").expect("This shouldn't fail"));
-        let format = |fmt: &str| fmt.replace(" (", "(").replace(' ', ",");
-        let parser = crate::parser::Instruction::build(&format(
-            value
-                .signature_definition
-                // Remove opcode field
-                .trim_start_matches(|c| c != ' ')
-                .trim_start_matches(' '),
-        ))
-        .map_err(|_| "incorrect `signature_definition` field specification")?;
-        let fields = RE
-            .find_iter(value.signature_definition)
-            .map(|res| {
-                let i: usize = res.as_str()[1..]
-                    .parse()
-                    .expect("This shouldn't fail because we already matched a sequence of digits");
-                value
-                    .fields
-                    .get(i)
-                    .cloned()
-                    .ok_or("`signature_definition` referenced an undefined field")
-            })
-            .chain(
-                value
-                    .fields
-                    .iter()
-                    .filter(|field| matches!(field.r#type, InstructionFieldType::Cop { .. }))
-                    .cloned()
-                    .map(Ok),
-            )
-            .collect::<Result<Vec<_>, _>>()?;
-
+        let format = |fmt: &str| {
+            let fmt = fmt.replace(" (", "(");
+            fmt.split_once(' ')
+                .map(|(opcode, syntax)| format!("{opcode} {}", syntax.replace(' ', ",")))
+                .unwrap_or(fmt)
+        };
+        let parser =
+            crate::parser::Instruction::build(&format(value.signature_definition), &value.fields)?;
         Ok(Self {
             parser,
             output_syntax: value.signature_definition,
             user_syntax: format(value.signature_raw),
-            fields,
+            fields: value.fields,
         })
     }
 }

@@ -32,11 +32,13 @@ pub use integer::Integer;
 
 static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"[fF][0-9]+").expect("This shouldn't fail"));
 
+type Output = Vec<(Spanned<Argument>, usize)>;
+
 fn parse_instruction<'a>(
     arch: &'a Architecture,
     (name, name_span): Spanned<&str>,
     args: Spanned<Vec<Spanned<Token>>>,
-) -> Result<(&'a InstructionDefinition<'a>, Vec<Spanned<Argument>>), CompileError> {
+) -> Result<(&'a InstructionDefinition<'a>, Output), CompileError> {
     let mut errs = Vec::new();
     for inst in arch.find_instructions(name) {
         let result = inst.syntax.parser.parse(args.clone());
@@ -306,7 +308,8 @@ pub fn compile(
             let mut binary_instruction =
                 BitField::new(usize::from(word_size) * usize::from(def.nwords) * 8);
             let mut translated_instruction = def.syntax.output_syntax.to_string();
-            for ((value, span), field) in args.into_iter().zip(&def.syntax.fields) {
+            for ((value, span), i) in args {
+                let field = &def.syntax.fields[i];
                 #[allow(clippy::cast_sign_loss)]
                 let (value, value_str) = match field.r#type {
                     InstructionFieldType::Cop { .. } => {
