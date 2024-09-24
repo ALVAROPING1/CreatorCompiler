@@ -74,7 +74,8 @@ macro_rules! plural {
 
 impl Kind {
     #[must_use]
-    pub const fn add_span(self, span: Span) -> Error {
+    pub const fn add_span(self, span: &Span) -> Error {
+        let span = span.start..span.end;
         Error { span, kind: self }
     }
 

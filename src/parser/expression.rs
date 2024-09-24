@@ -43,7 +43,7 @@ impl Expr {
         #[allow(clippy::cast_possible_wrap)]
         Ok(match self {
             Self::Integer(value) => *value as i32,
-            Self::Float((_, span)) => return Err(ErrorKind::UnallowedFloat.add_span(span.clone())),
+            Self::Float((_, span)) => return Err(ErrorKind::UnallowedFloat.add_span(&span)),
             Self::Character(c) => *c as i32,
             Self::UnaryOp { op, operand } => match op.0 {
                 UnaryOp::Plus => operand.0.int()?,
@@ -52,7 +52,7 @@ impl Expr {
             },
             Self::BinaryOp { op, lhs, rhs } => {
                 let lhs = lhs.0.int()?;
-                let span = rhs.1.clone();
+                let span = &rhs.1;
                 let rhs = rhs.0.int()?;
                 match op.0 {
                     BinaryOp::Add => lhs.overflowing_add(rhs).0,
@@ -81,11 +81,10 @@ impl Expr {
                 UnaryOp::Complement => Err(ErrorKind::UnallowedFloatOperation(
                     OperationKind::UnaryNegation,
                 )
-                .add_span(op.1.clone()))?,
+                .add_span(&op.1))?,
             },
             Self::BinaryOp { op, lhs, rhs } => {
                 let lhs = lhs.0.float()?;
-                // let span = rhs.1.clone();
                 let rhs = rhs.0.float()?;
                 match op.0 {
                     BinaryOp::Add => lhs + rhs,
@@ -95,18 +94,18 @@ impl Expr {
                     BinaryOp::Rem => lhs % rhs,
                     BinaryOp::BitwiseOR => {
                         return Err(ErrorKind::UnallowedFloatOperation(OperationKind::BitwiseOR)
-                            .add_span(op.1.clone()))
+                            .add_span(&op.1))
                     }
                     BinaryOp::BitwiseAND => {
                         return Err(
                             ErrorKind::UnallowedFloatOperation(OperationKind::BitwiseAND)
-                                .add_span(op.1.clone()),
+                                .add_span(&op.1),
                         )
                     }
                     BinaryOp::BitwiseXOR => {
                         return Err(
                             ErrorKind::UnallowedFloatOperation(OperationKind::BitwiseXOR)
-                                .add_span(op.1.clone()),
+                                .add_span(&op.1),
                         )
                     }
                 }
@@ -286,7 +285,7 @@ mod expr_eval_tests {
     fn div_by_0() {
         assert_eq!(
             bin_op(BinaryOp::Div, 10, 0).int(),
-            Err(ErrorKind::DivisionBy0.add_span(0..0))
+            Err(ErrorKind::DivisionBy0.add_span(&(0..0)))
         );
     }
 

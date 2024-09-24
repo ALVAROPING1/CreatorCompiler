@@ -59,7 +59,7 @@ impl Table {
                 e.key().clone(),
                 e.get().definition.clone(),
             )
-            .add_span(data.definition)),
+            .add_span(&data.definition)),
         }
     }
 
@@ -90,11 +90,11 @@ mod test {
         );
         assert_eq!(
             table.insert("test".to_string(), Label::new(4, 13..17)),
-            Err(ErrorKind::DuplicateLabel("test".to_string(), 0..2).add_span(13..17))
+            Err(ErrorKind::DuplicateLabel("test".to_string(), 0..2).add_span(&(13..17)))
         );
         assert_eq!(
             table.insert("test2".to_string(), Label::new(128, 20..22)),
-            Err(ErrorKind::DuplicateLabel("test2".to_string(), 6..10).add_span(20..22))
+            Err(ErrorKind::DuplicateLabel("test2".to_string(), 6..10).add_span(&(20..22)))
         );
     }
 

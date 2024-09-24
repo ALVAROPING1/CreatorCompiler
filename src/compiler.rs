@@ -48,9 +48,9 @@ fn parse_instruction<'a>(
         }
     }
     Err(if errs.is_empty() {
-        ErrorKind::UnknownInstruction(name.to_string()).add_span(name_span)
+        ErrorKind::UnknownInstruction(name.to_string()).add_span(&name_span)
     } else {
-        ErrorKind::IncorrectInstructionSyntax(errs).add_span(args.1)
+        ErrorKind::IncorrectInstructionSyntax(errs).add_span(&args.1)
     })
 }
 
@@ -89,7 +89,7 @@ pub struct Data {
 }
 
 impl DataToken {
-    fn into_string(self, span: Span) -> Result<String, CompileError> {
+    fn into_string(self, span: &Span) -> Result<String, CompileError> {
         match self {
             Self::String(s) => Ok(s),
             Self::Number(_) => Err(ErrorKind::IncorrectArgumentType {
@@ -100,7 +100,7 @@ impl DataToken {
         }
     }
 
-    const fn to_expr(&self, span: Span) -> Result<&Expr, CompileError> {
+    const fn to_expr(&self, span: &Span) -> Result<&Expr, CompileError> {
         match self {
             Self::Number(expr) => Ok(expr),
             Self::String(_) => Err(ErrorKind::IncorrectArgumentType {
@@ -125,7 +125,10 @@ fn compile_data(
     mut data_node: crate::parser::DataNode,
 ) -> Result<(), CompileError> {
     if let Some((alignment, span)) = alignment.take() {
-        if let Some((start, size)) = section.try_align(alignment).map_err(|e| e.add_span(span))? {
+        if let Some((start, size)) = section
+            .try_align(alignment)
+            .map_err(|e| e.add_span(&span))?
+        {
             memory.push(Data {
                 address: start,
                 labels: Vec::new(),
@@ -144,39 +147,37 @@ fn compile_data(
                     expected: 1,
                     found: args.len(),
                 }
-                .add_span(span));
+                .add_span(&span));
             };
             let (value, span) = &args[0];
-            let value = value.to_expr(span.clone())?.int()?;
-            let size = u64::try_from(value).map_err(|_| {
-                ErrorKind::UnallowedNegativeValue(value.into()).add_span(span.clone())
-            })? * u64::from(size);
+            let value = value.to_expr(span)?.int()?;
+            let size = u64::try_from(value)
+                .map_err(|_| ErrorKind::UnallowedNegativeValue(value.into()).add_span(span))?
+                * u64::from(size);
             memory.push(Data {
-                address: section
-                    .try_reserve(size)
-                    .map_err(|e| e.add_span(span.clone()))?,
+                address: section.try_reserve(size).map_err(|e| e.add_span(span))?,
                 labels: take_spanned_vec(&mut data_node.labels),
                 value: Value::Space(size),
             });
         }
         DirectiveData::Int(size, int_type) => {
             for (value, span) in data_node.args.0 {
-                let value = value.to_expr(span.clone())?.int()?;
+                let value = value.to_expr(&span)?.int()?;
                 memory.push(Data {
                     address: section
                         .try_reserve_aligned(size.into())
-                        .map_err(|e| e.add_span(span.clone()))?,
+                        .map_err(|e| e.add_span(&span))?,
                     labels: take_spanned_vec(&mut data_node.labels),
                     value: Value::Integer(
                         Integer::build(value.into(), (size * 8).into(), Some(int_type), None)
-                            .map_err(|e| e.add_span(span))?,
+                            .map_err(|e| e.add_span(&span))?,
                     ),
                 });
             }
         }
         DirectiveData::Float(float_type) => {
             for (value, span) in data_node.args.0 {
-                let value = value.to_expr(span.clone())?.float()?;
+                let value = value.to_expr(&span)?.float()?;
                 #[allow(clippy::cast_possible_truncation)]
                 let (value, size) = match float_type {
                     FloatType::Float => (Value::Float(value as f32), 4),
@@ -185,7 +186,7 @@ fn compile_data(
                 memory.push(Data {
                     address: section
                         .try_reserve_aligned(size)
-                        .map_err(|e| e.add_span(span.clone()))?,
+                        .map_err(|e| e.add_span(&span))?,
                     labels: take_spanned_vec(&mut data_node.labels),
                     value,
                 });
@@ -193,12 +194,12 @@ fn compile_data(
         }
         DirectiveData::String(str_type) => {
             for (value, span) in data_node.args.0 {
-                let data = value.into_string(span.clone())?;
+                let data = value.into_string(&span)?;
                 let null_terminated = str_type == StringType::AsciiNullEnd;
                 memory.push(Data {
                     address: section
                         .try_reserve(data.len() as u64 + u64::from(null_terminated))
-                        .map_err(|e| e.add_span(span.clone()))?,
+                        .map_err(|e| e.add_span(&span))?,
                     labels: take_spanned_vec(&mut data_node.labels),
                     value: Value::String {
                         data,
@@ -230,7 +231,7 @@ pub fn compile(
                 for mut data_node in data {
                     let action = arch.find_directive(&data_node.name.0).ok_or_else(|| {
                         let directive = std::mem::take(&mut data_node.name.0);
-                        ErrorKind::UnknownDirective(directive).add_span(data_node.name.1.clone())
+                        ErrorKind::UnknownDirective(directive).add_span(&data_node.name.1)
                     })?;
                     match action {
                         DirectiveAction::Segment(_) | DirectiveAction::GlobalSymbol(_) => {
@@ -243,13 +244,12 @@ pub fn compile(
                                     expected: 1,
                                     found: args.len(),
                                 }
-                                .add_span(span));
+                                .add_span(&span));
                             };
                             let (value, span) = &args[0];
-                            let value = value.to_expr(span.clone())?.int()?;
+                            let value = value.to_expr(span)?.int()?;
                             let value = u32::try_from(value).map_err(|_| {
-                                ErrorKind::UnallowedNegativeValue(value.into())
-                                    .add_span(span.clone())
+                                ErrorKind::UnallowedNegativeValue(value.into()).add_span(span)
                             })?;
                             alignment = Some((
                                 match align_type {
@@ -279,7 +279,7 @@ pub fn compile(
                         parse_instruction(arch, (&name, span.clone()), instruction_node.args)?;
                     let addr = code_section
                         .try_reserve(u64::from(word_size) * u64::from(def.nwords))
-                        .map_err(|e| e.add_span(span.clone()))?;
+                        .map_err(|e| e.add_span(&span))?;
                     for (label, span) in &instruction_node.labels {
                         label_table.insert(label.clone(), Label::new(addr, span.clone()))?;
                     }
@@ -296,13 +296,14 @@ pub fn compile(
     match label_table.get(arch.main_label()) {
         None => {
             // TODO: what span should this use?
-            return Err(ErrorKind::MissingMainLabel(arch.main_label().to_owned()).add_span(0..0));
+            return Err(ErrorKind::MissingMainLabel(arch.main_label().to_owned()).add_span(&(0..0)));
         }
         Some(main) => {
             let (start, end) = arch.code_section_limits();
             if !(start..=end).contains(&main.address()) {
-                return Err(ErrorKind::MainOutsideCode(arch.main_label().to_owned())
-                    .add_span(main.span().clone()));
+                return Err(
+                    ErrorKind::MainOutsideCode(arch.main_label().to_owned()).add_span(main.span())
+                );
             }
         }
     }
@@ -330,9 +331,7 @@ pub fn compile(
                             Argument::Number(expr) => expr.int()?,
                             Argument::Identifier(label) => label_table
                                 .get(&label)
-                                .ok_or_else(|| {
-                                    ErrorKind::UnknownLabel(label).add_span(span.clone())
-                                })?
+                                .ok_or_else(|| ErrorKind::UnknownLabel(label).add_span(&span))?
                                 .address()
                                 .try_into()
                                 .unwrap(),
@@ -357,7 +356,7 @@ pub fn compile(
                                     expected: ArgumentType::RegisterName,
                                     found: ArgumentType::Expression,
                                 }
-                                .add_span(span))
+                                .add_span(&span))
                             }
                             Argument::Identifier(name) => name,
                         };
@@ -371,14 +370,14 @@ pub fn compile(
                         let bank = arch
                             .find_bank(bank_type, val_type == InstructionFieldType::DoubleFPReg)
                             .ok_or_else(|| {
-                                ErrorKind::UnknownRegisterBank(bank_type).add_span(span.clone())
+                                ErrorKind::UnknownRegisterBank(bank_type).add_span(&span)
                             })?;
                         let (i, _) = bank.find_register(&name).ok_or_else(|| {
                             ErrorKind::UnknownRegister {
                                 name: name.clone(),
                                 bank: bank_type,
                             }
-                            .add_span(span.clone())
+                            .add_span(&span)
                         })?;
                         (i64::try_from(i).unwrap(), name)
                     }
@@ -394,7 +393,7 @@ pub fn compile(
                                 | InstructionFieldType::OffsetWords
                         ),
                     )
-                    .map_err(|e| e.add_span(span))?;
+                    .map_err(|e| e.add_span(&span))?;
                 translated_instruction = RE
                     .replace(&translated_instruction, NoExpand(&value_str))
                     .to_string();
