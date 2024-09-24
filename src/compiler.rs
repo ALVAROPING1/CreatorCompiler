@@ -38,7 +38,7 @@ type Output = Vec<(Spanned<Argument>, usize)>;
 fn parse_instruction<'a>(
     arch: &'a Architecture,
     (name, name_span): Spanned<&str>,
-    args: Spanned<Vec<Spanned<Token>>>,
+    args: &Spanned<Vec<Spanned<Token>>>,
 ) -> Result<(&'a InstructionDefinition<'a>, Output), CompileError> {
     let mut errs = Vec::new();
     for inst in arch.find_instructions(name) {
@@ -270,7 +270,7 @@ pub fn compile(
                     let (name, span) = instruction_node.name;
                     let inst_span = span.start..instruction_node.args.1.end;
                     let (def, args) =
-                        parse_instruction(arch, (&name, span.clone()), instruction_node.args)?;
+                        parse_instruction(arch, (&name, span.clone()), &instruction_node.args)?;
                     let addr = code_section
                         .try_reserve(u64::from(word_size) * u64::from(def.nwords))
                         .add_span(&span)?;
