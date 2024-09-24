@@ -112,6 +112,10 @@ impl DataToken {
     }
 }
 
+fn take_spanned_vec<T>(dest: &mut Vec<Spanned<T>>) -> Vec<T> {
+    std::mem::take(dest).into_iter().map(|x| x.0).collect()
+}
+
 fn compile_data(
     label_table: &mut LabelTable,
     section: &mut Section,
@@ -151,7 +155,7 @@ fn compile_data(
                 address: section
                     .try_reserve(size)
                     .map_err(|e| e.add_span(span.clone()))?,
-                labels: data_node.labels.into_iter().map(|x| x.0).collect(),
+                labels: take_spanned_vec(&mut data_node.labels),
                 value: Value::Space(size),
             });
         }
@@ -162,13 +166,12 @@ fn compile_data(
                     address: section
                         .try_reserve_aligned(size.into())
                         .map_err(|e| e.add_span(span.clone()))?,
-                    labels: data_node.labels.into_iter().map(|x| x.0).collect(),
+                    labels: take_spanned_vec(&mut data_node.labels),
                     value: Value::Integer(
                         Integer::build(value.into(), (size * 8).into(), Some(int_type), None)
                             .map_err(|e| e.add_span(span))?,
                     ),
                 });
-                data_node.labels = Vec::new();
             }
         }
         DirectiveData::Float(float_type) => {
@@ -183,10 +186,9 @@ fn compile_data(
                     address: section
                         .try_reserve_aligned(size)
                         .map_err(|e| e.add_span(span.clone()))?,
-                    labels: data_node.labels.into_iter().map(|x| x.0).collect(),
+                    labels: take_spanned_vec(&mut data_node.labels),
                     value,
                 });
-                data_node.labels = Vec::new();
             }
         }
         DirectiveData::String(str_type) => {
@@ -197,13 +199,12 @@ fn compile_data(
                     address: section
                         .try_reserve(data.len() as u64 + u64::from(null_terminated))
                         .map_err(|e| e.add_span(span.clone()))?,
-                    labels: data_node.labels.into_iter().map(|x| x.0).collect(),
+                    labels: take_spanned_vec(&mut data_node.labels),
                     value: Value::String {
                         data,
                         null_terminated,
                     },
                 });
-                data_node.labels = Vec::new();
             }
         }
     }
