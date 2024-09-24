@@ -68,10 +68,10 @@ impl<'a> Instruction<'a> {
         Ok(Self(parser.then_ignore(end()).boxed()))
     }
 
-    pub fn parse(&self, code: Spanned<Vec<Spanned<Token>>>) -> Result<Output, ParseError> {
+    pub fn parse(&self, code: &Spanned<Vec<Spanned<Token>>>) -> Result<Output, ParseError> {
         let end = code.1.end;
         #[allow(clippy::range_plus_one)] // Chumsky requires an inclusive range to avoid type errors
-        let stream = Stream::from_iter(end..end + 1, code.0.into_iter());
+        let stream = Stream::from_iter(end..end + 1, code.0.iter().cloned());
         Ok(self.0.parse(stream)?)
     }
 }

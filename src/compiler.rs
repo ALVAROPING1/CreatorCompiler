@@ -42,7 +42,7 @@ fn parse_instruction<'a>(
 ) -> Result<(&'a InstructionDefinition<'a>, Output), CompileError> {
     let mut errs = Vec::new();
     for inst in arch.find_instructions(name) {
-        let result = inst.syntax.parser.parse(args.clone());
+        let result = inst.syntax.parser.parse(args);
         match result {
             Ok(parsed_args) => return Ok((inst, parsed_args)),
             Err(e) => errs.push((inst.syntax.user_syntax.to_string(), e)),
