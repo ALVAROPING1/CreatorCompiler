@@ -274,3 +274,15 @@ impl Error {
         }
     }
 }
+
+pub trait SpannedErr {
+    type T;
+    fn add_span(self, span: &Span) -> Result<Self::T, Error>;
+}
+
+impl<T> SpannedErr for Result<T, Kind> {
+    type T = T;
+    fn add_span(self, span: &Span) -> Result<T, Error> {
+        self.map_err(|e| e.add_span(span))
+    }
+}

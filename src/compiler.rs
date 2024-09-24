@@ -11,6 +11,7 @@ mod label;
 use label::{Label, Table as LabelTable};
 
 mod error;
+use error::SpannedErr as _;
 pub use error::{ArgumentType, Error as CompileError, Kind as ErrorKind, OperationKind};
 
 mod bit_field;
@@ -125,10 +126,7 @@ fn compile_data(
     mut data_node: crate::parser::DataNode,
 ) -> Result<(), CompileError> {
     if let Some((alignment, span)) = alignment.take() {
-        if let Some((start, size)) = section
-            .try_align(alignment)
-            .map_err(|e| e.add_span(&span))?
-        {
+        if let Some((start, size)) = section.try_align(alignment).add_span(&span)? {
             memory.push(Data {
                 address: start,
                 labels: Vec::new(),
@@ -155,7 +153,7 @@ fn compile_data(
                 .map_err(|_| ErrorKind::UnallowedNegativeValue(value.into()).add_span(span))?
                 * u64::from(size);
             memory.push(Data {
-                address: section.try_reserve(size).map_err(|e| e.add_span(span))?,
+                address: section.try_reserve(size).add_span(span)?,
                 labels: take_spanned_vec(&mut data_node.labels),
                 value: Value::Space(size),
             });
@@ -164,13 +162,11 @@ fn compile_data(
             for (value, span) in data_node.args.0 {
                 let value = value.to_expr(&span)?.int()?;
                 memory.push(Data {
-                    address: section
-                        .try_reserve_aligned(size.into())
-                        .map_err(|e| e.add_span(&span))?,
+                    address: section.try_reserve_aligned(size.into()).add_span(&span)?,
                     labels: take_spanned_vec(&mut data_node.labels),
                     value: Value::Integer(
                         Integer::build(value.into(), (size * 8).into(), Some(int_type), None)
-                            .map_err(|e| e.add_span(&span))?,
+                            .add_span(&span)?,
                     ),
                 });
             }
@@ -184,9 +180,7 @@ fn compile_data(
                     FloatType::Double => (Value::Double(value), 8),
                 };
                 memory.push(Data {
-                    address: section
-                        .try_reserve_aligned(size)
-                        .map_err(|e| e.add_span(&span))?,
+                    address: section.try_reserve_aligned(size).add_span(&span)?,
                     labels: take_spanned_vec(&mut data_node.labels),
                     value,
                 });
@@ -199,7 +193,7 @@ fn compile_data(
                 memory.push(Data {
                     address: section
                         .try_reserve(data.len() as u64 + u64::from(null_terminated))
-                        .map_err(|e| e.add_span(&span))?,
+                        .add_span(&span)?,
                     labels: take_spanned_vec(&mut data_node.labels),
                     value: Value::String {
                         data,
@@ -279,7 +273,7 @@ pub fn compile(
                         parse_instruction(arch, (&name, span.clone()), instruction_node.args)?;
                     let addr = code_section
                         .try_reserve(u64::from(word_size) * u64::from(def.nwords))
-                        .map_err(|e| e.add_span(&span))?;
+                        .add_span(&span)?;
                     for (label, span) in &instruction_node.labels {
                         label_table.insert(label.clone(), Label::new(addr, span.clone()))?;
                     }
@@ -393,7 +387,7 @@ pub fn compile(
                                 | InstructionFieldType::OffsetWords
                         ),
                     )
-                    .map_err(|e| e.add_span(&span))?;
+                    .add_span(&span)?;
                 translated_instruction = RE
                     .replace(&translated_instruction, NoExpand(&value_str))
                     .to_string();
