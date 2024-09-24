@@ -541,7 +541,7 @@ impl<'a> Architecture<'a> {
         self.components.iter().find(|bank| {
             bank.r#type == r#type
                 && if double_precision {
-                    bank.double_precision_type.is_none()
+                    bank.double_precision_type.is_some()
                 } else {
                     matches!(
                         bank.double_precision_type,
