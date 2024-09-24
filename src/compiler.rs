@@ -112,6 +112,104 @@ impl DataToken {
     }
 }
 
+fn compile_data(
+    label_table: &mut LabelTable,
+    section: &mut Section,
+    memory: &mut Vec<Data>,
+    alignment: &mut Option<Spanned<u64>>,
+    data_type: DirectiveData,
+    mut data_node: crate::parser::DataNode,
+) -> Result<(), CompileError> {
+    if let Some((alignment, span)) = alignment.take() {
+        if let Some((start, size)) = section.try_align(alignment).map_err(|e| e.add_span(span))? {
+            memory.push(Data {
+                address: start,
+                labels: Vec::new(),
+                value: Value::Padding(size),
+            });
+        }
+    }
+    for (label, span) in &data_node.labels {
+        label_table.insert(label.to_owned(), Label::new(section.get(), span.clone()))?;
+    }
+    match data_type {
+        DirectiveData::Space(size) => {
+            let (args, span) = data_node.args;
+            if args.len() != 1 {
+                return Err(ErrorKind::IncorrectDirectiveArgumentNumber {
+                    expected: 1,
+                    found: args.len(),
+                }
+                .add_span(span));
+            };
+            let (value, span) = &args[0];
+            let value = value.to_expr(span.clone())?.int()?;
+            let size = u64::try_from(value).map_err(|_| {
+                ErrorKind::UnallowedNegativeValue(value.into()).add_span(span.clone())
+            })? * u64::from(size);
+            memory.push(Data {
+                address: section
+                    .try_reserve(size)
+                    .map_err(|e| e.add_span(span.clone()))?,
+                labels: data_node.labels.into_iter().map(|x| x.0).collect(),
+                value: Value::Space(size),
+            });
+        }
+        DirectiveData::Int(size, int_type) => {
+            for (value, span) in data_node.args.0 {
+                let value = value.to_expr(span.clone())?.int()?;
+                memory.push(Data {
+                    address: section
+                        .try_reserve_aligned(size.into())
+                        .map_err(|e| e.add_span(span.clone()))?,
+                    labels: data_node.labels.into_iter().map(|x| x.0).collect(),
+                    value: Value::Integer(
+                        Integer::build(value.into(), (size * 8).into(), Some(int_type), None)
+                            .map_err(|e| e.add_span(span))?,
+                    ),
+                });
+                data_node.labels = Vec::new();
+            }
+        }
+        DirectiveData::Float(float_type) => {
+            for (value, span) in data_node.args.0 {
+                let value = value.to_expr(span.clone())?.float()?;
+                #[allow(clippy::cast_possible_truncation)]
+                let (value, size) = match float_type {
+                    FloatType::Float => (Value::Float(value as f32), 4),
+                    FloatType::Double => (Value::Double(value), 8),
+                };
+                memory.push(Data {
+                    address: section
+                        .try_reserve_aligned(size)
+                        .map_err(|e| e.add_span(span.clone()))?,
+                    labels: data_node.labels.into_iter().map(|x| x.0).collect(),
+                    value,
+                });
+                data_node.labels = Vec::new();
+            }
+        }
+        DirectiveData::String(str_type) => {
+            for (value, span) in data_node.args.0 {
+                let data = value.into_string(span.clone())?;
+                let null_terminated = str_type == StringType::AsciiNullEnd;
+                memory.push(Data {
+                    address: section
+                        .try_reserve(data.len() as u64 + u64::from(null_terminated))
+                        .map_err(|e| e.add_span(span.clone()))?,
+                    labels: data_node.labels.into_iter().map(|x| x.0).collect(),
+                    value: Value::String {
+                        data,
+                        null_terminated,
+                    },
+                });
+                data_node.labels = Vec::new();
+            }
+        }
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_lines)]
 pub fn compile(
     arch: &Architecture,
@@ -130,8 +228,8 @@ pub fn compile(
             ASTNode::DataSegment(data) => {
                 for mut data_node in data {
                     let action = arch.find_directive(&data_node.name.0).ok_or_else(|| {
-                        ErrorKind::UnknownDirective(data_node.name.0)
-                            .add_span(data_node.name.1.clone())
+                        let directive = std::mem::take(&mut data_node.name.0);
+                        ErrorKind::UnknownDirective(directive).add_span(data_node.name.1.clone())
                     })?;
                     match action {
                         DirectiveAction::Segment(_) | DirectiveAction::GlobalSymbol(_) => {
@@ -161,109 +259,14 @@ pub fn compile(
                             ));
                             continue;
                         }
-                        _ => {}
-                    }
-                    if let Some((alignment, span)) = alignment.take() {
-                        if let Some((start, size)) = data_section
-                            .try_align(alignment)
-                            .map_err(|e| e.add_span(span))?
-                        {
-                            data_memory.push(Data {
-                                address: start,
-                                labels: Vec::new(),
-                                value: Value::Padding(size),
-                            });
-                        }
-                    }
-                    for (label, span) in &data_node.labels {
-                        label_table.insert(
-                            label.to_owned(),
-                            Label::new(data_section.get(), span.clone()),
-                        )?;
-                    }
-                    match action {
-                        DirectiveAction::Segment(_)
-                        | DirectiveAction::GlobalSymbol(_)
-                        | DirectiveAction::Alignment(_) => unreachable!(),
-                        DirectiveAction::Data(DirectiveData::Space(size)) => {
-                            let (args, span) = data_node.args;
-                            if args.len() != 1 {
-                                return Err(ErrorKind::IncorrectDirectiveArgumentNumber {
-                                    expected: 1,
-                                    found: args.len(),
-                                }
-                                .add_span(span));
-                            };
-                            let (value, span) = &args[0];
-                            let value = value.to_expr(span.clone())?.int()?;
-                            let size = u64::try_from(value).map_err(|_| {
-                                ErrorKind::UnallowedNegativeValue(value.into())
-                                    .add_span(span.clone())
-                            })? * u64::from(size);
-                            data_memory.push(Data {
-                                address: data_section
-                                    .try_reserve(size)
-                                    .map_err(|e| e.add_span(span.clone()))?,
-                                labels: data_node.labels.into_iter().map(|x| x.0).collect(),
-                                value: Value::Space(size),
-                            });
-                        }
-                        DirectiveAction::Data(DirectiveData::Int(size, int_type)) => {
-                            for (value, span) in data_node.args.0 {
-                                let value = value.to_expr(span.clone())?.int()?;
-                                data_memory.push(Data {
-                                    address: data_section
-                                        .try_reserve_aligned(size.into())
-                                        .map_err(|e| e.add_span(span.clone()))?,
-                                    labels: data_node.labels.into_iter().map(|x| x.0).collect(),
-                                    value: Value::Integer(
-                                        Integer::build(
-                                            value.into(),
-                                            (size * 8).into(),
-                                            Some(int_type),
-                                            None,
-                                        )
-                                        .map_err(|e| e.add_span(span))?,
-                                    ),
-                                });
-                                data_node.labels = Vec::new();
-                            }
-                        }
-                        DirectiveAction::Data(DirectiveData::Float(float_type)) => {
-                            for (value, span) in data_node.args.0 {
-                                let value = value.to_expr(span.clone())?.float()?;
-                                #[allow(clippy::cast_possible_truncation)]
-                                let (value, size) = match float_type {
-                                    FloatType::Float => (Value::Float(value as f32), 4),
-                                    FloatType::Double => (Value::Double(value), 8),
-                                };
-                                data_memory.push(Data {
-                                    address: data_section
-                                        .try_reserve_aligned(size)
-                                        .map_err(|e| e.add_span(span.clone()))?,
-                                    labels: data_node.labels.into_iter().map(|x| x.0).collect(),
-                                    value,
-                                });
-                                data_node.labels = Vec::new();
-                            }
-                        }
-                        DirectiveAction::Data(DirectiveData::String(str_type)) => {
-                            for (value, span) in data_node.args.0 {
-                                let data = value.into_string(span.clone())?;
-                                let null_terminated = str_type == StringType::AsciiNullEnd;
-                                data_memory.push(Data {
-                                    address: data_section
-                                        .try_reserve(data.len() as u64 + u64::from(null_terminated))
-                                        .map_err(|e| e.add_span(span.clone()))?,
-                                    labels: data_node.labels.into_iter().map(|x| x.0).collect(),
-                                    value: Value::String {
-                                        data,
-                                        null_terminated,
-                                    },
-                                });
-                                data_node.labels = Vec::new();
-                            }
-                        }
+                        DirectiveAction::Data(data_type) => compile_data(
+                            &mut label_table,
+                            &mut data_section,
+                            &mut data_memory,
+                            &mut alignment,
+                            data_type,
+                            data_node,
+                        )?,
                     }
                 }
             }
