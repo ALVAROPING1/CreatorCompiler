@@ -127,9 +127,7 @@ impl Kind {
             Self::MissingMainLabel(main) => {
                 format!("Consider adding a label called {main} to an instruction")
             }
-            Self::MainOutsideCode(..) => {
-                format!("Consider moving the label to an instruction")
-            }
+            Self::MainOutsideCode(..) => "Consider moving the label to an instruction".into(),
             Self::IncorrectDirectiveArgumentNumber { expected, found } => {
                 let expected = usize::from(*expected);
                 let (msg, n) = if expected > *found {
