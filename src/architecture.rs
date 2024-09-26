@@ -14,7 +14,8 @@ pub struct Architecture<'a> {
     /// memory alignment, main function, passing convention, and sensitive register
     /// name
     #[serde(borrow)]
-    arch_conf: [Pair<MetadataKeys, &'a str>; 8],
+    #[schemars(with = "[json::Config<'a>; 8]")]
+    arch_conf: Config<'a>,
     /// Components (register banks) of the architecture. It's assumed that the first register of
     /// the first bank will contain the program counter
     components: Vec<Component<'a>>,
@@ -31,30 +32,34 @@ pub struct Architecture<'a> {
     memory_layout: [Pair<MemoryLayoutKeys, BaseN<16>>; 6],
 }
 
-/// Architecture metadata attribute types
-#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
-pub enum MetadataKeys {
+/// Architecture metadata attributes
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
+#[serde(try_from = "[json::Config<'a>; 8]")]
+pub struct Config<'a> {
     /// Name of the architecture
-    Name,
+    name: &'a str,
     /// Word size
-    Bits,
+    word_size: u8,
     /// Description of the architecture
-    Description,
+    description: &'a str,
     /// Storage format of the architecture (big/little endian)
-    #[serde(rename = "Data Format")]
-    DataFormat,
+    data_format: DataFormat,
     /// Whether to enable memory alignment
-    #[serde(rename = "Memory Alignment")]
-    MemoryAlignment,
+    memory_alignment: bool,
     /// Name of the `main` function of the program
-    #[serde(rename = "Main Function")]
-    MainFunction,
+    main_function: &'a str,
     /// Whether to enable function parameter passing convention checks
-    #[serde(rename = "Passing Convention")]
-    PassingConvention,
+    passing_convention: bool,
     /// TODO: what does this represent? is this used currently?
-    #[serde(rename = "Sensitive Register Name")]
-    SensitiveRegisterName,
+    sensitive_register_name: bool,
+}
+
+/// Endianness of data in the architecture
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum DataFormat {
+    BigEndian,
+    LittleEndian,
 }
 
 /// Register bank
@@ -481,13 +486,13 @@ impl<'a> Architecture<'a> {
 
     /// Gets the word size of the architecture
     #[must_use]
-    pub fn word_size(&self) -> u8 {
-        self.arch_conf[1].value.parse().unwrap()
+    pub const fn word_size(&self) -> u8 {
+        self.arch_conf.word_size
     }
 
     #[must_use]
     pub const fn main_label(&self) -> &str {
-        self.arch_conf[5].value
+        self.arch_conf.main_function
     }
 
     /// Gets the section start/end addresses

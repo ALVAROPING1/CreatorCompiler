@@ -1,8 +1,9 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use super::{utils, utils::StringOrT, DirectiveAction};
+use super::{utils, DataFormat, DirectiveAction};
 use super::{FloatType, IntegerType, StringType};
+use utils::{Bool, StringOrT};
 
 /// Directive specification
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
@@ -140,6 +141,69 @@ impl<'a> TryFrom<InstructionSyntax<'a>> for super::InstructionSyntax<'a> {
             output_syntax: value.signature_definition,
             user_syntax: format(value.signature_raw),
             fields: value.fields,
+        })
+    }
+}
+
+/// Architecture metadata attributes
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
+#[serde(tag = "name", content = "value")]
+pub enum Config<'a> {
+    /// Name of the architecture
+    Name(&'a str),
+    /// Word size
+    Bits(
+        #[schemars(with = "utils::StringOrT<u8>")]
+        #[serde(deserialize_with = "utils::from_str")]
+        u8,
+    ),
+    /// Description of the architecture
+    Description(&'a str),
+    /// Storage format of the architecture (big/little endian)
+    #[serde(rename = "Data Format")]
+    DataFormat(DataFormat),
+    /// Whether to enable memory alignment
+    #[serde(rename = "Memory Alignment")]
+    MemoryAlignment(Bool),
+    /// Name of the `main` function of the program
+    #[serde(rename = "Main Function")]
+    MainFunction(&'a str),
+    /// Whether to enable function parameter passing convention checks
+    #[serde(rename = "Passing Convention")]
+    PassingConvention(Bool),
+    /// TODO: what does this represent? is this used currently?
+    #[serde(rename = "Sensitive Register Name")]
+    SensitiveRegisterName(Bool),
+}
+
+impl<'a> TryFrom<[Config<'a>; 8]> for super::Config<'a> {
+    type Error = &'static str;
+    fn try_from(value: [Config<'a>; 8]) -> Result<Self, Self::Error> {
+        macro_rules! unwrap_field {
+            ($i:expr, $name:ident) => {
+                match value[$i] {
+                    Config::$name(x) => x.into(),
+                    _ => {
+                        return Err(concat!(
+                            "unexpected key at index ",
+                            stringify!($i),
+                            ", expected key `",
+                            stringify!($name),
+                            "`"
+                        ))
+                    }
+                }
+            };
+        }
+        Ok(Self {
+            name: unwrap_field!(0, Name),
+            word_size: unwrap_field!(1, Bits),
+            description: unwrap_field!(2, Description),
+            data_format: unwrap_field!(3, DataFormat),
+            memory_alignment: unwrap_field!(4, MemoryAlignment),
+            main_function: unwrap_field!(5, MainFunction),
+            passing_convention: unwrap_field!(6, PassingConvention),
+            sensitive_register_name: unwrap_field!(7, SensitiveRegisterName),
         })
     }
 }

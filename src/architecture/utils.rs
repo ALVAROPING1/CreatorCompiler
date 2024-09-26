@@ -37,6 +37,18 @@ impl<'de, const N: u8> Deserialize<'de> for BaseN<N> {
     }
 }
 
+pub fn from_str<'de, T, D>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: FromStr + Deserialize<'de>,
+    <T as FromStr>::Err: Display,
+{
+    match Deserialize::deserialize(deserializer)? {
+        StringOrT::T(i) => Ok(i),
+        StringOrT::String(s) => s.parse::<T>().map_err(serde::de::Error::custom),
+    }
+}
+
 pub fn optional_from_str<'de, T, D>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: Deserializer<'de>,
@@ -47,5 +59,22 @@ where
         None => Ok(None),
         Some(StringOrT::T(i)) => Ok(Some(i)),
         Some(StringOrT::String(s)) => s.parse::<T>().map(Some).map_err(serde::de::Error::custom),
+    }
+}
+
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Bool {
+    #[serde(rename = "1")]
+    True,
+    #[serde(rename = "0")]
+    False,
+}
+
+impl From<Bool> for bool {
+    fn from(value: Bool) -> Self {
+        match value {
+            Bool::True => true,
+            Bool::False => false,
+        }
     }
 }
