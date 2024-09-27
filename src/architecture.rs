@@ -1,6 +1,8 @@
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
 
+use std::ops::Range;
+
 mod utils;
 use utils::{BaseN, Integer, Number, Pair};
 
@@ -28,8 +30,8 @@ pub struct Architecture<'a> {
     directives: Vec<Directive<'a>>,
     /// Memory layout of the architecture
     /// Order of elements is assumed to be text start/end, data start/end, and stack start/end
-    #[schemars(with = "[Pair<MemoryLayoutKeys, String>; 6]")]
-    memory_layout: [Pair<MemoryLayoutKeys, BaseN<16>>; 6],
+    #[schemars(with = "[Pair<json::MemoryLayoutKeys, String>; 6]")]
+    memory_layout: MemoryLayout,
 }
 
 /// Architecture metadata attributes
@@ -413,21 +415,16 @@ pub enum FloatType {
     Double,
 }
 
-/// Memory layout attribute keys
-#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
-pub enum MemoryLayoutKeys {
-    #[serde(rename = "text start")]
-    TextStart,
-    #[serde(rename = "text end")]
-    TextEnd,
-    #[serde(rename = "data start")]
-    DataStart,
-    #[serde(rename = "data end")]
-    DataEnd,
-    #[serde(rename = "stack start")]
-    StackStart,
-    #[serde(rename = "stack end")]
-    StackEnd,
+/// Memory layout of the architecture
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+#[serde(try_from = "[Pair<json::MemoryLayoutKeys, BaseN<16>>; 6]")]
+pub struct MemoryLayout {
+    /// Addresses reserved for the text segment
+    text: Range<u64>,
+    /// Addresses reserved for the data segment
+    data: Range<u64>,
+    /// Addresses reserved for the stack segment
+    stack: Range<u64>,
 }
 
 impl<'a> Architecture<'a> {
@@ -495,29 +492,22 @@ impl<'a> Architecture<'a> {
         self.arch_conf.main_function
     }
 
-    /// Gets the section start/end addresses
-    ///
-    /// # Parameters
-    ///
-    /// * `i`: index of the section to get (text, data, stack)
-    #[must_use]
-    const fn section_limits(&self, i: usize) -> (u64, u64) {
-        (
-            self.memory_layout[2 * i].value.0,
-            self.memory_layout[2 * i + 1].value.0,
-        )
-    }
-
     /// Gets the code section's start/end addresses
     #[must_use]
     pub const fn code_section_limits(&self) -> (u64, u64) {
-        self.section_limits(0)
+        (
+            self.memory_layout.text.start,
+            self.memory_layout.text.end - 1,
+        )
     }
 
     /// Gets the data section's start/end addresses
     #[must_use]
     pub const fn data_section_limits(&self) -> (u64, u64) {
-        self.section_limits(1)
+        (
+            self.memory_layout.data.start,
+            self.memory_layout.data.end - 1,
+        )
     }
 
     /// Gets the instructions with the given name

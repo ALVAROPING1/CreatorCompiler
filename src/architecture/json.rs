@@ -3,7 +3,7 @@ use serde::Deserialize;
 
 use super::{utils, DataFormat, DirectiveAction};
 use super::{FloatType, IntegerType, StringType};
-use utils::{Bool, StringOrT};
+use utils::{BaseN, Bool, Pair, StringOrT};
 
 /// Directive specification
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
@@ -176,6 +176,18 @@ pub enum Config<'a> {
     SensitiveRegisterName(Bool),
 }
 
+macro_rules! key_error {
+    ($i:expr, $name:ident) => {
+        return Err(concat!(
+            "unexpected key at index ",
+            stringify!($i),
+            ", expected key `",
+            stringify!($name),
+            "`"
+        ))
+    };
+}
+
 impl<'a> TryFrom<[Config<'a>; 8]> for super::Config<'a> {
     type Error = &'static str;
     fn try_from(value: [Config<'a>; 8]) -> Result<Self, Self::Error> {
@@ -183,15 +195,7 @@ impl<'a> TryFrom<[Config<'a>; 8]> for super::Config<'a> {
             ($i:expr, $name:ident) => {
                 match value[$i] {
                     Config::$name(x) => x.into(),
-                    _ => {
-                        return Err(concat!(
-                            "unexpected key at index ",
-                            stringify!($i),
-                            ", expected key `",
-                            stringify!($name),
-                            "`"
-                        ))
-                    }
+                    _ => key_error!($i, $name),
                 }
             };
         }
@@ -205,5 +209,68 @@ impl<'a> TryFrom<[Config<'a>; 8]> for super::Config<'a> {
             passing_convention: unwrap_field!(6, PassingConvention),
             sensitive_register_name: unwrap_field!(7, SensitiveRegisterName),
         })
+    }
+}
+
+/// Memory layout attribute keys
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
+pub enum MemoryLayoutKeys {
+    #[serde(rename = "text start")]
+    TextStart,
+    #[serde(rename = "text end")]
+    TextEnd,
+    #[serde(rename = "data start")]
+    DataStart,
+    #[serde(rename = "data end")]
+    DataEnd,
+    #[serde(rename = "stack start")]
+    StackStart,
+    #[serde(rename = "stack end")]
+    StackEnd,
+}
+
+impl TryFrom<[Pair<MemoryLayoutKeys, BaseN<16>>; 6]> for super::MemoryLayout {
+    type Error = &'static str;
+    fn try_from(value: [Pair<MemoryLayoutKeys, BaseN<16>>; 6]) -> Result<Self, Self::Error> {
+        macro_rules! unwrap_field {
+            ($i:expr, $name:ident) => {
+                match value[$i].name {
+                    MemoryLayoutKeys::$name => value[$i].value.0,
+                    _ => key_error!($i, $name),
+                }
+            };
+        }
+        macro_rules! check_empty {
+            ($a:ident) => {
+                if $a.is_empty() {
+                    return Err(concat!("section `", stringify!($a), "` is empty"));
+                }
+            };
+        }
+        macro_rules! check_overlap {
+            ($a:ident, $b:ident) => {
+                if ($a.start >= $b.start && $a.start < $b.end)
+                    || ($b.start >= $a.start && $b.start < $a.end)
+                {
+                    return Err(concat!(
+                        "section `",
+                        stringify!($a),
+                        "` overlaps with section `",
+                        stringify!($b),
+                        "`"
+                    ));
+                }
+            };
+        }
+        let text = unwrap_field!(0, TextStart)..unwrap_field!(1, TextEnd) + 1;
+        let data = unwrap_field!(2, DataStart)..unwrap_field!(3, DataEnd) + 1;
+        let stack = unwrap_field!(4, StackStart)..unwrap_field!(5, StackEnd) + 1;
+        check_empty!(text);
+        check_empty!(data);
+        check_empty!(stack);
+        check_overlap!(text, data);
+        check_overlap!(text, stack);
+        check_overlap!(data, stack);
+        Ok(Self { text, data, stack })
     }
 }
