@@ -15,11 +15,11 @@ impl Section {
     ///
     /// * `name`: name of the memory section
     /// * `bounds`: start/end addresses of the section
-    pub const fn new(name: &'static str, bounds: (u64, u64)) -> Self {
+    pub const fn new(name: &'static str, bounds: &std::ops::RangeInclusive<u64>) -> Self {
         Self {
             name,
-            address: bounds.0,
-            end: bounds.1 + 1,
+            address: *bounds.start(),
+            end: *bounds.end(),
         }
     }
 
@@ -42,7 +42,7 @@ impl Section {
     pub fn try_reserve(&mut self, size: u64) -> Result<u64, ErrorKind> {
         let res = self.address;
         self.address += size;
-        if self.address > self.end {
+        if self.address - 1 > self.end {
             Err(ErrorKind::MemorySectionFull(self.name))
         } else {
             Ok(res)
@@ -100,7 +100,7 @@ mod test {
 
     #[test]
     fn reserve1() {
-        let mut section = Section::new("test", (0, 3));
+        let mut section = Section::new("test", &(0..=3));
         assert_eq!(section.try_reserve(1), Ok(0));
         assert_eq!(section.try_reserve(1), Ok(1));
         assert_eq!(section.try_reserve(1), Ok(2));
@@ -114,7 +114,7 @@ mod test {
     #[test]
     fn reserve4() {
         for i in 1..=4 {
-            let mut section = Section::new("test2", (0, 11));
+            let mut section = Section::new("test2", &(0..=11));
             assert_eq!(section.try_reserve(i), Ok(0));
             assert_eq!(section.try_reserve(4), Ok(i));
             assert_eq!(section.try_reserve(4), Ok(i + 4));
@@ -128,7 +128,7 @@ mod test {
     #[test]
     fn reserve6() {
         for i in 1..=6 {
-            let mut section = Section::new("test3", (0, 17));
+            let mut section = Section::new("test3", &(0..=17));
             assert_eq!(section.try_reserve(i), Ok(0));
             assert_eq!(section.try_reserve(6), Ok(i));
             assert_eq!(section.try_reserve(6), Ok(i + 6));
@@ -141,7 +141,7 @@ mod test {
 
     #[test]
     fn already_aligned() {
-        let mut section = Section::new("test4", (0, 11));
+        let mut section = Section::new("test4", &(0..=11));
         assert_eq!(section.try_align(4), Ok(None));
         assert_eq!(section.try_reserve(4), Ok(0));
         assert_eq!(section.get(), 4);
@@ -152,7 +152,7 @@ mod test {
     #[test]
     fn align_memory_limit() {
         for i in 1..4 {
-            let mut section = Section::new("test5", (0, 3));
+            let mut section = Section::new("test5", &(0..=3));
             assert_eq!(section.try_reserve(i), Ok(0));
             assert_eq!(section.try_align(4), Ok(Some((i, 4 - i))));
         }
@@ -161,7 +161,7 @@ mod test {
     #[test]
     fn align_fail() {
         for i in 1..2 {
-            let mut section = Section::new("test6", (0, 2));
+            let mut section = Section::new("test6", &(0..=2));
             assert_eq!(section.try_align(4), Ok(None));
             assert_eq!(section.try_reserve(i), Ok(0));
             assert_eq!(
@@ -174,7 +174,7 @@ mod test {
     #[test]
     fn align4() {
         for i in 1..4 {
-            let mut section = Section::new("test7", (0, 11));
+            let mut section = Section::new("test7", &(0..=11));
             assert_eq!(section.try_reserve(i), Ok(0));
             assert_eq!(section.try_align(4), Ok(Some((i, 4 - i))));
             assert_eq!(section.get(), 4);
@@ -185,7 +185,7 @@ mod test {
     #[test]
     fn align6() {
         for i in 1..6 {
-            let mut section = Section::new("test8", (0, 17));
+            let mut section = Section::new("test8", &(0..=17));
             assert_eq!(section.try_reserve(i), Ok(0));
             assert_eq!(section.try_align(6), Ok(Some((i, 6 - i))));
             assert_eq!(section.get(), 6);

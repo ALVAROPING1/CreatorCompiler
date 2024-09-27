@@ -1,7 +1,7 @@
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
 
-use std::ops::Range;
+use std::ops::RangeInclusive;
 
 mod utils;
 use utils::{BaseN, Integer, Number, Pair};
@@ -420,11 +420,11 @@ pub enum FloatType {
 #[serde(try_from = "[Pair<json::MemoryLayoutKeys, BaseN<16>>; 6]")]
 pub struct MemoryLayout {
     /// Addresses reserved for the text segment
-    text: Range<u64>,
+    text: RangeInclusive<u64>,
     /// Addresses reserved for the data segment
-    data: Range<u64>,
+    data: RangeInclusive<u64>,
     /// Addresses reserved for the stack segment
-    stack: Range<u64>,
+    stack: RangeInclusive<u64>,
 }
 
 impl<'a> Architecture<'a> {
@@ -494,20 +494,14 @@ impl<'a> Architecture<'a> {
 
     /// Gets the code section's start/end addresses
     #[must_use]
-    pub const fn code_section_limits(&self) -> (u64, u64) {
-        (
-            self.memory_layout.text.start,
-            self.memory_layout.text.end - 1,
-        )
+    pub const fn code_section(&self) -> &RangeInclusive<u64> {
+        &self.memory_layout.text
     }
 
     /// Gets the data section's start/end addresses
     #[must_use]
-    pub const fn data_section_limits(&self) -> (u64, u64) {
-        (
-            self.memory_layout.data.start,
-            self.memory_layout.data.end - 1,
-        )
+    pub const fn data_section(&self) -> &RangeInclusive<u64> {
+        &self.memory_layout.data
     }
 
     /// Gets the instructions with the given name

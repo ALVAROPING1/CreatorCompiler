@@ -249,8 +249,8 @@ impl TryFrom<[Pair<MemoryLayoutKeys, BaseN<16>>; 6]> for super::MemoryLayout {
         }
         macro_rules! check_overlap {
             ($a:ident, $b:ident) => {
-                if ($a.start >= $b.start && $a.start < $b.end)
-                    || ($b.start >= $a.start && $b.start < $a.end)
+                if ($a.start() >= $b.start() && $a.start() <= $b.end())
+                    || ($b.start() >= $a.start() && $b.start() <= $a.end())
                 {
                     return Err(concat!(
                         "section `",
@@ -262,9 +262,9 @@ impl TryFrom<[Pair<MemoryLayoutKeys, BaseN<16>>; 6]> for super::MemoryLayout {
                 }
             };
         }
-        let text = unwrap_field!(0, TextStart)..unwrap_field!(1, TextEnd) + 1;
-        let data = unwrap_field!(2, DataStart)..unwrap_field!(3, DataEnd) + 1;
-        let stack = unwrap_field!(4, StackStart)..unwrap_field!(5, StackEnd) + 1;
+        let text = unwrap_field!(0, TextStart)..=unwrap_field!(1, TextEnd);
+        let data = unwrap_field!(2, DataStart)..=unwrap_field!(3, DataEnd);
+        let stack = unwrap_field!(4, StackStart)..=unwrap_field!(5, StackEnd);
         check_empty!(text);
         check_empty!(data);
         check_empty!(stack);

@@ -212,8 +212,8 @@ pub fn compile(
     ast: Vec<ASTNode>,
 ) -> Result<(LabelTable, Vec<Instruction>, Vec<Data>), CompileError> {
     let mut label_table = LabelTable::default();
-    let mut code_section = Section::new("Instructions", arch.code_section_limits());
-    let mut data_section = Section::new("Data", arch.data_section_limits());
+    let mut code_section = Section::new("Instructions", arch.code_section());
+    let mut data_section = Section::new("Data", arch.data_section());
     let word_size = arch.word_size() / 8;
     let mut parsed_instructions = Vec::new();
     let mut data_memory = Vec::new();
@@ -293,8 +293,8 @@ pub fn compile(
             return Err(ErrorKind::MissingMainLabel(arch.main_label().to_owned()).add_span(&(0..0)));
         }
         Some(main) => {
-            let (start, end) = arch.code_section_limits();
-            if !(start..=end).contains(&main.address()) {
+            let text = arch.code_section();
+            if !text.contains(&main.address()) {
                 return Err(
                     ErrorKind::MainOutsideCode(arch.main_label().to_owned()).add_span(main.span())
                 );
