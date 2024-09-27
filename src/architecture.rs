@@ -107,9 +107,12 @@ pub enum PrecisionType {
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Clone)]
 pub struct Register<'a> {
     /// List of aliases
+    #[serde(borrow)]
     name: Vec<&'a str>,
     /// Size
-    nbits: &'a str,
+    #[serde(deserialize_with = "utils::from_str")]
+    #[schemars(with = "utils::StringOrT<u8>")]
+    nbits: u8,
     /// Current value of the register
     value: Number,
     /// Default value of the register
