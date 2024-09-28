@@ -3,7 +3,7 @@ use serde::Deserialize;
 
 use super::{utils, DataFormat, DirectiveAction};
 use super::{FloatType, IntegerType, StringType};
-use utils::{BaseN, Bool, Pair, StringOrT};
+use utils::{BaseN, Bool, NonEmptyRangeInclusiveU64, NonEmptyRangeInclusiveU8, Pair, StringOrT};
 
 /// Directive specification
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
@@ -87,18 +87,22 @@ impl TryFrom<BitRange> for super::BitRange {
     type Error = &'static str;
 
     fn try_from(value: BitRange) -> Result<Self, Self::Error> {
+        let range =
+            |(msb, lsb)| NonEmptyRangeInclusiveU8::build(lsb, msb).ok_or("invalid empty range");
         Ok(Self::new(match (value.startbit, value.stopbit) {
-            (BitPosition::Single(start), BitPosition::Single(end)) => vec![(start, end)],
-            (BitPosition::Multiple(start), BitPosition::Multiple(end)) => {
-                if start.len() != end.len() {
+            (BitPosition::Single(msb), BitPosition::Single(lsb)) => vec![range((msb, lsb))?],
+            (BitPosition::Multiple(msb), BitPosition::Multiple(lsb)) => {
+                if msb.len() != lsb.len() {
                     return Err("the startbit and endbit fields must have the same length if they are vectors");
                 }
-                if start.is_empty() {
+                if msb.is_empty() {
                     return Err(
                         "the startbit and endbit fields must not be empty if they are vectors",
                     );
                 }
-                std::iter::zip(start, end).collect()
+                std::iter::zip(msb, lsb)
+                    .map(range)
+                    .collect::<Result<_, _>>()?
             }
             _ => return Err("the type of the startbit and endbit fields should be the same"),
         }))
@@ -240,18 +244,9 @@ impl TryFrom<[Pair<MemoryLayoutKeys, BaseN<16>>; 6]> for super::MemoryLayout {
                 }
             };
         }
-        macro_rules! check_empty {
-            ($a:ident) => {
-                if $a.is_empty() {
-                    return Err(concat!("section `", stringify!($a), "` is empty"));
-                }
-            };
-        }
         macro_rules! check_overlap {
             ($a:ident, $b:ident) => {
-                if ($a.start() >= $b.start() && $a.start() <= $b.end())
-                    || ($b.start() >= $a.start() && $b.start() <= $a.end())
-                {
+                if ($a.contains($b.start()) || $b.contains($a.start())) {
                     return Err(concat!(
                         "section `",
                         stringify!($a),
@@ -262,12 +257,15 @@ impl TryFrom<[Pair<MemoryLayoutKeys, BaseN<16>>; 6]> for super::MemoryLayout {
                 }
             };
         }
-        let text = unwrap_field!(0, TextStart)..=unwrap_field!(1, TextEnd);
-        let data = unwrap_field!(2, DataStart)..=unwrap_field!(3, DataEnd);
-        let stack = unwrap_field!(4, StackStart)..=unwrap_field!(5, StackEnd);
-        check_empty!(text);
-        check_empty!(data);
-        check_empty!(stack);
+        let text = (unwrap_field!(0, TextStart), unwrap_field!(1, TextEnd));
+        let data = (unwrap_field!(2, DataStart), unwrap_field!(3, DataEnd));
+        let stack = (unwrap_field!(4, StackStart), unwrap_field!(5, StackEnd));
+        let text =
+            NonEmptyRangeInclusiveU64::build(text.0, text.1).ok_or("section `text` is empty")?;
+        let data =
+            NonEmptyRangeInclusiveU64::build(data.0, data.1).ok_or("section `data` is empty")?;
+        let stack =
+            NonEmptyRangeInclusiveU64::build(stack.0, stack.1).ok_or("section `stack` is empty")?;
         check_overlap!(text, data);
         check_overlap!(text, stack);
         check_overlap!(data, stack);

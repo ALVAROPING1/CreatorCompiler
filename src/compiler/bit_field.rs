@@ -22,8 +22,8 @@ impl BitField {
     /// * `start`: starting bit of the range
     /// * `data`: binary string of bits to use as a replacement
     fn replace_range(&mut self, start: usize, data: &str) {
-        let start = self.0.len() - (start + 1);
-        let end = start + data.len();
+        let end = self.0.len() - start;
+        let start = end - data.len();
         assert!(end <= self.0.len(), "{} <= {}", end, self.0.len());
         self.0.replace_range(start..end, data);
     }
@@ -43,11 +43,12 @@ impl BitField {
         let field_size = range.size();
         let data = Integer::build(data, field_size, None, Some(signed))?.to_string();
         let mut data = &data[data.len() - field_size..];
-        for (start, end) in range.iter() {
-            let size = usize::from(start - end + 1);
-            self.replace_range((*start).into(), &data[..size]);
+        for segment in range.iter() {
+            let size = segment.size().get().into();
+            self.replace_range(segment.start().into(), &data[..size]);
             data = &data[size..];
         }
+        assert_eq!(data.len(), 0, "(data.len() == {}) != 0", data.len());
         Ok(())
     }
 
@@ -60,7 +61,18 @@ impl BitField {
 
 #[cfg(test)]
 mod test {
+    use crate::architecture::NonEmptyRangeInclusiveU8;
+
     use super::{BitField, BitRange, ErrorKind};
+
+    fn range(segments: Vec<(u8, u8)>) -> BitRange {
+        BitRange::new(
+            segments
+                .into_iter()
+                .map(|(a, b)| NonEmptyRangeInclusiveU8::build(b, a).expect("This shouldn't fail"))
+                .collect(),
+        )
+    }
 
     #[test]
     fn new() {
@@ -74,13 +86,9 @@ mod test {
     #[test]
     fn replace_contiguous() {
         let mut field = BitField::new(16);
-        assert!(field
-            .replace(&BitRange::new(vec![(15, 12)]), 0b1111, false,)
-            .is_ok());
+        assert!(field.replace(&range(vec![(15, 12)]), 0b1111, false).is_ok());
         assert_eq!(field.as_str(), "1111000000000000");
-        assert!(field
-            .replace(&BitRange::new(vec![(2, 0)]), 0b101, false,)
-            .is_ok());
+        assert!(field.replace(&range(vec![(2, 0)]), 0b101, false,).is_ok());
         assert_eq!(field.as_str(), "1111000000000101");
     }
 
@@ -88,7 +96,7 @@ mod test {
     fn replace_separated() {
         let mut field = BitField::new(16);
         assert!(field
-            .replace(&BitRange::new(vec![(15, 12), (7, 6)]), 0b10_0111, false,)
+            .replace(&range(vec![(15, 12), (7, 6)]), 0b10_0111, false,)
             .is_ok());
         assert_eq!(field.as_str(), "1001000011000000");
     }
@@ -97,11 +105,11 @@ mod test {
     fn replace_error() {
         let mut field = BitField::new(16);
         assert_eq!(
-            field.replace(&BitRange::new(vec![(15, 12)]), 18, false,),
+            field.replace(&range(vec![(15, 12)]), 18, false,),
             Err(ErrorKind::IntegerTooBig(18, 0..16))
         );
         assert_eq!(
-            field.replace(&BitRange::new(vec![(15, 12)]), 8, true),
+            field.replace(&range(vec![(15, 12)]), 8, true),
             Err(ErrorKind::IntegerTooBig(8, -8..8))
         );
     }

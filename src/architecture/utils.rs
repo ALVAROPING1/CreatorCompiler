@@ -78,3 +78,50 @@ impl From<Bool> for bool {
         }
     }
 }
+
+/// Inclusive range guaranteed to be non-empty
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct NonEmptyRangeInclusive<Idx, NonZeroIdx> {
+    start: Idx,
+    size: NonZeroIdx,
+}
+
+macro_rules! impl_NonEmptyRangeInclusive {
+    ($(($ty:ty, $name:ident)),+) => {
+        $(
+            impl NonEmptyRangeInclusive<$ty, std::num::NonZero<$ty>> {
+                pub fn build(start: $ty, end: $ty) -> Option<Self> {
+                    let size = end.checked_sub(start)? + 1;
+                    Some(Self { start, size: std::num::NonZero::new(size)? })
+                }
+
+                pub const fn start(&self) -> $ty {
+                    self.start
+                }
+
+                pub const fn size(&self) -> std::num::NonZero<$ty> {
+                    self.size
+                }
+
+                pub const fn end(&self) -> $ty {
+                    self.start + self.size.get() - 1
+                }
+
+                pub const fn contains(&self, x: $ty) -> bool {
+                    if let Some(x) = x.checked_sub(self.start) {
+                        x < self.size.get()
+                    } else {
+                        false
+                    }
+                }
+            }
+
+            pub type $name = NonEmptyRangeInclusive<$ty, std::num::NonZero<$ty>>;
+        )+
+    };
+}
+
+impl_NonEmptyRangeInclusive!(
+    (u64, NonEmptyRangeInclusiveU64),
+    (u8, NonEmptyRangeInclusiveU8)
+);

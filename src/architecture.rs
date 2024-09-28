@@ -1,10 +1,9 @@
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
 
-use std::ops::RangeInclusive;
-
 mod utils;
 use utils::{BaseN, Integer, Number, Pair};
+pub use utils::{NonEmptyRangeInclusiveU64, NonEmptyRangeInclusiveU8};
 
 mod json;
 
@@ -245,7 +244,7 @@ pub struct InstructionField<'a, BitRange> {
 /// Range of bits of a field in a binary instruction
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 #[serde(try_from = "json::BitRange")]
-pub struct BitRange(Vec<(u8, u8)>);
+pub struct BitRange(Vec<NonEmptyRangeInclusiveU8>);
 
 /// Allowed instruction field types
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
@@ -423,11 +422,11 @@ pub enum FloatType {
 #[serde(try_from = "[Pair<json::MemoryLayoutKeys, BaseN<16>>; 6]")]
 pub struct MemoryLayout {
     /// Addresses reserved for the text segment
-    text: RangeInclusive<u64>,
+    text: NonEmptyRangeInclusiveU64,
     /// Addresses reserved for the data segment
-    data: RangeInclusive<u64>,
+    data: NonEmptyRangeInclusiveU64,
     /// Addresses reserved for the stack segment
-    stack: RangeInclusive<u64>,
+    stack: NonEmptyRangeInclusiveU64,
 }
 
 impl<'a> Architecture<'a> {
@@ -497,13 +496,13 @@ impl<'a> Architecture<'a> {
 
     /// Gets the code section's start/end addresses
     #[must_use]
-    pub const fn code_section(&self) -> &RangeInclusive<u64> {
+    pub const fn code_section(&self) -> &NonEmptyRangeInclusiveU64 {
         &self.memory_layout.text
     }
 
     /// Gets the data section's start/end addresses
     #[must_use]
-    pub const fn data_section(&self) -> &RangeInclusive<u64> {
+    pub const fn data_section(&self) -> &NonEmptyRangeInclusiveU64 {
         &self.memory_layout.data
     }
 
@@ -564,17 +563,19 @@ impl BitRange {
     #[must_use]
     pub fn size(&self) -> usize {
         self.iter()
-            .map(|(start, end)| usize::try_from(i32::from(*start) - i32::from(*end) + 1).unwrap())
-            .reduce(|acc, val| acc + val)
+            .map(|x| x.size())
+            .reduce(|acc, val| acc.saturating_add(val.into()))
             .expect("There should always be at least 1 field")
+            .get()
+            .into()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &(u8, u8)> {
+    pub fn iter(&self) -> impl Iterator<Item = &NonEmptyRangeInclusiveU8> {
         self.0.iter()
     }
 
     #[must_use]
-    pub fn new(ranges: Vec<(u8, u8)>) -> Self {
+    pub fn new(ranges: Vec<NonEmptyRangeInclusiveU8>) -> Self {
         Self(ranges)
     }
 }

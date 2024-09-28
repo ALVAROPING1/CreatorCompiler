@@ -294,7 +294,7 @@ pub fn compile(
         }
         Some(main) => {
             let text = arch.code_section();
-            if !text.contains(&main.address()) {
+            if !text.contains(main.address()) {
                 return Err(
                     ErrorKind::MainOutsideCode(arch.main_label().to_owned()).add_span(main.span())
                 );
