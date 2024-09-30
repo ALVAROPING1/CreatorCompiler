@@ -66,12 +66,13 @@ mod test {
     use super::{BitField, BitRange, ErrorKind};
 
     fn range(segments: Vec<(u8, u8)>) -> BitRange {
-        BitRange::new(
+        BitRange::build(
             segments
                 .into_iter()
                 .map(|(a, b)| NonEmptyRangeInclusiveU8::build(b, a).expect("This shouldn't fail"))
                 .collect(),
         )
+        .expect("this shouldn't fail")
     }
 
     #[test]

@@ -575,7 +575,10 @@ impl BitRange {
     }
 
     #[must_use]
-    pub fn new(ranges: Vec<NonEmptyRangeInclusiveU8>) -> Self {
-        Self(ranges)
+    pub fn build(ranges: Vec<NonEmptyRangeInclusiveU8>) -> Option<Self> {
+        if ranges.is_empty() {
+            return None;
+        }
+        Some(Self(ranges))
     }
 }

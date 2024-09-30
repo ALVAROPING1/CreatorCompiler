@@ -89,23 +89,18 @@ impl TryFrom<BitRange> for super::BitRange {
     fn try_from(value: BitRange) -> Result<Self, Self::Error> {
         let range =
             |(msb, lsb)| NonEmptyRangeInclusiveU8::build(lsb, msb).ok_or("invalid empty range");
-        Ok(Self::new(match (value.startbit, value.stopbit) {
+        Self::build(match (value.startbit, value.stopbit) {
             (BitPosition::Single(msb), BitPosition::Single(lsb)) => vec![range((msb, lsb))?],
             (BitPosition::Multiple(msb), BitPosition::Multiple(lsb)) => {
                 if msb.len() != lsb.len() {
                     return Err("the startbit and endbit fields must have the same length if they are vectors");
-                }
-                if msb.is_empty() {
-                    return Err(
-                        "the startbit and endbit fields must not be empty if they are vectors",
-                    );
                 }
                 std::iter::zip(msb, lsb)
                     .map(range)
                     .collect::<Result<_, _>>()?
             }
             _ => return Err("the type of the startbit and endbit fields should be the same"),
-        }))
+        }).ok_or("the startbit and endbit fields must not be empty if they are vectors")
     }
 }
 
