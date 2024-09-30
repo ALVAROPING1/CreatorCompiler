@@ -218,6 +218,7 @@ pub fn compile(
     let mut parsed_instructions = Vec::new();
     let mut data_memory = Vec::new();
     let mut alignment: Option<Spanned<u64>> = None;
+    let mut instruction_eof_span: Span = 0..0;
 
     for node in ast {
         match node {
@@ -269,6 +270,7 @@ pub fn compile(
                 for instruction_node in instructions {
                     let (name, span) = instruction_node.name;
                     let inst_span = span.start..instruction_node.args.1.end;
+                    instruction_eof_span = inst_span.end..inst_span.end + 1;
                     let (def, args) =
                         parse_instruction(arch, (&name, span.clone()), &instruction_node.args)?;
                     let addr = code_section
@@ -289,8 +291,8 @@ pub fn compile(
     }
     match label_table.get(arch.main_label()) {
         None => {
-            // TODO: what span should this use?
-            return Err(ErrorKind::MissingMainLabel(arch.main_label().to_owned()).add_span(&(0..0)));
+            return Err(ErrorKind::MissingMainLabel(arch.main_label().to_owned())
+                .add_span(&instruction_eof_span));
         }
         Some(main) => {
             let text = arch.code_section();

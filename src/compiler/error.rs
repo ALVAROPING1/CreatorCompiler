@@ -124,9 +124,6 @@ impl Kind {
     fn hint(&self) -> Option<String> {
         Some(match self {
             Self::DuplicateLabel(..) => "Consider renaming either of the labels".into(),
-            Self::MissingMainLabel(main) => {
-                format!("Consider adding a label called {main} to an instruction")
-            }
             Self::MainOutsideCode(..) => "Consider moving the label to an instruction".into(),
             Self::IncorrectDirectiveArgumentNumber { expected, found } => {
                 let expected = usize::from(*expected);
@@ -151,7 +148,9 @@ impl Kind {
             Self::UnknownRegister { .. } => "Unknown register".into(),
             Self::IncorrectInstructionSyntax(..) => "Incorrect syntax".into(),
             Self::DuplicateLabel(..) => "Duplicate label".into(),
-            Self::MissingMainLabel(..) => "TODO: missing main label".into(),
+            Self::MissingMainLabel(main) => {
+                format!("Consider adding a label called \"{main}\" to an instruction")
+            }
             Self::MainOutsideCode(..) => "Label defined here".into(),
             Self::IntegerTooBig(val, _) | Self::UnallowedNegativeValue(val) => {
                 format!("This expression has value {val}")
@@ -203,7 +202,7 @@ impl fmt::Display for Kind {
             }
             Self::IncorrectInstructionSyntax(..) => write!(f, "Incorrect instruction syntax"),
             Self::DuplicateLabel(s, _) => write!(f, "Label \"{s}\" is already defined"),
-            Self::MissingMainLabel(s) => write!(f, "Label \"{s}\" not found"),
+            Self::MissingMainLabel(s) => write!(f, "Main label \"{s}\" not found"),
             Self::MainOutsideCode(s) => {
                 write!(f, "Main label \"{s}\" defined outside of the text segment")
             }
