@@ -68,7 +68,7 @@ pub struct Error {
 
 macro_rules! plural {
     ($x:expr) => {
-        if $x > 1 {
+        if $x != 1 {
             "s"
         } else {
             ""
@@ -137,7 +137,12 @@ impl Kind {
                 } else {
                     ("removing the extra", found - expected)
                 };
-                format!("Consider {msg} {n} argument{}", plural!(n))
+                let n_str = if n == 1 {
+                    String::new()
+                } else {
+                    format!(" {n}")
+                };
+                format!("Consider {msg}{n_str} argument{}", plural!(n))
             }
             // TODO: Maybe add hint for required directive?
             // Self::UnallowedStatementSection { expected, _ } => { ... }
