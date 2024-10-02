@@ -4,8 +4,8 @@ use std::fmt;
 use std::fmt::Write as _;
 use std::ops::Range;
 
-use crate::architecture::ComponentType;
-use crate::parser::{ParseError, Span};
+use crate::architecture::{ComponentType, DirectiveSegment};
+use crate::parser::{ParseError, Span, Spanned};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArgumentType {
@@ -54,6 +54,10 @@ pub enum Kind {
     DivisionBy0,
     UnallowedFloat,
     UnallowedFloatOperation(OperationKind),
+    UnallowedStatementType {
+        section: Option<Spanned<DirectiveSegment>>,
+        found: DirectiveSegment,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -99,6 +103,7 @@ impl Kind {
             Self::DivisionBy0 => 16,
             Self::UnallowedFloat => 17,
             Self::UnallowedFloatOperation(..) => 18,
+            Self::UnallowedStatementType { .. } => 19,
         }
     }
 
@@ -134,6 +139,8 @@ impl Kind {
                 };
                 format!("Consider {msg} {n} argument{}", plural!(n))
             }
+            // TODO: Maybe add hint for required directive?
+            // Self::UnallowedStatementSection { expected, _ } => { ... }
             _ => return None,
         })
     }
@@ -166,6 +173,9 @@ impl Kind {
             Self::DivisionBy0 => "This expression has value 0".into(),
             Self::UnallowedFloat => "This value can't be used".into(),
             Self::UnallowedFloatOperation(..) => "This operation can't be performed".into(),
+            Self::UnallowedStatementType { .. } => {
+                "This statement can't be used in the current section".into()
+            }
         }
     }
 
@@ -173,6 +183,12 @@ impl Kind {
         match self {
             Self::DuplicateLabel(_, span) => {
                 vec![(span.clone(), "Label previously defined here")]
+            }
+            Self::UnallowedStatementType {
+                section: Some(section),
+                ..
+            } => {
+                vec![(section.1.clone(), "Section previously started here")]
             }
             _ => Vec::new(),
         }
@@ -231,6 +247,21 @@ impl fmt::Display for Kind {
                 f,
                 "Can't perform the {op} operation with floating point numbers"
             ),
+            Self::UnallowedStatementType { section, found } => {
+                write!(
+                    f,
+                    "Can't use \"{}\" statements while in section \"{}\"",
+                    match found {
+                        DirectiveSegment::Code => "instruction",
+                        DirectiveSegment::Data => "data directive",
+                    },
+                    match section {
+                        Some((DirectiveSegment::Data, _)) => "data",
+                        Some((DirectiveSegment::Code, _)) => "code",
+                        None => "none",
+                    }
+                )
+            }
         }
     }
 }

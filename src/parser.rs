@@ -12,8 +12,6 @@ pub use error::Error as ParseError;
 mod instruction;
 pub use instruction::Instruction;
 
-use crate::architecture::{Architecture, DirectiveSegment};
-
 pub type Span = std::ops::Range<usize>;
 pub type Spanned<T> = (T, Span);
 
@@ -31,47 +29,45 @@ pub enum Data {
 
 #[derive(Debug)]
 pub struct InstructionNode {
-    pub labels: Vec<Spanned<String>>,
     pub name: Spanned<String>,
     pub args: Spanned<Vec<Spanned<Token>>>,
 }
 
 #[derive(Debug)]
-pub struct DataNode {
-    pub labels: Vec<Spanned<String>>,
+pub struct DirectiveNode {
     pub name: Spanned<String>,
     pub args: Spanned<Vec<Spanned<Data>>>,
 }
 
 #[derive(Debug)]
-pub enum ASTNode {
-    CodeSegment(Vec<InstructionNode>),
-    DataSegment(Vec<DataNode>),
+pub enum Statement {
+    Directive(DirectiveNode),
+    Instruction(InstructionNode),
+}
+
+#[derive(Debug)]
+pub struct ASTNode {
+    pub labels: Vec<Spanned<String>>,
+    pub statement: Spanned<Statement>,
 }
 
 #[must_use]
-fn parser<'a>(arch: &'a Architecture) -> Parser!(Token, Vec<ASTNode>, 'a) {
+fn parser<'a>() -> Parser!(Token, Vec<ASTNode>, 'a) {
     // Newline token
     let newline = || just(Token::Ctrl('\n'));
     // Identifiers
-    let ident = select! {Token::Identifier(ident) => ident}.labelled("identifier");
-    let label = select! {Token::Label(name) => name}
+    let ident = select! {|span| Token::Identifier(ident) => (ident, span)}.labelled("identifier");
+    let label = select! {|span| Token::Label(name) => (name, span)}
         .padded_by(newline().repeated())
         .labelled("label");
-    let directive = select! {Token::Directive(name) => name}.labelled("directive name");
+    let directive =
+        select! {|span| Token::Directive(name) => (name, span)}.labelled("directive name");
 
     // Any amount of labels: `labels -> label*`
-    let labels = label
-        .map_with_span(|x, span| (x, span))
-        .repeated()
-        .collect()
-        .labelled("labels");
+    let labels = label.repeated().collect().labelled("labels");
 
-    // Data statement: statements within the data segment
-    // `data_statement -> labels directive expression (, expression)*`
-    let data_statement = labels
-        .clone()
-        .then(directive.map_with_span(|name, span| (name, span)))
+    // Directive statement `directive_statement -> directive expression (\n*,\n* expression)*\n`
+    let directive_statement = directive
         .then(
             // Arguments of the directive. Comma-separated list of expressions. Each expression can
             // have any amount of newlines prefixing it, and any amount of newlines following it if
@@ -92,36 +88,15 @@ fn parser<'a>(arch: &'a Architecture) -> Parser!(Token, Vec<ASTNode>, 'a) {
                         .or_not(),
                 )
                 .separated_by(just(Token::Ctrl(',')))
-                .at_least(1)
                 .map_with_span(|x, span| (x, span))
                 .labelled("parameters"),
         )
         .then_ignore(newline())
-        .padded_by(newline().repeated())
-        .map(|((labels, name), args)| DataNode { labels, name, args })
+        .map(|(name, args)| Statement::Directive(DirectiveNode { name, args }))
         .labelled("data directive");
 
-    // Name of the directive changing to the data segment
-    let data_segment_directive = arch.get_directive_segment(DirectiveSegment::Data);
-    // Name of the directive changing to the code segment
-    let code_segment_directive = arch.get_directive_segment(DirectiveSegment::Code);
-
-    // Data segment: `data_segment -> data_segment_directive data_statement*`
-    let data_segment = directive
-        .then_ignore(newline())
-        .try_map(move |name: String, span| {
-            if name == data_segment_directive {
-                Ok(())
-            } else {
-                Err(Simple::custom(span, "TODO: error message data"))
-            }
-        })
-        .ignore_then(data_statement.repeated())
-        .map(ASTNode::DataSegment);
-
-    // Instruction: `instruction -> labels ident [^\n]*`
-    let instruction = labels
-        .then(ident.map_with_span(|name, span| (name, span)))
+    // Instruction: `instruction -> ident [^\n]*`
+    let instruction = ident
         .then(
             newline()
                 .not()
@@ -129,32 +104,28 @@ fn parser<'a>(arch: &'a Architecture) -> Parser!(Token, Vec<ASTNode>, 'a) {
                 .repeated()
                 .map_with_span(|args, span| (args, span)),
         )
-        .padded_by(newline().repeated())
-        .map(|((labels, name), args)| InstructionNode { labels, name, args })
+        .map(|(name, args)| Statement::Instruction(InstructionNode { name, args }))
         .labelled("instruction");
 
-    // Code segment: `code_segment -> code_segment_directive instruction*`
-    let code_segment = directive
-        .then_ignore(newline())
-        .try_map(move |name: String, span| {
-            if name == code_segment_directive {
-                Ok(())
-            } else {
-                Err(Simple::custom(span, "TODO: error message code"))
-            }
-        })
-        .ignore_then(instruction.repeated())
-        .map(ASTNode::CodeSegment);
+    // Statement: `statement -> labels [instruction | directive_statement]`
+    let statement = labels
+        .then(
+            directive_statement
+                .or(instruction)
+                .map_with_span(|x, s| (x, s)),
+        )
+        .padded_by(newline().repeated())
+        .map(|(labels, statement)| ASTNode { labels, statement });
 
-    data_segment.or(code_segment).repeated().then_ignore(end())
+    statement.repeated().then_ignore(end())
 }
 
-pub fn parse(arch: &Architecture, src: &str) -> Result<Vec<ASTNode>, ParseError> {
+pub fn parse(src: &str) -> Result<Vec<ASTNode>, ParseError> {
     let tokens = lexer::lexer().parse(src)?;
     let len = src.chars().count();
     #[allow(clippy::range_plus_one)] // Chumsky requires an inclusive range to avoid type errors
     let stream = Stream::from_iter(len..len + 1, tokens.into_iter());
-    Ok(parser(arch).parse(stream)?)
+    Ok(parser().parse(stream)?)
 }
 
 #[derive(Debug, Clone)]
