@@ -3,17 +3,28 @@ use std::{fmt, num::IntErrorKind, str::FromStr};
 
 use super::{Parser, Spanned};
 
+/// Tokens created by the lexer
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Token {
+    /// Integer literal
     Integer(u32),
+    /// Floating point literal
     Float(u64),
+    /// String literal
     String(String),
+    /// Character literal
     Character(char),
+    /// Identifier name
     Identifier(String),
+    /// Label name
     Label(String),
+    /// Directive name
     Directive(String),
+    /// Numeric expression operators
     Operator(char),
+    /// Control characters
     Ctrl(char),
+    /// Other literal characters
     Literal(char),
 }
 
