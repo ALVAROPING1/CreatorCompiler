@@ -43,7 +43,7 @@ impl Expr {
         #[allow(clippy::cast_possible_wrap)]
         Ok(match self {
             Self::Integer(value) => *value as i32,
-            Self::Float((_, span)) => return Err(ErrorKind::UnallowedFloat.add_span(&span)),
+            Self::Float((_, span)) => return Err(ErrorKind::UnallowedFloat.add_span(span)),
             Self::Character(c) => *c as i32,
             Self::UnaryOp { op, operand } => match op.0 {
                 UnaryOp::Plus => operand.0.int()?,
