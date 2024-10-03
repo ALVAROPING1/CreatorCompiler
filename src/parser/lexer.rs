@@ -212,3 +212,238 @@ pub fn lexer() -> Parser!(char, Vec<Spanned<Token>>) {
         .repeated()
         .then_ignore(end())
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod test {
+    use super::{lexer, Parser as _, Spanned, Token};
+    fn lex(code: &str) -> Result<Vec<Spanned<Token>>, ()> {
+        lexer().parse(code).map_err(|_| ())
+    }
+
+    #[test]
+    #[allow(clippy::unreadable_literal)]
+    fn int() {
+        let test_cases = [
+            // decimal
+            ("0", 0),
+            ("1", 1),
+            ("1234", 1234),
+            ("4294967295", u32::MAX),
+            // octal
+            ("00", 0),
+            ("01", 1),
+            ("010", 8),
+            // hex
+            ("0x0", 0),
+            ("0x1", 1),
+            ("0xf", 15),
+            ("0x10", 16),
+            ("0X10", 16),
+            ("0xFf", 255),
+            // binary
+            ("0b0", 0),
+            ("0b1", 1),
+            ("0b10", 2),
+            ("0B10", 2),
+        ];
+        for (s, v) in test_cases {
+            assert_eq!(lex(s), Ok(vec![(Token::Integer(v), 0..s.len())]), "`{s}`");
+        }
+        assert_eq!(lex(&(u64::from(u32::MAX) + 1).to_string()), Err(()));
+    }
+
+    #[test]
+    fn float() {
+        let float_tok = |x: &str| Token::Float(x.parse::<f64>().unwrap().to_bits());
+        let test_cases = [
+            "0.0", "1.0", "0.1", "100.0", "100.01", "100e1", "100E1", "0.5e1", "0.5e1", "0.5e+1",
+            "0.5e-1", "0.5e0", "0.5e+0", "0.5e-0", "1e300", "1e400", "1e-30", "inf", "INF", "Inf",
+            "nan", "NAN", "NaN",
+        ];
+        for s in test_cases {
+            assert_eq!(lex(s), Ok(vec![(float_tok(s), 0..s.len())]), "`{s}`");
+        }
+    }
+
+    // escape sequences
+    const ESCAPE_SEQUENCES: [(&str, char); 11] = [
+        ("\"", '\"'),
+        ("\'", '\''),
+        ("\\", '\\'),
+        ("n", '\n'),
+        ("r", '\r'),
+        ("t", '\t'),
+        ("0", '\0'),
+        ("a", '\x07'),
+        ("b", '\x08'),
+        ("e", '\x1B'),
+        ("f", '\x0C'),
+    ];
+
+    #[test]
+    fn string() {
+        // normal strings
+        for s in ["", "a", "test", "TEST", "0a"] {
+            assert_eq!(
+                lex(&format!("\"{s}\"")),
+                Ok(vec![(Token::String(s.into()), 0..s.len() + 2)])
+            );
+        }
+        // escape sequences
+        for (s, res) in ESCAPE_SEQUENCES {
+            assert_eq!(
+                lex(&format!("\"\\{s}\"")),
+                Ok(vec![(Token::String(res.to_string()), 0..s.len() + 3)])
+            );
+        }
+        let msg = "\"a string with escape sequences like newline `\\n` or tabs `\\t`, also quotes `\\\"` and literal backslashes `\\\\`\"";
+        assert_eq!(lex(msg), Ok(vec![(Token::String("a string with escape sequences like newline `\n` or tabs `\t`, also quotes `\"` and literal backslashes `\\`".into()), 0..msg.len())]));
+    }
+
+    #[test]
+    fn char() {
+        // normal characters
+        for c in ('!'..='~').filter(|c| !['\\', '\''].contains(c)) {
+            assert_eq!(
+                lex(&format!("'{c}'")),
+                Ok(vec![(Token::Character(c), 0..3)])
+            );
+        }
+        for (s, res) in ESCAPE_SEQUENCES {
+            assert_eq!(
+                lex(&format!("'\\{s}'")),
+                Ok(vec![(Token::Character(res), 0..s.len() + 3)])
+            );
+        }
+    }
+
+    #[test]
+    fn ident() {
+        let test_cases = [
+            "addi",
+            "fclass.s",
+            "fmul.d",
+            "addi0",
+            "addi1",
+            "addi2",
+            "ident_with_underscores_and.dots.",
+            "a._123",
+            "z....___1",
+        ];
+        for s in test_cases {
+            assert_eq!(lex(s), Ok(vec![(Token::Identifier(s.into()), 0..s.len())]));
+        }
+    }
+
+    #[test]
+    fn label() {
+        let test_cases = [
+            "label:",
+            ".label:",
+            "label_with_underscores_and.dots.:",
+            "label3:",
+            ".L3:",
+            "L0_:",
+            "L_1:",
+            ".a...___12:",
+            "z....___1:",
+            "z....___1..:",
+            "z....___1__:",
+        ];
+        for s in test_cases {
+            let l = s.len();
+            assert_eq!(lex(s), Ok(vec![(Token::Label(s[..l - 1].into()), 0..l)]));
+        }
+    }
+
+    #[test]
+    fn directive() {
+        let test_cases = [
+            ".directive",
+            ".dir_with_underscores_and.dots.",
+            ".string",
+            ".data",
+            ".L3",
+            ".L_1",
+            ".z....___1",
+            ".z....___1__",
+            ".z....___1..",
+        ];
+        for s in test_cases {
+            assert_eq!(lex(s), Ok(vec![(Token::Directive(s.into()), 0..s.len())]));
+        }
+    }
+
+    #[test]
+    fn operator() {
+        for c in "+-*/%|&^~".chars() {
+            assert_eq!(lex(&c.to_string()), Ok(vec![(Token::Operator(c), 0..1)]));
+        }
+    }
+
+    #[test]
+    fn ctrl() {
+        for c in ",()\n".chars() {
+            assert_eq!(lex(&c.to_string()), Ok(vec![(Token::Ctrl(c), 0..1)]));
+        }
+    }
+
+    #[test]
+    fn literal() {
+        for c in ".!?=:_;${}[]\\<>".chars() {
+            assert_eq!(lex(&c.to_string()), Ok(vec![(Token::Literal(c), 0..1)]));
+        }
+    }
+
+    #[test]
+    fn padding() {
+        let test_cases = [
+            ("  a", 2..3),
+            ("a  ", 0..1),
+            ("  abc    ", 2..5),
+            ("  \ta\t\t", 3..4),
+            ("\t\t\ta", 3..4),
+            ("a\t\r\t", 0..1),
+            ("\ta\t\t", 1..2),
+            (" \t\ttest  \r \t \t", 3..7),
+            ("/* inline comment */ test", 21..25),
+            ("test /* inline comment */", 0..4),
+            ("/* inline comment */ test  /* inline comment */", 21..25),
+            ("test # asd", 0..4),
+            ("test #asd", 0..4),
+        ];
+        for (s, v) in test_cases {
+            assert_eq!(
+                lex(s),
+                Ok(vec![(Token::Identifier(s[v.clone()].into()), v)]),
+                "`{s}`"
+            );
+        }
+        assert_eq!(
+            lex("#comment\ntest"),
+            Ok(vec![
+                (Token::Ctrl('\n'), 8..9),
+                (Token::Identifier("test".into()), 9..13)
+            ])
+        );
+    }
+
+    #[test]
+    fn sequence() {
+        let src = "a 1 .z +- test:  ]\t='x'\"string\"";
+        let tokens = vec![
+            (Token::Identifier("a".into()), 0..1),
+            (Token::Integer(1), 2..3),
+            (Token::Directive(".z".into()), 4..6),
+            (Token::Operator('+'), 7..8),
+            (Token::Operator('-'), 8..9),
+            (Token::Label("test".into()), 10..15),
+            (Token::Literal(']'), 17..18),
+            (Token::Literal('='), 19..20),
+            (Token::Character('x'), 20..23),
+            (Token::String("string".into()), 23..31),
+        ];
+        assert_eq!(lex(src), Ok(tokens));
+    }
+}
