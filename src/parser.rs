@@ -120,12 +120,16 @@ fn parser<'a>() -> Parser!(Token, Vec<ASTNode>, 'a) {
     statement.repeated().then_ignore(end())
 }
 
-pub fn parse(src: &str) -> Result<Vec<ASTNode>, ParseError> {
+fn parse_with<T>(parser: Parser!(Token, T), src: &str) -> Result<T, ParseError> {
     let tokens = lexer::lexer().parse(src)?;
     let len = src.chars().count();
     #[allow(clippy::range_plus_one)] // Chumsky requires an inclusive range to avoid type errors
     let stream = Stream::from_iter(len..len + 1, tokens.into_iter());
-    Ok(parser().parse(stream)?)
+    Ok(parser.parse(stream)?)
+}
+
+pub fn parse(src: &str) -> Result<Vec<ASTNode>, ParseError> {
+    parse_with(parser(), src)
 }
 
 #[derive(Debug, Clone)]

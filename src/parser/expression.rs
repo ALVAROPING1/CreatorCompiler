@@ -3,14 +3,14 @@ use chumsky::prelude::*;
 use super::{Parser, Span, Spanned, Token};
 use crate::compiler::{CompileError, ErrorKind, OperationKind};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOp {
     Plus,
     Minus,
     Complement,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -22,7 +22,7 @@ pub enum BinaryOp {
     BitwiseXOR,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Integer(u32),
     Float(Spanned<f64>),
@@ -198,170 +198,305 @@ pub fn parser() -> Parser!(Token, Expr) {
 }
 
 #[cfg(test)]
-mod expr_eval_tests {
-    use super::{BinaryOp, ErrorKind, Expr, Spanned, UnaryOp};
+mod test {
+    use super::{BinaryOp, CompileError, ErrorKind, Expr, OperationKind, Span, Spanned, UnaryOp};
 
-    #[allow(clippy::unnecessary_box_returns)]
-    fn span<T>(x: T) -> Box<Spanned<T>> {
-        Box::new((x, 0..0))
+    fn parse(code: &str) -> Result<Expr, ()> {
+        super::super::parse_with(super::parser(), code).map_err(|_| ())
     }
 
-    #[allow(clippy::unnecessary_box_returns)]
-    fn num(x: u32) -> Box<Spanned<Expr>> {
-        span(Expr::Integer(x))
+    type ExprResult = (Result<i32, CompileError>, Result<f64, CompileError>);
+
+    fn test(test_cases: &[(&str, Expr, ExprResult)]) {
+        for (src, expr, (res1, res2)) in test_cases {
+            assert_eq!(parse(src), Ok(expr.clone()), "`{src}`");
+            assert_eq!(expr.int(), *res1, "`{src}` as int\n{expr:?}");
+            assert_eq!(expr.float(), *res2, "`{src}` as float\n{expr:?}");
+        }
+    }
+
+    const fn float_op(op: OperationKind, s: Span) -> CompileError {
+        ErrorKind::UnallowedFloatOperation(op).add_span(&s)
     }
 
     #[test]
-    fn number() {
-        let expr = Expr::Integer(16);
-        assert_eq!(expr.int(), Ok(16));
+    fn literal() {
+        test(&[
+            ("16", Expr::Integer(16), (Ok(16), Ok(16.0))),
+            ("'a'", Expr::Character('a'), (Ok(97), Ok(97.0))),
+        ]);
     }
 
-    #[test]
-    fn character() {
-        let expr = Expr::Character('a');
-        assert_eq!(expr.int(), Ok(97));
+    const fn int(x: u32, s: Span) -> Spanned<Expr> {
+        (Expr::Integer(x), s)
+    }
+    fn float(x: f64, s: Span) -> Spanned<Expr> {
+        (Expr::Float((x, s.clone())), s)
     }
 
-    fn bin_op(op: BinaryOp, lhs: u32, rhs: u32) -> Expr {
+    fn un_op(op: Spanned<UnaryOp>, operand: Spanned<Expr>) -> Expr {
+        Expr::UnaryOp {
+            op,
+            operand: Box::new(operand),
+        }
+    }
+
+    fn bin_op(op: Spanned<BinaryOp>, lhs: Spanned<Expr>, rhs: Spanned<Expr>) -> Expr {
         Expr::BinaryOp {
-            op: (op, 0..0),
-            lhs: num(lhs),
-            rhs: num(rhs),
+            op,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
         }
     }
 
     #[test]
-    fn unary_plus() {
-        let expr = Expr::UnaryOp {
-            op: (UnaryOp::Plus, 0..0),
-            operand: num(2),
-        };
-        assert_eq!(expr.int(), Ok(2));
-    }
-
-    #[test]
-    fn unary_minus() {
-        let expr = Expr::UnaryOp {
-            op: (UnaryOp::Minus, 0..0),
-            operand: num(2),
-        };
-        assert_eq!(expr.int(), Ok(-2));
+    fn unary() {
+        test(&[
+            (
+                "+2",
+                un_op((UnaryOp::Plus, 0..1), int(2, 1..2)),
+                (Ok(2), Ok(2.0)),
+            ),
+            (
+                "-2",
+                un_op((UnaryOp::Minus, 0..1), int(2, 1..2)),
+                (Ok(-2), Ok(-2.0)),
+            ),
+            (
+                "~2",
+                un_op((UnaryOp::Complement, 0..1), int(2, 1..2)),
+                (Ok(!2), Err(float_op(OperationKind::UnaryNegation, 0..1))),
+            ),
+        ]);
     }
 
     #[test]
     fn binary_add() {
-        assert_eq!(bin_op(BinaryOp::Add, 5, 7).int(), Ok(12));
-        assert_eq!(
-            bin_op(BinaryOp::Add, i32::MAX as u32, 1).int(),
-            Ok(i32::MIN)
-        );
+        test(&[
+            (
+                "5 + 7",
+                bin_op((BinaryOp::Add, 2..3), int(5, 0..1), int(7, 4..5)),
+                (Ok(12), Ok(12.0)),
+            ),
+            (
+                "2147483647 + 1",
+                bin_op(
+                    (BinaryOp::Add, 11..12),
+                    int(i32::MAX as u32, 0..10),
+                    int(1, 13..14),
+                ),
+                (Ok(i32::MIN), Ok(f64::from(i32::MAX) + 1.0)),
+            ),
+            (
+                "2.5 + 7",
+                bin_op((BinaryOp::Add, 4..5), float(2.5, 0..3), int(7, 6..7)),
+                (Err(ErrorKind::UnallowedFloat.add_span(&(0..3))), Ok(9.5)),
+            ),
+            (
+                "2.5 + 7.25",
+                bin_op((BinaryOp::Add, 4..5), float(2.5, 0..3), float(7.25, 6..10)),
+                (Err(ErrorKind::UnallowedFloat.add_span(&(0..3))), Ok(9.75)),
+            ),
+        ]);
     }
 
     #[test]
     fn binary_sub() {
-        assert_eq!(bin_op(BinaryOp::Sub, 5, 7).int(), Ok(-2));
-        assert_eq!(
-            bin_op(BinaryOp::Sub, i32::MAX as u32, i32::MAX as u32).int(),
-            Ok(0)
-        );
+        test(&[(
+            "4294967295 - 4294967295",
+            bin_op(
+                (BinaryOp::Sub, 11..12),
+                int(u32::MAX, 0..10),
+                int(u32::MAX, 13..23),
+            ),
+            (Ok(0), Ok(0.0)),
+        )]);
     }
 
     #[test]
     fn binary_mul() {
-        assert_eq!(bin_op(BinaryOp::Mul, 5, 7).int(), Ok(35));
-        assert_eq!(
-            bin_op(BinaryOp::Mul, i32::MAX as u32, 1 << 31).int(),
-            Ok(i32::MIN)
-        );
+        test(&[
+            (
+                "5 * 7",
+                bin_op((BinaryOp::Mul, 2..3), int(5, 0..1), int(7, 4..5)),
+                (Ok(35), Ok(35.0)),
+            ),
+            (
+                "2147483647 * 2147483648",
+                bin_op(
+                    (BinaryOp::Mul, 11..12),
+                    int(i32::MAX as u32, 0..10),
+                    int(1 << 31, 13..23),
+                ),
+                (Ok(i32::MIN), Ok(4_611_686_016_279_904_256.0)),
+            ),
+        ]);
     }
 
     #[test]
     fn binary_div() {
-        assert_eq!(bin_op(BinaryOp::Div, 8, 2).int(), Ok(4));
-    }
-
-    #[test]
-    fn div_by_0() {
-        assert_eq!(
-            bin_op(BinaryOp::Div, 10, 0).int(),
-            Err(ErrorKind::DivisionBy0.add_span(&(0..0)))
-        );
+        test(&[
+            (
+                "8 / 2",
+                bin_op((BinaryOp::Div, 2..3), int(8, 0..1), int(2, 4..5)),
+                (Ok(4), Ok(4.0)),
+            ),
+            (
+                "10 / 0",
+                bin_op((BinaryOp::Div, 3..4), int(10, 0..2), int(0, 5..6)),
+                (
+                    Err(ErrorKind::DivisionBy0.add_span(&(5..6))),
+                    Ok(f64::INFINITY),
+                ),
+            ),
+        ]);
     }
 
     #[test]
     fn binary_rem() {
-        assert_eq!(bin_op(BinaryOp::Rem, 7, 5).int(), Ok(2));
+        test(&[(
+            "7 % 5",
+            bin_op((BinaryOp::Rem, 2..3), int(7, 0..1), int(5, 4..5)),
+            (Ok(2), Ok(2.0)),
+        )]);
     }
 
     #[test]
-    fn binary_or() {
-        assert_eq!(
-            bin_op(BinaryOp::BitwiseOR, 0b0100, 0b1100).int(),
-            Ok(0b1100)
-        );
+    fn binary_bitwise() {
+        test(&[
+            (
+                "0b0100 | 0b1100",
+                bin_op(
+                    (BinaryOp::BitwiseOR, 7..8),
+                    int(0b0100, 0..6),
+                    int(0b1100, 9..15),
+                ),
+                (Ok(0b1100), Err(float_op(OperationKind::BitwiseOR, 7..8))),
+            ),
+            (
+                "0b0110 & 0b1100",
+                bin_op(
+                    (BinaryOp::BitwiseAND, 7..8),
+                    int(0b0110, 0..6),
+                    int(0b1100, 9..15),
+                ),
+                (Ok(0b0100), Err(float_op(OperationKind::BitwiseAND, 7..8))),
+            ),
+            (
+                "0b0101 ^ 0b1100",
+                bin_op(
+                    (BinaryOp::BitwiseXOR, 7..8),
+                    int(0b0101, 0..6),
+                    int(0b1100, 9..15),
+                ),
+                (Ok(0b1001), Err(float_op(OperationKind::BitwiseXOR, 7..8))),
+            ),
+        ]);
     }
 
     #[test]
-    fn binary_and() {
-        assert_eq!(
-            bin_op(BinaryOp::BitwiseAND, 0b0110, 0b1100).int(),
-            Ok(0b0100)
-        );
-    }
-
-    #[test]
-    fn binary_xor() {
-        assert_eq!(
-            bin_op(BinaryOp::BitwiseXOR, 0b0101, 0b1100).int(),
-            Ok(0b1001)
-        );
-    }
-
-    #[test]
-    fn combined() {
-        let expr = Expr::UnaryOp {
-            op: (UnaryOp::Minus, 0..0),
-            operand: span(Expr::BinaryOp {
-                op: (BinaryOp::Add, 0..0),
-                // -4
-                lhs: span(Expr::BinaryOp {
-                    op: (BinaryOp::Mul, 0..0),
-                    // -2
-                    lhs: span(Expr::UnaryOp {
-                        op: (UnaryOp::Minus, 0..0),
-                        // 2
-                        operand: span(Expr::BinaryOp {
-                            op: (BinaryOp::Div, 0..0),
-                            // 6
-                            lhs: span(bin_op(BinaryOp::Rem, 13, 7)),
-                            rhs: num(3),
-                        }),
-                    }),
-                    rhs: num(2),
-                }),
-                // 0b0101 = 5
-                rhs: span(Expr::BinaryOp {
-                    op: (BinaryOp::BitwiseOR, 0..0),
-                    // 0b0001
-                    lhs: span(Expr::UnaryOp {
-                        op: (UnaryOp::Plus, 0..0),
-                        operand: num(0b0001),
-                    }),
-                    // 0b0100
-                    rhs: span(Expr::BinaryOp {
-                        op: (BinaryOp::BitwiseAND, 0..0),
-                        // 0b0101
-                        lhs: span(Expr::BinaryOp {
-                            op: (BinaryOp::BitwiseXOR, 0..0),
-                            lhs: num(0b0011),
-                            rhs: num(0b0110),
-                        }),
-                        rhs: num(0b1110),
-                    }),
-                }),
-            }),
-        };
-        assert_eq!(expr.int(), Ok(-1));
+    #[allow(clippy::too_many_lines)]
+    fn precedence() {
+        test(&[
+            (
+                "1 + 2 - 3",
+                bin_op(
+                    (BinaryOp::Sub, 6..7),
+                    (
+                        bin_op((BinaryOp::Add, 2..3), int(1, 0..1), int(2, 4..5)),
+                        0..5,
+                    ),
+                    int(3, 8..9),
+                ),
+                (Ok(0), Ok(0.0)),
+            ),
+            (
+                "1 + (2 - 3)",
+                bin_op(
+                    (BinaryOp::Add, 2..3),
+                    int(1, 0..1),
+                    (
+                        bin_op((BinaryOp::Sub, 7..8), int(2, 5..6), int(3, 9..10)),
+                        4..11,
+                    ),
+                ),
+                (Ok(0), Ok(0.0)),
+            ),
+            (
+                "1 | 6 & 3 ^ 9",
+                bin_op(
+                    (BinaryOp::BitwiseXOR, 10..11),
+                    (
+                        bin_op(
+                            (BinaryOp::BitwiseAND, 6..7),
+                            (
+                                bin_op((BinaryOp::BitwiseOR, 2..3), int(1, 0..1), int(6, 4..5)),
+                                0..5,
+                            ),
+                            int(3, 8..9),
+                        ),
+                        0..9,
+                    ),
+                    int(9, 12..13),
+                ),
+                (Ok(10), Err(float_op(OperationKind::BitwiseOR, 2..3))),
+            ),
+            (
+                "1 * 6 / 3 % 2",
+                bin_op(
+                    (BinaryOp::Rem, 10..11),
+                    (
+                        bin_op(
+                            (BinaryOp::Div, 6..7),
+                            (
+                                bin_op((BinaryOp::Mul, 2..3), int(1, 0..1), int(6, 4..5)),
+                                0..5,
+                            ),
+                            int(3, 8..9),
+                        ),
+                        0..9,
+                    ),
+                    int(2, 12..13),
+                ),
+                (Ok(0), Ok(0.0)),
+            ),
+            (
+                "~-+1",
+                un_op(
+                    (UnaryOp::Complement, 0..1),
+                    (
+                        un_op(
+                            (UnaryOp::Minus, 1..2),
+                            (un_op((UnaryOp::Plus, 2..3), int(1, 3..4)), 2..4),
+                        ),
+                        1..4,
+                    ),
+                ),
+                (Ok(0), Err(float_op(OperationKind::UnaryNegation, 0..1))),
+            ),
+            (
+                "1 + 6 | 3 * +9",
+                bin_op(
+                    (BinaryOp::Add, 2..3),
+                    int(1, 0..1),
+                    (
+                        bin_op(
+                            (BinaryOp::BitwiseOR, 6..7),
+                            int(6, 4..5),
+                            (
+                                bin_op(
+                                    (BinaryOp::Mul, 10..11),
+                                    int(3, 8..9),
+                                    (un_op((UnaryOp::Plus, 12..13), int(9, 13..14)), 12..14),
+                                ),
+                                8..14,
+                            ),
+                        ),
+                        4..14,
+                    ),
+                ),
+                (Ok(32), Err(float_op(OperationKind::BitwiseOR, 6..7))),
+            ),
+        ]);
     }
 }
