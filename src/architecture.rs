@@ -489,6 +489,7 @@ impl<'a> Architecture<'a> {
         self.arch_conf.word_size
     }
 
+    /// Gets the name of the label used as the entry point of the code
     #[must_use]
     pub const fn main_label(&self) -> &str {
         self.arch_conf.main_function
