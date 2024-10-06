@@ -3,8 +3,17 @@ use chumsky::{prelude::*, stream::Stream};
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-use super::{expression, lexer, Argument, ParseError, Spanned, Token};
+use super::{expression, lexer, ParseError, Spanned, Token};
 use crate::architecture::{BitRange, InstructionField, InstructionFieldType};
+
+/// Instruction argument value
+#[derive(Debug, Clone)]
+pub enum Argument {
+    /// Identifier
+    Identifier(String),
+    /// Expression that can be evaluated to a number
+    Number(expression::Expr),
+}
 
 /// Output type of parsing the arguments of an instruction
 type Output = Vec<(Spanned<Argument>, usize)>;

@@ -10,7 +10,7 @@ mod error;
 pub use error::Error as ParseError;
 
 mod instruction;
-pub use instruction::Instruction;
+pub use instruction::{Argument, Instruction};
 
 pub type Span = std::ops::Range<usize>;
 pub type Spanned<T> = (T, Span);
@@ -130,10 +130,4 @@ fn parse_with<T>(parser: Parser!(Token, T), src: &str) -> Result<T, ParseError> 
 
 pub fn parse(src: &str) -> Result<Vec<ASTNode>, ParseError> {
     parse_with(parser(), src)
-}
-
-#[derive(Debug, Clone)]
-pub enum Argument {
-    Identifier(String),
-    Number(Expr),
 }
