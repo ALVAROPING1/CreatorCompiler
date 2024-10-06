@@ -43,6 +43,7 @@ impl fmt::Display for Token {
     }
 }
 
+/// Creates a lexer for integer literals
 #[must_use]
 fn int_lexer() -> Parser!(char, Token) {
     let try_to_int = |res: Result<u32, <u32 as FromStr>::Err>, span| {
@@ -57,7 +58,7 @@ fn int_lexer() -> Parser!(char, Token) {
         })
     };
 
-    // Decimal
+    // Decimal: integer not followed by a decimal part/exponent
     let decimal = text::int(10)
         // Disambiguate integer literals from the integer part of a floating point literal
         .then_ignore(none_of(".eE").rewind().to(()).or(end()))
@@ -79,13 +80,17 @@ fn int_lexer() -> Parser!(char, Token) {
     base_n.or(decimal).map(Token::Integer).labelled("integer")
 }
 
+/// Creates a lexer for floating point literals
 #[must_use]
 fn float_lexer() -> Parser!(char, Token) {
-    let int = text::int(10);
-    let frac = just('.').then(text::digits(10));
-    let sign = one_of("+-").or_not().map(|sign| sign.unwrap_or('+'));
-    let exp = one_of("eE").then(sign).then(int);
+    let int = text::int(10); // Integer part
+    let frac = just('.').then(text::digits(10)); // Fractional part
+    let sign = one_of("+-").or_not().map(|sign| sign.unwrap_or('+')); // Optional sign
+    let exp = one_of("eE").then(sign).then(int); // Exponent part
+
+    // Float literal: `float -> int [frac] [exp]`
     let float = int
+        // Disambiguate integer literals from the integer part of a floating point literal
         .then_ignore(one_of(".eE").rewind())
         .then(frac.or_not())
         .then(exp.or_not())
@@ -99,6 +104,7 @@ fn float_lexer() -> Parser!(char, Token) {
         .from_str()
         .map(|res: Result<f64, _>| res.expect("We already parsed it as a float literal"));
 
+    // named constants: `inf`, `infinity`, and `nan`
     let named_constant = text::ident().try_map(|ident: String, span| {
         Ok(match ident.to_lowercase().as_str() {
             "inf" | "infinity" => f64::INFINITY,
@@ -107,11 +113,13 @@ fn float_lexer() -> Parser!(char, Token) {
         })
     });
 
+    // Float token
     choice((float, named_constant))
         .map(|x| Token::Float(x.to_bits()))
         .labelled("float")
 }
 
+/// Creates a lexer for string and character literals
 #[must_use]
 fn str_lexer() -> (Parser!(char, Token), Parser!(char, Token)) {
     // Escape sequences in strings
@@ -129,23 +137,26 @@ fn str_lexer() -> (Parser!(char, Token), Parser!(char, Token)) {
         just('0').to('\0'),
     )));
 
-    // Characters allowed inside string/character literals
+    // Characters allowed inside string/character literals: anything that isn't their delimiter or
+    // a backslash
     let char = |delimiter| filter(move |c| *c != '\\' && *c != delimiter).or(escape);
 
-    // Literal strings (`"..."`)
+    // Literal strings: `string -> " char* "`
     let string = char('"')
         .repeated()
         .delimited_by(just('"'), just('"'))
         .collect::<String>()
         .map(Token::String);
 
-    // Literal characters (`'c'`)
+    // Literal characters: `character -> ' char '`
     let character = char('\'')
         .delimited_by(just('\''), just('\''))
         .map(Token::Character);
+
     (string, character)
 }
 
+/// Creates a lexer for the input
 #[must_use]
 pub fn lexer() -> Parser!(char, Vec<Spanned<Token>>) {
     let newline = text::newline().to('\n');
@@ -154,7 +165,7 @@ pub fn lexer() -> Parser!(char, Vec<Spanned<Token>>) {
     let int = int_lexer();
     // Float literals
     let float = float_lexer();
-
+    // Number literals can be either integers or floats
     let num = int.or(float);
 
     // Expression operators
