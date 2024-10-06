@@ -3,6 +3,7 @@ use chumsky::prelude::*;
 use super::{Parser, Span, Spanned, Token};
 use crate::compiler::{CompileError, ErrorKind, OperationKind};
 
+/// Allowed unary operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOp {
     Plus,
@@ -10,6 +11,7 @@ pub enum UnaryOp {
     Complement,
 }
 
+/// Allowed binary operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOp {
     Add,
@@ -22,15 +24,21 @@ pub enum BinaryOp {
     BitwiseXOR,
 }
 
+/// Mathematical expression on constant values
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
+    /// Integer literal
     Integer(u32),
+    /// Float literal
     Float(Spanned<f64>),
+    /// Character literal
     Character(char),
+    /// Unary operation on other expressions
     UnaryOp {
         op: Spanned<UnaryOp>,
         operand: Box<Spanned<Expr>>,
     },
+    /// Binary operation on other expressions
     BinaryOp {
         op: Spanned<BinaryOp>,
         lhs: Box<Spanned<Expr>>,
@@ -39,6 +47,12 @@ pub enum Expr {
 }
 
 impl Expr {
+    /// Evaluates the expression as an integer
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ErrorKind::UnallowedFloat` if a float literal is used, and a `ErrorKind::DivisionBy0`
+    /// if a division by 0 is attempted
     pub fn int(&self) -> Result<i32, CompileError> {
         #[allow(clippy::cast_possible_wrap)]
         Ok(match self {
@@ -70,6 +84,12 @@ impl Expr {
         })
     }
 
+    /// Evaluates the expression as a float
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ErrorKind::UnallowedFloatOperation` if an operation that's undefined with floats
+    /// is attempted
     pub fn float(&self) -> Result<f64, CompileError> {
         let err = |op, s| ErrorKind::UnallowedFloatOperation(op).add_span(s);
         Ok(match self {
@@ -99,11 +119,18 @@ impl Expr {
     }
 }
 
+/// Creates a new parser for a sequence of binary expressions
+///
+/// # Parameters
+///
+/// * `elem`: parser for each atomic value of the new expression
+/// * `op`: parser for the operation symbols in the expression
 #[must_use]
 fn binary_parser(
     elem: Parser!(Token, Spanned<Expr>),
     op: Parser!(Token, BinaryOp),
 ) -> Parser!(Token, Spanned<Expr>) {
+    // Expression: `expression -> element [operator element]*`
     elem.clone()
         .then(
             op.map_with_span(|op, span| (op, span))
@@ -111,6 +138,8 @@ fn binary_parser(
                 .repeated(),
         )
         .foldl(|lhs, (op, rhs)| {
+            // Calculate the span of the new expression from the spans of its operands, since they
+            // are on the start/end of the expression
             let span = lhs.1.start..rhs.1.end;
             (
                 Expr::BinaryOp {
@@ -123,18 +152,23 @@ fn binary_parser(
         })
 }
 
+/// Creates a parser for expressions
 #[must_use]
 pub fn parser() -> Parser!(Token, Expr) {
     recursive(|expr| {
+        // literal values
         let literal_num = select! { |span|
             Token::Integer(x) => Expr::Integer(x),
             Token::Float(x) => Expr::Float((f64::from_bits(x), span)),
             Token::Character(c) => Expr::Character(c)
         };
+        // atom: `atom -> literal_num | ( expression )`
         let atom = literal_num
             .or(expr.delimited_by(just(Token::Ctrl('(')), just(Token::Ctrl(')'))))
             .map_with_span(|atom, span: Span| (atom, span));
 
+        // Unary expressions have the highest precedence
+        // Unary expression: `unary -> [+-~]* atom`
         let op = select! {
             Token::Operator('+') => UnaryOp::Plus,
             Token::Operator('-') => UnaryOp::Minus,
@@ -152,6 +186,8 @@ pub fn parser() -> Parser!(Token, Expr) {
             )
         });
 
+        // Product expressions have the second highest precedence
+        // product expression: `product -> unary ([*/%] unary)*`
         let product = binary_parser(
             unary,
             select! {
@@ -161,6 +197,8 @@ pub fn parser() -> Parser!(Token, Expr) {
             },
         );
 
+        // Bitwise expressions have the third highest precedence
+        // bitwise expression: `bitwise -> product ([*/%] product)*`
         let bitwise = binary_parser(
             product,
             select! {
@@ -170,6 +208,8 @@ pub fn parser() -> Parser!(Token, Expr) {
             },
         );
 
+        // Addition expressions have the lowest precedence
+        // addition expression: `addition -> bitwise ([+-] bitwise)*`
         binary_parser(
             bitwise,
             select! {
@@ -177,7 +217,7 @@ pub fn parser() -> Parser!(Token, Expr) {
                 Token::Operator('-') => BinaryOp::Sub,
             },
         )
-        .map(|(expr, _)| expr)
+        .map(|(expr, _)| expr) // Remove the span from the output since we don't need it
         .labelled("expression")
     })
 }
