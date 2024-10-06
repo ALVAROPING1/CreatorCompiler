@@ -71,6 +71,7 @@ impl Expr {
     }
 
     pub fn float(&self) -> Result<f64, CompileError> {
+        let err = |op, s| ErrorKind::UnallowedFloatOperation(op).add_span(s);
         Ok(match self {
             Self::Integer(value) => f64::from(*value),
             Self::Float((value, _)) => *value,
@@ -78,10 +79,7 @@ impl Expr {
             Self::UnaryOp { op, operand } => match op.0 {
                 UnaryOp::Plus => operand.0.float()?,
                 UnaryOp::Minus => -operand.0.float()?,
-                UnaryOp::Complement => Err(ErrorKind::UnallowedFloatOperation(
-                    OperationKind::UnaryNegation,
-                )
-                .add_span(&op.1))?,
+                UnaryOp::Complement => return Err(err(OperationKind::UnaryNegation, &op.1)),
             },
             Self::BinaryOp { op, lhs, rhs } => {
                 let lhs = lhs.0.float()?;
@@ -92,22 +90,9 @@ impl Expr {
                     BinaryOp::Mul => lhs * rhs,
                     BinaryOp::Div => lhs / rhs,
                     BinaryOp::Rem => lhs % rhs,
-                    BinaryOp::BitwiseOR => {
-                        return Err(ErrorKind::UnallowedFloatOperation(OperationKind::BitwiseOR)
-                            .add_span(&op.1))
-                    }
-                    BinaryOp::BitwiseAND => {
-                        return Err(
-                            ErrorKind::UnallowedFloatOperation(OperationKind::BitwiseAND)
-                                .add_span(&op.1),
-                        )
-                    }
-                    BinaryOp::BitwiseXOR => {
-                        return Err(
-                            ErrorKind::UnallowedFloatOperation(OperationKind::BitwiseXOR)
-                                .add_span(&op.1),
-                        )
-                    }
+                    BinaryOp::BitwiseOR => return Err(err(OperationKind::BitwiseOR, &op.1)),
+                    BinaryOp::BitwiseAND => return Err(err(OperationKind::BitwiseAND, &op.1)),
+                    BinaryOp::BitwiseXOR => return Err(err(OperationKind::BitwiseXOR, &op.1)),
                 }
             }
         })
