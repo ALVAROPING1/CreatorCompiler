@@ -133,7 +133,10 @@ fn binary_parser(
     // Expression: `expression -> element [operator element]*`
     elem.clone()
         .then(
-            op.map_with_span(|op, span| (op, span))
+            // Allow operators to be prefixed by newlines
+            just(Token::Ctrl('\n'))
+                .repeated()
+                .ignore_then(op.map_with_span(|op, span| (op, span)))
                 .then(elem)
                 .repeated(),
         )
@@ -155,26 +158,36 @@ fn binary_parser(
 /// Creates a parser for expressions
 #[must_use]
 pub fn parser() -> Parser!(Token, Expr) {
+    // Newline tokens
+    let newline = || just(Token::Ctrl('\n')).repeated();
+    // Literal values
+    let literal_num = select! { |span|
+        Token::Integer(x) => Expr::Integer(x),
+        Token::Float(x) => Expr::Float((f64::from_bits(x), span)),
+        Token::Character(c) => Expr::Character(c)
+    };
     recursive(|expr| {
-        // literal values
-        let literal_num = select! { |span|
-            Token::Integer(x) => Expr::Integer(x),
-            Token::Float(x) => Expr::Float((f64::from_bits(x), span)),
-            Token::Character(c) => Expr::Character(c)
-        };
-        // atom: `atom -> literal_num | ( expression )`
-        let atom = literal_num
-            .or(expr.delimited_by(just(Token::Ctrl('(')), just(Token::Ctrl(')'))))
-            .map_with_span(|atom, span: Span| (atom, span));
+        // NOTE: newlines before atoms (literal numbers/parenthesized expressions) and operators
+        // are allowed so that expressions may span multiple lines. Newlines aren't allowed after
+        // them to prevent them from consuming new lines required to end statements
+
+        // atom: `atom -> \n* (literal_num | ( expression ))`
+        let atom = newline().ignore_then(
+            literal_num
+                .or(expr.delimited_by(just(Token::Ctrl('(')), just(Token::Ctrl(')'))))
+                .map_with_span(|atom, span: Span| (atom, span)),
+        );
 
         // Unary expressions have the highest precedence
-        // Unary expression: `unary -> [+-~]* atom`
-        let op = select! {
-            Token::Operator('+') => UnaryOp::Plus,
-            Token::Operator('-') => UnaryOp::Minus,
-            Token::Operator('~') => UnaryOp::Complement,
-        }
-        .map_with_span(|op, span: Span| (op, span));
+        // Unary expression: `unary -> (\n* [+-~])* atom`
+        let op = newline().ignore_then(
+            select! {
+                Token::Operator('+') => UnaryOp::Plus,
+                Token::Operator('-') => UnaryOp::Minus,
+                Token::Operator('~') => UnaryOp::Complement,
+            }
+            .map_with_span(|op, span: Span| (op, span)),
+        );
         let unary = op.repeated().then(atom).foldr(|op, rhs| {
             let span = op.1.start..rhs.1.end;
             (
@@ -248,7 +261,13 @@ mod test {
     fn literal() {
         test(&[
             ("16", Expr::Integer(16), (Ok(16), Ok(16.0))),
+            ("\n\n16", Expr::Integer(16), (Ok(16), Ok(16.0))),
             ("'a'", Expr::Character('a'), (Ok(97), Ok(97.0))),
+            (
+                "1.0",
+                Expr::Float((1.0, 0..3)),
+                (Err(ErrorKind::UnallowedFloat.add_span(&(0..3))), Ok(1.0)),
+            ),
         ]);
     }
 
@@ -283,6 +302,11 @@ mod test {
                 (Ok(2), Ok(2.0)),
             ),
             (
+                "\n\n+\n2",
+                un_op((UnaryOp::Plus, 2..3), int(2, 4..5)),
+                (Ok(2), Ok(2.0)),
+            ),
+            (
                 "-2",
                 un_op((UnaryOp::Minus, 0..1), int(2, 1..2)),
                 (Ok(-2), Ok(-2.0)),
@@ -301,6 +325,11 @@ mod test {
             (
                 "5 + 7",
                 bin_op((BinaryOp::Add, 2..3), int(5, 0..1), int(7, 4..5)),
+                (Ok(12), Ok(12.0)),
+            ),
+            (
+                "\n5 \n\n+ \n7",
+                bin_op((BinaryOp::Add, 5..6), int(5, 1..2), int(7, 8..9)),
                 (Ok(12), Ok(12.0)),
             ),
             (
@@ -344,6 +373,11 @@ mod test {
             (
                 "5 * 7",
                 bin_op((BinaryOp::Mul, 2..3), int(5, 0..1), int(7, 4..5)),
+                (Ok(35), Ok(35.0)),
+            ),
+            (
+                "\n5 \n\n* \n7",
+                bin_op((BinaryOp::Mul, 5..6), int(5, 1..2), int(7, 8..9)),
                 (Ok(35), Ok(35.0)),
             ),
             (
@@ -416,6 +450,15 @@ mod test {
                 ),
                 (Ok(0b1001), Err(float_op(OperationKind::BitwiseXOR, 7..8))),
             ),
+            (
+                "\n0b0101 \n\n^ \n0b1100",
+                bin_op(
+                    (BinaryOp::BitwiseXOR, 10..11),
+                    int(0b0101, 1..7),
+                    int(0b1100, 13..19),
+                ),
+                (Ok(0b1001), Err(float_op(OperationKind::BitwiseXOR, 10..11))),
+            ),
         ]);
     }
 
@@ -484,6 +527,14 @@ mod test {
                     int(2, 12..13),
                 ),
                 (Ok(0), Ok(0.0)),
+            ),
+            (
+                "\n- \n\n+ \n1",
+                un_op(
+                    (UnaryOp::Minus, 1..2),
+                    (un_op((UnaryOp::Plus, 5..6), int(1, 8..9)), 5..9),
+                ),
+                (Ok(-1), Ok(-1.0)),
             ),
             (
                 "~-+1",
