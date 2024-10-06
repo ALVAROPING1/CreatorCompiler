@@ -424,40 +424,40 @@ mod test {
     fn binary_bitwise() {
         test(&[
             (
-                "0b0100 | 0b1100",
+                "0b0101 | 0b0011",
                 bin_op(
                     (BinaryOp::BitwiseOR, 7..8),
-                    int(0b0100, 0..6),
-                    int(0b1100, 9..15),
+                    int(0b0101, 0..6),
+                    int(0b0011, 9..15),
                 ),
-                (Ok(0b1100), Err(float_op(OperationKind::BitwiseOR, 7..8))),
+                (Ok(0b0111), Err(float_op(OperationKind::BitwiseOR, 7..8))),
             ),
             (
-                "0b0110 & 0b1100",
+                "0b0101 & 0b0011",
                 bin_op(
                     (BinaryOp::BitwiseAND, 7..8),
-                    int(0b0110, 0..6),
-                    int(0b1100, 9..15),
+                    int(0b0101, 0..6),
+                    int(0b0011, 9..15),
                 ),
-                (Ok(0b0100), Err(float_op(OperationKind::BitwiseAND, 7..8))),
+                (Ok(0b0001), Err(float_op(OperationKind::BitwiseAND, 7..8))),
             ),
             (
-                "0b0101 ^ 0b1100",
+                "0b0101 ^ 0b0011",
                 bin_op(
                     (BinaryOp::BitwiseXOR, 7..8),
                     int(0b0101, 0..6),
-                    int(0b1100, 9..15),
+                    int(0b0011, 9..15),
                 ),
-                (Ok(0b1001), Err(float_op(OperationKind::BitwiseXOR, 7..8))),
+                (Ok(0b0110), Err(float_op(OperationKind::BitwiseXOR, 7..8))),
             ),
             (
-                "\n0b0101 \n\n^ \n0b1100",
+                "\n0b0101 \n\n^ \n0b0011",
                 bin_op(
                     (BinaryOp::BitwiseXOR, 10..11),
                     int(0b0101, 1..7),
-                    int(0b1100, 13..19),
+                    int(0b0011, 13..19),
                 ),
-                (Ok(0b1001), Err(float_op(OperationKind::BitwiseXOR, 10..11))),
+                (Ok(0b0110), Err(float_op(OperationKind::BitwiseXOR, 10..11))),
             ),
         ]);
     }
