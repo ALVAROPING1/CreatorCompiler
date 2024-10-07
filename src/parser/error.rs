@@ -3,9 +3,12 @@ use chumsky::error::{Simple, SimpleReason};
 
 use super::Token;
 
+/// Error representing a syntax error during parsing
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Error {
+    /// The error happened during the lexing stage
     Lexer(Vec<Simple<char>>),
+    /// The error happened during the parsing stage
     Parser(Vec<Simple<Token>>),
 }
 
@@ -22,6 +25,12 @@ impl From<Vec<Simple<Token>>> for Error {
 }
 
 impl Error {
+    /// Prints the error to `stdout`
+    ///
+    /// # Parameters
+    ///
+    /// * `filename`: name of the file with the code
+    /// * `src`: original source code parsed
     pub fn print(self, filename: &str, src: &str) {
         let (lex, parse) = match self {
             Self::Lexer(errs) => (errs, vec![]),
