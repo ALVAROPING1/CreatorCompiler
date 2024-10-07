@@ -25,7 +25,7 @@ macro_rules! Parser {
 use Parser;
 
 /// AST node for directive arguments
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Data {
     /// String literal
     String(String),
@@ -34,7 +34,7 @@ pub enum Data {
 }
 
 /// AST node for instructions
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct InstructionNode {
     /// Name of the instruction
     pub name: Spanned<String>,
@@ -43,7 +43,7 @@ pub struct InstructionNode {
 }
 
 /// AST node for directives
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct DirectiveNode {
     /// Name of the directive
     pub name: Spanned<String>,
@@ -52,14 +52,14 @@ pub struct DirectiveNode {
 }
 
 /// AST node for statements
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Statement {
     Directive(DirectiveNode),
     Instruction(InstructionNode),
 }
 
 /// Top level AST node
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ASTNode {
     /// Labels attached to the node
     pub labels: Vec<Spanned<String>>,
@@ -166,4 +166,207 @@ fn parse_with<T>(parser: Parser!(Token, T), src: &str) -> Result<T, ParseError> 
 /// Errors if the input is syntactically invalid
 pub fn parse(src: &str) -> Result<Vec<ASTNode>, ParseError> {
     parse_with(parser(), src)
+}
+
+#[cfg(test)]
+mod test {
+    use super::{ASTNode, Data, DirectiveNode, Expr, InstructionNode, Statement, Token};
+    use super::{Span, Spanned};
+
+    fn test(test_cases: Vec<(&str, Vec<ASTNode>)>) {
+        for (src, ast) in test_cases {
+            assert_eq!(super::parse(src), Ok(ast), "`{src}`");
+        }
+    }
+
+    fn owned<O, T: ToOwned<Owned = O> + ?Sized>(x: Spanned<&T>) -> Spanned<O> {
+        (x.0.to_owned(), x.1)
+    }
+
+    fn directive(
+        labels: Vec<Spanned<&str>>,
+        name: Spanned<&str>,
+        args: Spanned<Vec<Spanned<Data>>>,
+        span: Span,
+    ) -> ASTNode {
+        ASTNode {
+            labels: labels.into_iter().map(owned).collect(),
+            statement: (
+                Statement::Directive(DirectiveNode {
+                    name: owned(name),
+                    args,
+                }),
+                span,
+            ),
+        }
+    }
+
+    fn instruction(
+        labels: Vec<Spanned<&str>>,
+        name: Spanned<&str>,
+        args: Spanned<Vec<Spanned<Token>>>,
+        span: Span,
+    ) -> ASTNode {
+        ASTNode {
+            labels: labels.into_iter().map(owned).collect(),
+            statement: (
+                Statement::Instruction(InstructionNode {
+                    name: owned(name),
+                    args,
+                }),
+                span,
+            ),
+        }
+    }
+
+    #[test]
+    fn directives() {
+        test(vec![
+            (
+                ".name\n",
+                vec![directive(vec![], (".name", 0..5), (vec![], 5..6), 0..6)],
+            ),
+            (
+                ".name \"a\"\n",
+                vec![directive(
+                    vec![],
+                    (".name", 0..5),
+                    (vec![(Data::String("a".into()), 6..9)], 6..9),
+                    0..10,
+                )],
+            ),
+            (
+                ".name \"a\", 1\n",
+                vec![directive(
+                    vec![],
+                    (".name", 0..5),
+                    (
+                        vec![
+                            (Data::String("a".into()), 6..9),
+                            (Data::Number(Expr::Integer(1)), 11..12),
+                        ],
+                        6..12,
+                    ),
+                    0..13,
+                )],
+            ),
+            (
+                "label: .name\n",
+                vec![directive(
+                    vec![("label", 0..6)],
+                    (".name", 7..12),
+                    (vec![], 12..13),
+                    7..13,
+                )],
+            ),
+            (
+                "a: b: .name\n",
+                vec![directive(
+                    vec![("a", 0..2), ("b", 3..5)],
+                    (".name", 6..11),
+                    (vec![], 11..12),
+                    6..12,
+                )],
+            ),
+        ]);
+    }
+
+    #[test]
+    fn instructions() {
+        test(vec![
+            (
+                "name\n",
+                vec![instruction(vec![], ("name", 0..4), (vec![], 4..5), 0..5)],
+            ),
+            (
+                "name a\n",
+                vec![instruction(
+                    vec![],
+                    ("name", 0..4),
+                    (vec![(Token::Identifier("a".into()), 5..6)], 5..6),
+                    0..7,
+                )],
+            ),
+            (
+                "name a, 1\n",
+                vec![instruction(
+                    vec![],
+                    ("name", 0..4),
+                    (
+                        vec![
+                            (Token::Identifier("a".into()), 5..6),
+                            (Token::Ctrl(','), 6..7),
+                            (Token::Integer(1), 8..9),
+                        ],
+                        5..9,
+                    ),
+                    0..10,
+                )],
+            ),
+            (
+                "label: name\n",
+                vec![instruction(
+                    vec![("label", 0..6)],
+                    ("name", 7..11),
+                    (vec![], 11..12),
+                    7..12,
+                )],
+            ),
+            (
+                "a: b: name\n",
+                vec![instruction(
+                    vec![("a", 0..2), ("b", 3..5)],
+                    ("name", 6..10),
+                    (vec![], 10..11),
+                    6..11,
+                )],
+            ),
+            (
+                "\na: \n\tb: \nname\n",
+                vec![instruction(
+                    vec![("a", 1..3), ("b", 6..8)],
+                    ("name", 10..14),
+                    (vec![], 14..15),
+                    10..15,
+                )],
+            ),
+        ]);
+    }
+
+    #[test]
+    fn mixed() {
+        test(vec![
+            (
+                "name\n .dir\n",
+                vec![
+                    instruction(vec![], ("name", 0..4), (vec![], 4..5), 0..5),
+                    directive(vec![], (".dir", 6..10), (vec![], 10..11), 6..11),
+                ],
+            ),
+            (
+                ".dir\n name\n",
+                vec![
+                    directive(vec![], (".dir", 0..4), (vec![], 4..5), 0..5),
+                    instruction(vec![], ("name", 6..10), (vec![], 10..11), 6..11),
+                ],
+            ),
+            (
+                "a: .dir 1\n b: name\n",
+                vec![
+                    directive(
+                        vec![("a", 0..2)],
+                        (".dir", 3..7),
+                        (vec![(Data::Number(Expr::Integer(1)), 8..9)], 8..9),
+                        3..10,
+                    ),
+                    instruction(
+                        vec![("b", 11..13)],
+                        ("name", 14..18),
+                        (vec![], 18..19),
+                        14..19,
+                    ),
+                ],
+            ),
+        ]);
+    }
 }
