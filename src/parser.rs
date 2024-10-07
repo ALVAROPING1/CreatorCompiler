@@ -123,6 +123,7 @@ fn parser<'a>() -> Parser!(Token, Vec<ASTNode>, 'a) {
                 .repeated()
                 .map_with_span(|args, span| (args, span)),
         )
+        .then_ignore(newline())
         .map(|(name, args)| Statement::Instruction(InstructionNode { name, args }))
         .labelled("instruction");
 
