@@ -1,4 +1,4 @@
-use creator_parser::{architecture::Architecture, compiler, parser};
+use creator_compiler::{architecture::Architecture, compiler, parser};
 
 fn main() {
     let mut args = std::env::args();

@@ -92,7 +92,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "creator-parser"
+name = "creator-compiler"
 version = "0.1.0"
 dependencies = [
  "ariadne",
