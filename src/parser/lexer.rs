@@ -1,3 +1,7 @@
+//! Module containing the definition of the lexer
+//!
+//! The main entry point for creating the parser is the [`lexer()`] function
+
 use chumsky::prelude::*;
 use std::{fmt, num::IntErrorKind, str::FromStr};
 

@@ -1,3 +1,8 @@
+//! Module containing the definition of the expressions sub-parser as well as their evaluation
+//!
+//! The main entry point for creating the parser is the [`parser()`] function, with the evaluation
+//! of methods being defined in the methods of the [`Expr`] type
+
 use chumsky::prelude::*;
 
 use super::{Parser, Span, Spanned, Token};

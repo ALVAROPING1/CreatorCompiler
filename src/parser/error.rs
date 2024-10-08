@@ -1,3 +1,5 @@
+//! Module containing the definition of the error type used by syntax errors
+
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::error::{Simple, SimpleReason};
 

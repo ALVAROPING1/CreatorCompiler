@@ -1,3 +1,7 @@
+//! Module containing the definition of the parser for instruction arguments
+//!
+//! The main entry point is the [`Instruction`] type
+
 use chumsky::{prelude::*, stream::Stream};
 
 use once_cell::sync::Lazy;

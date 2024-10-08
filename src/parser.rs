@@ -1,3 +1,8 @@
+//! Module containing the definition of the assembly parser
+//!
+//! Contains the definition of the AST, with the entry point for parsing code being the [`parse()`]
+//! function
+
 use chumsky::{prelude::*, stream::Stream};
 
 mod expression;
