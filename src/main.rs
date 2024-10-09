@@ -26,10 +26,8 @@ fn main() {
                 println!("{ast:#?}");
                 if operation == 3 {
                     match compiler::compile(&arch, ast) {
-                        Ok((label_table, instructions, data)) => {
-                            println!("{label_table:#?}");
-                            println!("{instructions:#?}");
-                            println!("{data:#?}");
+                        Ok(compiled_code) => {
+                            println!("{compiled_code:#?}");
                         }
                         Err(e) => e.print(&filename, &src),
                     };

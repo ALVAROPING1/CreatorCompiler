@@ -35,7 +35,7 @@ impl Label {
 }
 
 /// Symbol table for labels
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Table(HashMap<String, Label>);
 
 impl Table {

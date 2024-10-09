@@ -114,6 +114,13 @@ impl DataToken {
     }
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub struct CompiledCode {
+    pub label_table: LabelTable,
+    pub instructions: Vec<Instruction>,
+    pub data_memory: Vec<Data>,
+}
+
 fn take_spanned_vec<T>(dest: &mut Vec<Spanned<T>>) -> Vec<T> {
     std::mem::take(dest).into_iter().map(|x| x.0).collect()
 }
@@ -214,10 +221,7 @@ fn compile_data(
 }
 
 #[allow(clippy::too_many_lines)]
-pub fn compile(
-    arch: &Architecture,
-    ast: Vec<ASTNode>,
-) -> Result<(LabelTable, Vec<Instruction>, Vec<Data>), CompileError> {
+pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, CompileError> {
     let mut label_table = LabelTable::default();
     let mut code_section = Section::new("Instructions", arch.code_section());
     let mut data_section = Section::new("Data", arch.data_section());
@@ -428,5 +432,9 @@ pub fn compile(
             })
         })
         .collect::<Result<Vec<_>, _>>()
-        .map(|instructions| (label_table, instructions, data_memory))
+        .map(|instructions| CompiledCode {
+            label_table,
+            instructions,
+            data_memory,
+        })
 }
