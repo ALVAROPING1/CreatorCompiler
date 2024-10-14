@@ -133,7 +133,7 @@ fn parser<'a>() -> Parser!(Token, Vec<ASTNode>, 'a) {
     // Statement: `statement -> labels [instruction | directive]`
     let statement = labels
         .then(directive.or(instruction).map_with_span(|x, s| (x, s)))
-        .then_ignore(newline())
+        .then_ignore(newline().ignored().or(end()))
         .padded_by(newline().repeated())
         .map(|(labels, statement)| ASTNode { labels, statement });
 
@@ -232,6 +232,10 @@ mod test {
                 vec![directive(vec![], (".name", 0..5), (vec![], 5..6), 0..5)],
             ),
             (
+                ".name",
+                vec![directive(vec![], (".name", 0..5), (vec![], 5..6), 0..5)],
+            ),
+            (
                 ".name \"a\"\n",
                 vec![directive(
                     vec![],
@@ -281,6 +285,10 @@ mod test {
         test(vec![
             (
                 "name\n",
+                vec![instruction(vec![], ("name", 0..4), (vec![], 4..5), 0..4)],
+            ),
+            (
+                "name",
                 vec![instruction(vec![], ("name", 0..4), (vec![], 4..5), 0..4)],
             ),
             (
