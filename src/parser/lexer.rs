@@ -230,12 +230,16 @@ pub fn lexer() -> Parser!(char, Vec<Spanned<Token>>) {
         .ignored()
         .labelled("comment");
 
-    let whitespace = filter(|c: &char| c.is_whitespace() && *c != '\n').ignored();
+    let whitespace = filter(|c: &char| c.is_whitespace() && *c != '\n')
+        .ignored()
+        .labelled("whitespace");
+    let padding = comment.or(whitespace).repeated();
 
     token
         .map_with_span(|tok, span| (tok, span))
-        .padded_by(comment.or(whitespace).repeated())
+        .padded_by(padding)
         .repeated()
+        .padded_by(padding)
         .then_ignore(end())
 }
 
@@ -244,7 +248,7 @@ pub fn lexer() -> Parser!(char, Vec<Spanned<Token>>) {
 mod test {
     use super::{lexer, Parser as _, Spanned, Token};
     fn lex(code: &str) -> Result<Vec<Spanned<Token>>, ()> {
-        lexer().parse(code).map_err(|_| ())
+        lexer().parse(code).map_err(|e| eprintln!("{e:?}"))
     }
 
     #[test]
@@ -471,5 +475,22 @@ mod test {
             (Token::String("string".into()), 23..31),
         ];
         assert_eq!(lex(src), Ok(tokens));
+    }
+
+    #[test]
+    fn empty() {
+        let test_cases = [
+            "",
+            " ",
+            "    ",
+            "  \t  ",
+            "#a",
+            "/*a*/",
+            " \t #a",
+            " /*a*/ \t /*b*/ #c",
+        ];
+        for s in test_cases {
+            assert_eq!(lex(s), Ok(vec![]), "`{s}`");
+        }
     }
 }

@@ -138,7 +138,10 @@ fn parser<'a>() -> Parser!(Token, Vec<ASTNode>, 'a) {
         .map(|(labels, statement)| ASTNode { labels, statement });
 
     // `code -> statement*`
-    statement.repeated().then_ignore(end())
+    statement
+        .repeated()
+        .padded_by(newline().repeated())
+        .then_ignore(end())
 }
 
 /// Tokenizes an input and parses it with a given parser
@@ -381,5 +384,12 @@ mod test {
                 ],
             ),
         ]);
+    }
+
+    #[test]
+    fn empty() {
+        assert_eq!(super::parse(""), Ok(vec![]));
+        assert_eq!(super::parse("\n"), Ok(vec![]));
+        assert_eq!(super::parse("\n\n"), Ok(vec![]));
     }
 }
