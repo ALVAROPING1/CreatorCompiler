@@ -7,5 +7,39 @@
   <body>
     <noscript>This page contains webassembly and javascript content, please enable javascript in your browser.</noscript>
     <script src="./bootstrap.js"></script>
+    <style>
+    html {margin: 25px;}
+    :root {
+      --err-red: #cc0403;
+      --err-bright-blue: #1a8fff;
+      --black-bg: #1f1f1f;
+      --white-fg: #d4d4d4;
+    }
+    .code {
+      font-family: monospace;
+      width: 75vw;
+      border-style: solid;
+      border-width: 2px;
+      white-space: pre;
+      overflow-x: auto;
+    }
+    #result {
+      color: var(--white-fg);
+      background-color: var(--black-bg);
+    }
+    #src { resize: none; height: 40vh; }
+    #compile_btn {
+      margin-top: 25px;
+      margin-bottom: 25px;
+    }
+    </style>
+    <textarea id="src" class="code">
+.data
+label: .byte 1
+.text
+main: nop x0
+    </textarea><br>
+    <button id="compile_btn" type="button">Compile</button><br>
+    <div id="result" class="code"></div>
   </body>
 </html>

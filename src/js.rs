@@ -16,6 +16,12 @@ self_cell!(
     }
 );
 
+/// Converts a given string with ANSI escape codes to HTML
+fn to_html(str: &str) -> String {
+    let opts = ansi_to_html::Opts::default().four_bit_var_prefix(Some("err-".into()));
+    ansi_to_html::convert_with_opts(str, &opts).expect("we should only generate valid ANSI escapes")
+}
+
 #[wasm_bindgen]
 #[allow(clippy::use_self)] // wasm_bindgen doesn't support using `Self` on nested types
 impl ArchitectureJS {
@@ -50,11 +56,10 @@ impl ArchitectureJS {
     ///
     /// Errors if the assembly code has a syntactical or semantical error
     pub fn compile(&self, src: &str) -> Result<CompiledCodeJS, String> {
-        // TODO: properly render errors
         const FILENAME: &str = "assembly";
-        let ast = crate::parser::parse(src).map_err(|e| e.render(FILENAME, src))?;
+        let ast = crate::parser::parse(src).map_err(|e| to_html(&e.render(FILENAME, src)))?;
         let compiled = crate::compiler::compile(self.borrow_dependent(), ast)
-            .map_err(|e| e.render(FILENAME, src))?;
+            .map_err(|e| to_html(&e.render(FILENAME, src)))?;
         let instructions = compiled
             .instructions
             .into_iter()
