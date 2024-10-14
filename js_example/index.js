@@ -161,15 +161,29 @@ const json_arch = `{
 
 const arch = wasm.ArchitectureJS.from_json(json_arch);
 console.log(arch.toString())
+window["arch"] = arch
 
 try {
-  const code = arch.compile(`
+  const compiled = arch.compile(`
     .data
     label: .byte 1
     .text
     main: nop x0
   `);
-  console.log(code)
+  console.log(compiled)
+  // copy instruction data out of the wasm memory
+  const instructions = compiled.instructions.map(x => ({
+    address: x.address,
+    labels: x.labels,
+    loaded: x.loaded,
+    binary: x.binary,
+    user: x.user
+  }));
+  const data = compiled.data
+  console.log(instructions)
+  console.log(data)
+  window["instructions"] = instructions
+  window["data"] = data
 } catch (e) {
   console.error(e)
 }

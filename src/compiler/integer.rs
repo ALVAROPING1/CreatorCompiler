@@ -50,6 +50,24 @@ impl Integer {
             r#type,
         })
     }
+
+    /// Gets the value of the integer
+    #[must_use]
+    pub const fn value(&self) -> u64 {
+        self.value
+    }
+
+    /// Gets the type of the integer
+    #[must_use]
+    pub const fn r#type(&self) -> Option<IntegerType> {
+        self.r#type
+    }
+
+    /// Gets the size of the integer in bits
+    #[must_use]
+    pub const fn size(&self) -> usize {
+        self.size
+    }
 }
 
 impl std::fmt::Display for Integer {

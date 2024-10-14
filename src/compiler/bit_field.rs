@@ -59,6 +59,12 @@ impl BitField {
     }
 }
 
+impl From<BitField> for String {
+    fn from(value: BitField) -> Self {
+        value.0
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::architecture::NonEmptyRangeInclusiveU8;
