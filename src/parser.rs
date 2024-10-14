@@ -115,7 +115,6 @@ fn parser<'a>() -> Parser!(Token, Vec<ASTNode>, 'a) {
                 .map_with_span(|x, span| (x, span))
                 .labelled("parameters"),
         )
-        .then_ignore(newline())
         .map(|(name, args)| Statement::Directive(DirectiveNode { name, args }))
         .labelled("data directive");
 
@@ -128,13 +127,13 @@ fn parser<'a>() -> Parser!(Token, Vec<ASTNode>, 'a) {
                 .repeated()
                 .map_with_span(|args, span| (args, span)),
         )
-        .then_ignore(newline())
         .map(|(name, args)| Statement::Instruction(InstructionNode { name, args }))
         .labelled("instruction");
 
     // Statement: `statement -> labels [instruction | directive]`
     let statement = labels
         .then(directive.or(instruction).map_with_span(|x, s| (x, s)))
+        .then_ignore(newline())
         .padded_by(newline().repeated())
         .map(|(labels, statement)| ASTNode { labels, statement });
 
@@ -230,7 +229,7 @@ mod test {
         test(vec![
             (
                 ".name\n",
-                vec![directive(vec![], (".name", 0..5), (vec![], 5..6), 0..6)],
+                vec![directive(vec![], (".name", 0..5), (vec![], 5..6), 0..5)],
             ),
             (
                 ".name \"a\"\n",
@@ -238,7 +237,7 @@ mod test {
                     vec![],
                     (".name", 0..5),
                     (vec![(Data::String("a".into()), 6..9)], 6..9),
-                    0..10,
+                    0..9,
                 )],
             ),
             (
@@ -253,7 +252,7 @@ mod test {
                         ],
                         6..12,
                     ),
-                    0..13,
+                    0..12,
                 )],
             ),
             (
@@ -262,7 +261,7 @@ mod test {
                     vec![("label", 0..6)],
                     (".name", 7..12),
                     (vec![], 12..13),
-                    7..13,
+                    7..12,
                 )],
             ),
             (
@@ -271,7 +270,7 @@ mod test {
                     vec![("a", 0..2), ("b", 3..5)],
                     (".name", 6..11),
                     (vec![], 11..12),
-                    6..12,
+                    6..11,
                 )],
             ),
         ]);
@@ -282,7 +281,7 @@ mod test {
         test(vec![
             (
                 "name\n",
-                vec![instruction(vec![], ("name", 0..4), (vec![], 4..5), 0..5)],
+                vec![instruction(vec![], ("name", 0..4), (vec![], 4..5), 0..4)],
             ),
             (
                 "name a\n",
@@ -290,7 +289,7 @@ mod test {
                     vec![],
                     ("name", 0..4),
                     (vec![(Token::Identifier("a".into()), 5..6)], 5..6),
-                    0..7,
+                    0..6,
                 )],
             ),
             (
@@ -306,7 +305,7 @@ mod test {
                         ],
                         5..9,
                     ),
-                    0..10,
+                    0..9,
                 )],
             ),
             (
@@ -315,7 +314,7 @@ mod test {
                     vec![("label", 0..6)],
                     ("name", 7..11),
                     (vec![], 11..12),
-                    7..12,
+                    7..11,
                 )],
             ),
             (
@@ -324,7 +323,7 @@ mod test {
                     vec![("a", 0..2), ("b", 3..5)],
                     ("name", 6..10),
                     (vec![], 10..11),
-                    6..11,
+                    6..10,
                 )],
             ),
             (
@@ -333,7 +332,7 @@ mod test {
                     vec![("a", 1..3), ("b", 6..8)],
                     ("name", 10..14),
                     (vec![], 14..15),
-                    10..15,
+                    10..14,
                 )],
             ),
         ]);
@@ -345,15 +344,15 @@ mod test {
             (
                 "name\n .dir\n",
                 vec![
-                    instruction(vec![], ("name", 0..4), (vec![], 4..5), 0..5),
-                    directive(vec![], (".dir", 6..10), (vec![], 10..11), 6..11),
+                    instruction(vec![], ("name", 0..4), (vec![], 4..5), 0..4),
+                    directive(vec![], (".dir", 6..10), (vec![], 10..11), 6..10),
                 ],
             ),
             (
                 ".dir\n name\n",
                 vec![
-                    directive(vec![], (".dir", 0..4), (vec![], 4..5), 0..5),
-                    instruction(vec![], ("name", 6..10), (vec![], 10..11), 6..11),
+                    directive(vec![], (".dir", 0..4), (vec![], 4..5), 0..4),
+                    instruction(vec![], ("name", 6..10), (vec![], 10..11), 6..10),
                 ],
             ),
             (
@@ -363,13 +362,13 @@ mod test {
                         vec![("a", 0..2)],
                         (".dir", 3..7),
                         (vec![(Data::Number(Expr::Integer(1)), 8..9)], 8..9),
-                        3..10,
+                        3..9,
                     ),
                     instruction(
                         vec![("b", 11..13)],
                         ("name", 14..18),
                         (vec![], 18..19),
-                        14..19,
+                        14..18,
                     ),
                 ],
             ),
