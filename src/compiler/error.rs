@@ -1,8 +1,8 @@
 use ariadne::{Color, Fmt, Label, Report, ReportKind, Source};
 
 use std::fmt;
-use std::fmt::Write as _;
 use std::ops::Range;
+use std::{fmt::Write as _, io::Write as _};
 
 use crate::architecture::{ComponentType, DirectiveSegment};
 use crate::parser::{ParseError, Span, Spanned};
@@ -271,8 +271,8 @@ impl fmt::Display for Kind {
     }
 }
 
-impl Error {
-    pub fn print(self, filename: &str, src: &str) {
+impl crate::RenderError for Error {
+    fn format(self, filename: &str, src: &str, mut buffer: &mut Vec<u8>) {
         let mut report = Report::build(ReportKind::Error, filename, self.span.start)
             .with_code(format!("E{:02}", self.kind.error_code()))
             .with_message(self.kind.to_string())
@@ -296,13 +296,17 @@ impl Error {
 
         report
             .finish()
-            .print((filename, Source::from(src)))
-            .expect("we should be able to print to stdout");
+            .write((filename, Source::from(src)), &mut buffer)
+            .expect("Writing to an in-memory vector can't fail");
 
         if let Kind::IncorrectInstructionSyntax(errs) = self.kind {
             for (syntax, err) in errs {
-                println!("\nThe syntax `{syntax}` failed with the following reason:\n");
-                err.print(filename, src);
+                write!(
+                    &mut buffer,
+                    "\nThe syntax `{syntax}` failed with the following reason:\n"
+                )
+                .expect("Writing to an in-memory vector can't fail");
+                err.format(filename, src, buffer);
             }
         }
     }

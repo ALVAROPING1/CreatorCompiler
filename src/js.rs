@@ -2,6 +2,7 @@ use self_cell::self_cell;
 use wasm_bindgen::prelude::*;
 
 use crate::architecture::Architecture;
+use crate::RenderError;
 
 mod utils;
 
@@ -50,9 +51,10 @@ impl ArchitectureJS {
     /// Errors if the assembly code has a syntactical or semantical error
     pub fn compile(&self, src: &str) -> Result<CompiledCodeJS, String> {
         // TODO: properly render errors
-        let ast = crate::parser::parse(src).map_err(|e| format!("{e:#?}"))?;
+        const FILENAME: &str = "assembly";
+        let ast = crate::parser::parse(src).map_err(|e| e.render(FILENAME, src))?;
         let compiled = crate::compiler::compile(self.borrow_dependent(), ast)
-            .map_err(|e| format!("{e:#?}"))?;
+            .map_err(|e| e.render(FILENAME, src))?;
         let instructions = compiled
             .instructions
             .into_iter()

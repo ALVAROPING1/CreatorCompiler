@@ -26,14 +26,8 @@ impl From<Vec<Simple<Token>>> for Error {
     }
 }
 
-impl Error {
-    /// Prints the error to `stdout`
-    ///
-    /// # Parameters
-    ///
-    /// * `filename`: name of the file with the code
-    /// * `src`: original source code parsed
-    pub fn print(self, filename: &str, src: &str) {
+impl crate::RenderError for Error {
+    fn format(self, filename: &str, src: &str, mut buffer: &mut Vec<u8>) {
         let (lex, parse) = match self {
             Self::Lexer(errs) => (errs, vec![]),
             Self::Parser(errs) => (vec![], errs),
@@ -64,8 +58,8 @@ impl Error {
                             .with_color(Color::Yellow)]
                     }))
                     .finish()
-                    .print((filename, Source::from(src)))
-                    .expect("we should be able to print to stdout");
+                    .write((filename, Source::from(src)), &mut buffer)
+                    .expect("Writing to an in-memory vector can't fail");
             });
     }
 }

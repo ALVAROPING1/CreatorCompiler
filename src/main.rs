@@ -1,4 +1,4 @@
-use creator_compiler::{architecture::Architecture, compiler, parser};
+use creator_compiler::{architecture::Architecture, compiler, parser, RenderError};
 
 fn main() {
     let mut args = std::env::args();
@@ -21,7 +21,7 @@ fn main() {
         let filename = args.next().expect("Expected file argument");
         let src = std::fs::read_to_string(&filename).expect("We should be able to read the file");
         match parser::parse(&src) {
-            Err(errors) => errors.print(&filename, &src),
+            Err(errors) => print!("{}", errors.render(&filename, &src)),
             Ok(ast) => {
                 println!("{ast:#?}");
                 if operation == 3 {
@@ -29,7 +29,7 @@ fn main() {
                         Ok(compiled_code) => {
                             println!("{compiled_code:#?}");
                         }
-                        Err(e) => e.print(&filename, &src),
+                        Err(e) => print!("{}", e.render(&filename, &src)),
                     };
                 }
             }
