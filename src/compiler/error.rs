@@ -7,6 +7,8 @@ use std::{fmt::Write as _, io::Write as _};
 use crate::architecture::{ComponentType, DirectiveSegment};
 use crate::parser::{ParseError, Span, Spanned};
 
+use super::ArgumentNumber;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArgumentType {
     String,
@@ -44,7 +46,7 @@ pub enum Kind {
     },
     UnallowedNegativeValue(i64),
     IncorrectDirectiveArgumentNumber {
-        expected: u8,
+        expected: ArgumentNumber,
         found: usize,
     },
     IncorrectArgumentType {
@@ -131,7 +133,7 @@ impl Kind {
             Self::DuplicateLabel(..) => "Consider renaming either of the labels".into(),
             Self::MainOutsideCode(..) => "Consider moving the label to an instruction".into(),
             Self::IncorrectDirectiveArgumentNumber { expected, found } => {
-                let expected = usize::from(*expected);
+                let expected = expected.amount;
                 let (msg, n) = if expected > *found {
                     ("adding the missing", expected - found)
                 } else {
@@ -238,7 +240,9 @@ impl fmt::Display for Kind {
             Self::UnallowedNegativeValue(_) => write!(f, "Negative values aren't allowed"),
             Self::IncorrectDirectiveArgumentNumber { expected, found } => write!(
                 f,
-                "Incorrect amount of arguments, expected {expected} but found {found}"
+                "Incorrect amount of arguments, expected {}{} but found {found}",
+                if expected.at_least { "at least " } else { "" },
+                expected.amount
             ),
             Self::IncorrectArgumentType { expected, found } => write!(
                 f,
