@@ -29,23 +29,27 @@ impl Integer {
         signed: Option<bool>,
     ) -> Result<Self, ErrorKind> {
         let pow = |n: usize| 1 << n;
-        let bounds = signed.map_or_else(
-            || -pow(size - 1)..pow(size),
-            |signed| {
-                if signed {
-                    let max = pow(size - 1);
-                    -max..max
-                } else {
-                    0..pow(size)
-                }
-            },
-        );
-        if !bounds.contains(&value) {
-            return Err(ErrorKind::IntegerTooBig(value, bounds));
-        };
+        // TODO: improve handling of >=64 bit ints
+        if size < 64 - 1 {
+            let bounds = signed.map_or_else(
+                || -pow(size - 1)..pow(size),
+                |signed| {
+                    if signed {
+                        let max = pow(size - 1);
+                        -max..max
+                    } else {
+                        0..pow(size)
+                    }
+                },
+            );
+            if !bounds.contains(&value) {
+                return Err(ErrorKind::IntegerTooBig(value, bounds));
+            };
+        }
+        let mask = if size < 64 { (1 << size) - 1 } else { u64::MAX };
         #[allow(clippy::cast_sign_loss)]
         Ok(Self {
-            value: value as u64 & ((1 << size) - 1),
+            value: value as u64 & mask,
             size,
             r#type,
         })
@@ -80,13 +84,13 @@ impl std::fmt::Display for Integer {
 }
 
 #[allow(clippy::unwrap_used)]
+#[allow(clippy::cast_sign_loss)]
 #[cfg(test)]
 mod test {
     use super::{ErrorKind, Integer, IntegerType};
 
     #[test]
     fn bits_signed() {
-        #[allow(clippy::cast_sign_loss)]
         for (x, x_str) in [(-8, "1000"), (-5, "1011"), (4, "0100"), (7, "0111")] {
             let val = Integer::build(x, 4, None, Some(true));
             assert_eq!(
@@ -103,6 +107,16 @@ mod test {
             assert_eq!(
                 Integer::build(x, 4, None, Some(true)),
                 Err(ErrorKind::IntegerTooBig(x, -8..8))
+            );
+        }
+        for x in [i64::MAX, i64::MIN] {
+            assert_eq!(
+                Integer::build(x, 64, None, Some(true)),
+                Ok(Integer {
+                    value: x as u64,
+                    size: 64,
+                    r#type: None,
+                })
             );
         }
     }
@@ -126,6 +140,16 @@ mod test {
             assert_eq!(
                 Integer::build(x, 4, None, Some(false)),
                 Err(ErrorKind::IntegerTooBig(x, 0..16))
+            );
+        }
+        for x in [0, i64::MAX] {
+            assert_eq!(
+                Integer::build(x, 64, None, Some(false)),
+                Ok(Integer {
+                    value: x as u64,
+                    size: 64,
+                    r#type: None,
+                })
             );
         }
     }
