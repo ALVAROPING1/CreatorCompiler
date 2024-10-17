@@ -254,7 +254,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
     let mut parsed_instructions = Vec::new();
     let mut data_memory = Vec::new();
     let mut alignment: Option<Spanned<u64>> = None;
-    let mut instruction_eof_span: Span = 0..0;
+    let mut instruction_eof = 0;
     let mut current_section: Option<Spanned<DirectiveSegment>> = None;
 
     for node in ast {
@@ -316,7 +316,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                     .add_span(&node.statement.1));
                 }
                 let (name, span) = instruction.name;
-                instruction_eof_span = node.statement.1.end..node.statement.1.end + 1;
+                instruction_eof = node.statement.1.end;
                 let (def, args) =
                     parse_instruction(arch, (&name, span.clone()), &instruction.args)?;
                 let addr = code_section
@@ -336,8 +336,9 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
     }
     match label_table.get(arch.main_label()) {
         None => {
+            #[allow(clippy::range_plus_one)] // Ariadne works with exclusive ranges
             return Err(ErrorKind::MissingMainLabel(arch.main_label().to_owned())
-                .add_span(&instruction_eof_span));
+                .add_span(&(instruction_eof..instruction_eof + 1)));
         }
         Some(main) => {
             let text = arch.code_section();
