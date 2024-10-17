@@ -135,18 +135,26 @@ impl DataJS {
 
     /// Value of the data element:
     ///
-    /// * For integers/floating point values, it's their value in hexadecimal without the `0x` prefix
+    /// * For integers/floating point values, it's their value either in hexadecimal without the
+    ///   `0x` prefix or as a number, depending on the `human` parameter
     /// * For strings, it's their contents
     /// * For empty spaces/padding, it's their size as a string
+    ///
+    /// # Parameters
+    ///
+    /// * `human`: whether to return the value as a human-readable representation or in bynary
     #[must_use]
-    pub fn value(&self) -> String {
+    pub fn value(&self, human: bool) -> String {
         use crate::compiler::Value;
-        match &self.0.value {
-            Value::Integer(int) => format!("{:X}", int.value()),
-            Value::Float(float) => format!("{:X}", float.to_bits()),
-            Value::Double(double) => format!("{:X}", double.to_bits()),
-            Value::String { data, .. } => data.clone(),
-            Value::Space(n) | Value::Padding(n) => n.to_string(),
+        match (&self.0.value, human) {
+            (Value::Integer(int), true) => format!("{}", int.value()),
+            (Value::Integer(int), false) => format!("{:X}", int.value()),
+            (Value::Float(float), true) => format!("{float}"),
+            (Value::Float(float), false) => format!("{:X}", float.to_bits()),
+            (Value::Double(double), true) => format!("{double}"),
+            (Value::Double(double), false) => format!("{:X}", double.to_bits()),
+            (Value::String { data, .. }, _) => data.clone(),
+            (Value::Space(n) | Value::Padding(n), _) => n.to_string(),
         }
     }
 
