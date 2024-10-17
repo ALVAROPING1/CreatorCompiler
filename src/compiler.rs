@@ -158,6 +158,7 @@ fn compile_data(
     section: &mut Section,
     memory: &mut Vec<Data>,
     alignment: &mut Option<Spanned<u64>>,
+    word_size: u64,
     data_type: DirectiveData,
     mut labels: Vec<Spanned<String>>,
     args: Spanned<Vec<Spanned<DataToken>>>,
@@ -194,7 +195,9 @@ fn compile_data(
             for (value, span) in args.0 {
                 let value = value.to_expr(&span)?.int()?;
                 memory.push(Data {
-                    address: section.try_reserve_aligned(size.into()).add_span(&span)?,
+                    address: section
+                        .try_reserve_aligned(size.into(), word_size)
+                        .add_span(&span)?,
                     labels: take_spanned_vec(&mut labels),
                     value: Value::Integer(
                         Integer::build(value.into(), (size * 8).into(), Some(int_type), None)
@@ -213,7 +216,9 @@ fn compile_data(
                     FloatType::Double => (Value::Double(value), 8),
                 };
                 memory.push(Data {
-                    address: section.try_reserve_aligned(size).add_span(&span)?,
+                    address: section
+                        .try_reserve_aligned(size, word_size)
+                        .add_span(&span)?,
                     labels: take_spanned_vec(&mut labels),
                     value,
                 });
@@ -287,6 +292,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                             &mut data_section,
                             &mut data_memory,
                             &mut alignment,
+                            word_size.into(),
                             data_type,
                             node.labels,
                             directive.args,

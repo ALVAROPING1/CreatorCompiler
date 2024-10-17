@@ -43,6 +43,7 @@ pub enum Kind {
     DataUnaligned {
         address: u64,
         alignment: u64,
+        word_size: u64,
     },
     UnallowedNegativeValue(i64),
     IncorrectDirectiveArgumentNumber {
@@ -233,9 +234,9 @@ impl fmt::Display for Kind {
                 write!(f, "Field is too small to contain value \"{val}\"")
             }
             Self::MemorySectionFull(name) => write!(f, "{name} memory segment is full"),
-            Self::DataUnaligned { address, alignment } => write!(
+            Self::DataUnaligned { address, alignment, word_size } => write!(
                 f,
-                "Data at address {address:#X} isn't aligned to size {alignment}"
+                "Data at address {address:#X} isn't aligned to size {alignment} nor word size {word_size}"
             ),
             Self::UnallowedNegativeValue(_) => write!(f, "Negative values aren't allowed"),
             Self::IncorrectDirectiveArgumentNumber { expected, found } => write!(

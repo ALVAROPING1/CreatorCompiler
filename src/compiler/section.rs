@@ -77,17 +77,19 @@ impl Section {
     /// # Parameters
     ///
     /// * `size`: amount of addresses to reserve space for
+    /// * `word_size`: size of a word in the architecture, in bytes
     ///
     /// # Errors
     ///
     /// Returns a `ErrorKind::MemorySectionFull` if the there is not enough space in the section
     /// left for the requested allocation, or a `ErrorKind::DataUnaligned` if the region isn't
     /// aligned
-    pub fn try_reserve_aligned(&mut self, size: u64) -> Result<u64, ErrorKind> {
-        if self.address % size != 0 {
+    pub fn try_reserve_aligned(&mut self, size: u64, word_size: u64) -> Result<u64, ErrorKind> {
+        if self.address % size != 0 && self.address % word_size != 0 {
             Err(ErrorKind::DataUnaligned {
                 address: self.address,
                 alignment: size,
+                word_size,
             })
         } else {
             self.try_reserve(size)
