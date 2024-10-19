@@ -563,6 +563,8 @@ impl BitRange {
     /// Calculates the size of this field in bits
     #[must_use]
     pub fn size(&self) -> usize {
+        // We need a closure because there are multiple methods for different types
+        #[allow(clippy::redundant_closure_for_method_calls)]
         self.iter()
             .map(|x| x.size())
             .reduce(|acc, val| acc.saturating_add(val.into()))
