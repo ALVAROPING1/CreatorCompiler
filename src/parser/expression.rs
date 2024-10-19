@@ -179,7 +179,10 @@ pub fn parser() -> Parser!(Token, Expr) {
         // atom: `atom -> \n* (literal_num | ( expression ))`
         let atom = newline().ignore_then(
             literal_num
-                .or(expr.delimited_by(just(Token::Ctrl('(')), just(Token::Ctrl(')'))))
+                .or(expr.delimited_by(
+                    just(Token::Ctrl('(')),
+                    newline().ignore_then(just(Token::Ctrl(')'))),
+                ))
                 .map_with_span(|atom, span: Span| (atom, span)),
         );
 
@@ -484,13 +487,13 @@ mod test {
                 (Ok(0), Ok(0.0)),
             ),
             (
-                "1 + (2 - 3)",
+                "1 + \n(\n2 - 3\n)",
                 bin_op(
                     (BinaryOp::Add, 2..3),
                     int(1, 0..1),
                     (
-                        bin_op((BinaryOp::Sub, 7..8), int(2, 5..6), int(3, 9..10)),
-                        4..11,
+                        bin_op((BinaryOp::Sub, 9..10), int(2, 7..8), int(3, 11..12)),
+                        5..14,
                     ),
                 ),
                 (Ok(0), Ok(0.0)),
