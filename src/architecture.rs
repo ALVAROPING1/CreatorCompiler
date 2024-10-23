@@ -266,10 +266,10 @@ pub enum InstructionFieldType {
     /// Immediate unsigned integer
     #[serde(rename = "inm-unsigned")]
     ImmUnsigned,
-    /// Offset from the instruction address in bytes
+    /// Offset from the next instruction's address in bytes
     #[serde(rename = "offset_bytes")]
     OffsetBytes,
-    /// Offset from the instruction address in words
+    /// Offset from the next instruction's address in words
     #[serde(rename = "offset_words")]
     OffsetWords,
     /// Control register

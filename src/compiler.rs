@@ -378,11 +378,11 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                                 .try_into()
                                 .unwrap(),
                         };
-                        let offset = i64::from(value) - i64::try_from(address).unwrap();
+                        let next_address = i64::try_from(address).unwrap()
+                            + i64::from(word_size) * i64::from(def.nwords);
+                        let offset = i64::from(value) - next_address;
                         let value = match val_type {
-                            InstructionFieldType::OffsetWords => {
-                                offset / (i64::from(word_size)) - 1
-                            }
+                            InstructionFieldType::OffsetWords => offset / i64::from(word_size),
                             InstructionFieldType::OffsetBytes => offset,
                             _ => value.into(),
                         };
@@ -436,6 +436,11 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                         ),
                     )
                     .add_span(&span)?;
+                // FIXME: if a register is defined in the architecture with a name that uses the
+                // same pattern we replace here, and it is used in the code, further replacements
+                // will replace the name of the register, leading to an incorrect output. We have
+                // no way to delimit replaced arguments that can't be messed up by a user, so this
+                // method of translation is doomed to fail
                 translated_instruction = RE
                     .replace(&translated_instruction, NoExpand(&value_str))
                     .to_string();
@@ -464,4 +469,389 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
             instructions,
             data_memory,
         })
+}
+
+#[allow(clippy::unwrap_used)]
+#[cfg(test)]
+mod test {
+    use super::{BitField, Integer, Value};
+    use super::{CompileError, CompiledCode, Data, Instruction, LabelTable, Span};
+    use crate::architecture::{BitRange, FloatType, IntegerType, NonEmptyRangeInclusiveU8};
+
+    fn compile(src: &str) -> Result<CompiledCode, CompileError> {
+        use crate::architecture::Architecture;
+        let arch = Architecture::from_json(include_str!("../tests/architecture.json")).unwrap();
+        let ast = crate::parser::parse(src).unwrap();
+        super::compile(&arch, ast)
+    }
+
+    fn label_table(labels: impl IntoIterator<Item = (&'static str, u64, Span)>) -> LabelTable {
+        let mut tbl = LabelTable::default();
+        for v in labels {
+            tbl.insert(v.0.into(), super::Label::new(v.1, v.2)).unwrap();
+        }
+        tbl
+    }
+
+    fn bitfield(bits: &str) -> BitField {
+        let mut field = BitField::new(bits.len());
+        for (i, c) in bits.chars().enumerate() {
+            if c == '1' {
+                let i = u8::try_from(bits.len() - i - 1).unwrap();
+                field
+                    .replace(
+                        &BitRange::build(vec![NonEmptyRangeInclusiveU8::build(i, i).unwrap()])
+                            .unwrap(),
+                        1,
+                        false,
+                    )
+                    .unwrap();
+            }
+        }
+        field
+    }
+
+    fn inst(address: u64, labels: &[&str], loaded: &str, binary: &str, user: Span) -> Instruction {
+        Instruction {
+            address,
+            labels: labels.iter().map(|&x| x.to_owned()).collect(),
+            loaded: loaded.into(),
+            binary: bitfield(binary),
+            user,
+        }
+    }
+
+    fn main_nop(span: Span) -> Instruction {
+        let binary = "11110000000000000000000001111111";
+        inst(0, &["main"], "nop", binary, span)
+    }
+
+    fn data(address: u64, labels: &[&str], value: Value) -> Data {
+        Data {
+            address,
+            value,
+            labels: labels.iter().map(|&x| x.to_owned()).collect(),
+        }
+    }
+
+    #[test]
+    fn nop() {
+        // Minimal
+        let x = compile(".text\nmain: nop").unwrap();
+        assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
+        assert_eq!(x.instructions, vec![main_nop(12..15)]);
+        assert_eq!(x.data_memory, vec![]);
+        // 2 instructions
+        let x = compile(".text\nmain: nop\nnop").unwrap();
+        assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
+        assert_eq!(
+            x.instructions,
+            vec![
+                main_nop(12..15),
+                inst(4, &[], "nop", "11110000000000000000000001111111", 16..19)
+            ]
+        );
+        assert_eq!(x.data_memory, vec![]);
+    }
+
+    #[test]
+    fn instruction_multiword() {
+        let x = compile(".text\nmain: nop2\nnop").unwrap();
+        let binary = "1001000000000000000000000000000000000000000000000000000001000001";
+        assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
+        assert_eq!(
+            x.instructions,
+            vec![
+                inst(0, &["main"], "nop2", binary, 12..16),
+                inst(8, &[], "nop", "11110000000000000000000001111111", 17..20),
+            ]
+        );
+        assert_eq!(x.data_memory, vec![]);
+    }
+
+    #[test]
+    fn instruction_multiple_defs() {
+        let x = compile(".text\nmain: multi").unwrap();
+        let binary = "00000000000000000000000001110011";
+        assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
+        assert_eq!(
+            x.instructions,
+            vec![inst(0, &["main"], "multi", binary, 12..17)]
+        );
+        assert_eq!(x.data_memory, vec![]);
+        let x = compile(".text\nmain: multi $").unwrap();
+        let binary = "00000000000000000000000001011101";
+        assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
+        assert_eq!(
+            x.instructions,
+            vec![inst(0, &["main"], "multi $", binary, 12..19)]
+        );
+        assert_eq!(x.data_memory, vec![]);
+    }
+
+    #[test]
+    fn instruction_fields_regs() {
+        let x = compile(".text\nmain: reg ctrl1, x2, ft1, ft2").unwrap();
+        let binary = "01001000000000000000000000010010";
+        let tbl = label_table([("main", 0, 6..11)]);
+        assert_eq!(x.label_table, tbl);
+        assert_eq!(
+            x.instructions,
+            vec![inst(0, &["main"], "reg ctrl1 x2 ft1 ft2", binary, 12..35)]
+        );
+        assert_eq!(x.data_memory, vec![]);
+        let x = compile(".text\nmain: reg ctrl1, two, ft1, ft2").unwrap();
+        assert_eq!(x.label_table, tbl);
+        assert_eq!(
+            x.instructions,
+            vec![inst(0, &["main"], "reg ctrl1 two ft1 ft2", binary, 12..36)]
+        );
+        assert_eq!(x.data_memory, vec![]);
+    }
+
+    #[test]
+    fn instruction_fields_immediate() {
+        let x = compile(".text\nmain: imm -7, 11, 15").unwrap();
+        let binary = "00100100000000000011110000010110";
+        assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
+        assert_eq!(
+            x.instructions,
+            vec![inst(0, &["main"], "imm -7 11 15", binary, 12..26)]
+        );
+        assert_eq!(x.data_memory, vec![]);
+    }
+
+    #[test]
+    fn instruction_fields_offsets_aligned() {
+        let x = compile(".text\nmain: off 7, 12").unwrap();
+        let binary = "00110000000000000000000000000010";
+        assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
+        assert_eq!(
+            x.instructions,
+            vec![inst(0, &["main"], "off 3 2", binary, 12..21)]
+        );
+        assert_eq!(x.data_memory, vec![]);
+    }
+
+    #[test]
+    fn instruction_fields_offsets_unaligned() {
+        let x = compile(".text\nmain: off 6, 11").unwrap();
+        let binary = "00100000000000000000000000000001";
+        assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
+        assert_eq!(
+            x.instructions,
+            vec![inst(0, &["main"], "off 2 1", binary, 12..21)]
+        );
+        assert_eq!(x.data_memory, vec![]);
+    }
+
+    #[test]
+    fn space() {
+        let x = compile(".data\n.zero 3\n.zero 1\n.text\nmain: nop").unwrap();
+        assert_eq!(x.label_table, label_table([("main", 0, 28..33)]));
+        assert_eq!(x.instructions, vec![main_nop(34..37)]);
+        assert_eq!(
+            x.data_memory,
+            vec![
+                data(16, &[], Value::Space(3)),
+                data(19, &[], Value::Space(1)),
+            ]
+        );
+    }
+
+    #[test]
+    fn int() {
+        // 1 argument
+        let x = compile(".data\na: .byte 1\n.text\nmain: nop").unwrap();
+        assert_eq!(
+            x.label_table,
+            label_table([("main", 0, 23..28), ("a", 16, 6..8)])
+        );
+        assert_eq!(x.instructions, vec![main_nop(29..32)]);
+        assert_eq!(
+            x.data_memory,
+            vec![data(
+                16,
+                &["a"],
+                Value::Integer(Integer::build(1, 8, Some(IntegerType::Byte), None).unwrap(),)
+            )]
+        );
+        // Multiple arguments
+        let x = compile(".data\nb: .byte -128, 255\n.text\nmain: nop").unwrap();
+        assert_eq!(
+            x.label_table,
+            label_table([("main", 0, 31..36), ("b", 16, 6..8)])
+        );
+        assert_eq!(x.instructions, vec![main_nop(37..40)]);
+        assert_eq!(
+            x.data_memory,
+            vec![
+                data(
+                    16,
+                    &["b"],
+                    Value::Integer(Integer::build(128, 8, Some(IntegerType::Byte), None).unwrap())
+                ),
+                data(
+                    17,
+                    &[],
+                    Value::Integer(Integer::build(255, 8, Some(IntegerType::Byte), None).unwrap())
+                )
+            ]
+        );
+        let test_cases = [
+            ("half ", 2, IntegerType::HalfWord),
+            ("word ", 4, IntegerType::Word),
+            ("dword", 8, IntegerType::DoubleWord),
+        ];
+        for (name, size, r#type) in test_cases {
+            let x = compile(&format!(".data\n.{name} 1, 2\n.text\nmain: nop")).unwrap();
+            assert_eq!(x.label_table, label_table([("main", 0, 24..29)]));
+            assert_eq!(x.instructions, vec![main_nop(30..33)]);
+            assert_eq!(
+                x.data_memory,
+                vec![
+                    data(
+                        16,
+                        &[],
+                        Value::Integer(Integer::build(1, size * 8, Some(r#type), None).unwrap())
+                    ),
+                    data(
+                        (16 + size).try_into().unwrap(),
+                        &[],
+                        Value::Integer(Integer::build(2, size * 8, Some(r#type), None).unwrap())
+                    )
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn float() {
+        let test_cases = [
+            ("float ", 4, FloatType::Float),
+            ("double", 8, FloatType::Double),
+        ];
+        let value = |x, ty| match ty {
+            FloatType::Float => Value::Float(x),
+            FloatType::Double => Value::Double(x.into()),
+        };
+        for (name, size, r#type) in test_cases {
+            // 1 argument
+            let x = compile(&format!(".data\na: .{name} 1\n.text\nmain: nop")).unwrap();
+            assert_eq!(
+                x.label_table,
+                label_table([("main", 0, 25..30), ("a", 16, 6..8)])
+            );
+            assert_eq!(x.instructions, vec![main_nop(31..34)]);
+            assert_eq!(x.data_memory, vec![data(16, &["a"], value(1.0, r#type))]);
+            // Multiple arguments
+            let x = compile(&format!(".data\nb: .{name} 1, 2\n.text\nmain: nop")).unwrap();
+            assert_eq!(
+                x.label_table,
+                label_table([("main", 0, 28..33), ("b", 16, 6..8)])
+            );
+            assert_eq!(x.instructions, vec![main_nop(34..37)]);
+            assert_eq!(
+                x.data_memory,
+                vec![
+                    data(16, &["b"], value(1.0, r#type)),
+                    data((16 + size).try_into().unwrap(), &[], value(2.0, r#type)),
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn string() {
+        let test_cases = [("string ", true), ("stringn", false)];
+        for (name, null_terminated) in test_cases {
+            // 1 argument
+            let x = compile(&format!(".data\na: .{name} \"a\"\n.text\nmain: nop")).unwrap();
+            assert_eq!(
+                x.label_table,
+                label_table([("main", 0, 28..33), ("a", 16, 6..8)])
+            );
+            assert_eq!(x.instructions, vec![main_nop(34..37)]);
+            assert_eq!(
+                x.data_memory,
+                vec![data(
+                    16,
+                    &["a"],
+                    Value::String {
+                        data: "a".into(),
+                        null_terminated
+                    }
+                )]
+            );
+            // Multiple arguments
+            let x = compile(&format!(".data\nb: .{name} \"b\", \"0\"\n.text\nmain: nop")).unwrap();
+            assert_eq!(
+                x.label_table,
+                label_table([("main", 0, 33..38), ("b", 16, 6..8)])
+            );
+            assert_eq!(x.instructions, vec![main_nop(39..42)]);
+            assert_eq!(
+                x.data_memory,
+                vec![
+                    data(
+                        16,
+                        &["b"],
+                        Value::String {
+                            data: "b".into(),
+                            null_terminated
+                        }
+                    ),
+                    data(
+                        17 + u64::from(null_terminated),
+                        &[],
+                        Value::String {
+                            data: "0".into(),
+                            null_terminated
+                        }
+                    ),
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn exp_align() {
+        for size in [1, 3] {
+            let x = compile(&format!(
+                ".data\n.zero 1\n.align {size}\n.zero 1\n.text\nmain: nop"
+            ))
+            .unwrap();
+            assert_eq!(x.label_table, label_table([("main", 0, 37..42)]));
+            assert_eq!(x.instructions, vec![main_nop(43..46)]);
+            let alignment = 2u64.pow(size) - 1;
+            assert_eq!(
+                x.data_memory,
+                vec![
+                    data(16, &[], Value::Space(1)),
+                    data(17, &[], Value::Padding(alignment)),
+                    data(17 + alignment, &[], Value::Space(1))
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn byte_align() {
+        for size in [2, 8] {
+            let x = compile(&format!(
+                ".data\n.zero 1\n.balign {size}\n.zero 1\n.text\nmain: nop"
+            ))
+            .unwrap();
+            assert_eq!(x.label_table, label_table([("main", 0, 38..43)]));
+            assert_eq!(x.instructions, vec![main_nop(44..47)]);
+            assert_eq!(
+                x.data_memory,
+                vec![
+                    data(16, &[], Value::Space(1)),
+                    data(17, &[], Value::Padding(size - 1)),
+                    data(17 + size - 1, &[], Value::Space(1))
+                ]
+            );
+        }
+    }
 }

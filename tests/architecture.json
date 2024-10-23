@@ -1,0 +1,460 @@
+{
+  "arch_conf": [
+    {
+      "name": "Name",
+      "value": "Test"
+    },
+    {
+      "name": "Bits",
+      "value": "32"
+    },
+    {
+      "name": "Description",
+      "value": "Test architecture"
+    },
+    {
+      "name": "Data Format",
+      "value": "big_endian"
+    },
+    {
+      "name": "Memory Alignment",
+      "value": "1"
+    },
+    {
+      "name": "Main Function",
+      "value": "main"
+    },
+    {
+      "name": "Passing Convention",
+      "value": "1"
+    },
+    {
+      "name": "Sensitive Register Name",
+      "value": "1"
+    }
+  ],
+  "components": [
+    {
+      "name": "Control registers",
+      "type": "ctrl_registers",
+      "double_precision": false,
+      "elements": [
+        {
+          "name": [
+            "PC"
+          ],
+          "nbits": "32",
+          "value": 0,
+          "default_value": 0,
+          "properties": []
+        },
+        {
+          "name": [
+            "ctrl1"
+          ],
+          "nbits": "32",
+          "value": 0,
+          "default_value": 0,
+          "properties": []
+        },
+        {
+          "name": [
+            "ctrl2"
+          ],
+          "nbits": "32",
+          "value": 0,
+          "default_value": 0,
+          "properties": []
+        }
+      ]
+    },
+    {
+      "name": "Integer registers",
+      "type": "int_registers",
+      "double_precision": false,
+      "elements": [
+        {
+          "name": [
+            "x0"
+          ],
+          "nbits": "32",
+          "value": 0,
+          "default_value": 0,
+          "properties": []
+        },
+        {
+          "name": [
+            "x1"
+          ],
+          "nbits": "32",
+          "value": 0,
+          "default_value": 0,
+          "properties": []
+        },
+        {
+          "name": [
+            "x2",
+            "two"
+          ],
+          "nbits": "32",
+          "value": 0,
+          "default_value": 0,
+          "properties": []
+        }
+      ]
+    },
+    {
+      "name": "Floating point registers",
+      "type": "fp_registers",
+      "double_precision": true,
+      "double_precision_type": "extended",
+      "elements": [
+        {
+          "name": [
+            "ft0"
+          ],
+          "nbits": "64",
+          "value": 0.0,
+          "default_value": 0.0,
+          "properties": []
+        },
+        {
+          "name": [
+            "ft1"
+          ],
+          "nbits": "64",
+          "value": 0.0,
+          "default_value": 0.0,
+          "properties": []
+        },
+        {
+          "name": [
+            "ft2"
+          ],
+          "nbits": "64",
+          "value": 0.0,
+          "default_value": 0.0,
+          "properties": []
+        }
+      ]
+    }
+  ],
+  "instructions": [
+    {
+      "name": "nop",
+      "type": "Arithmetic integer",
+      "signature_definition": "F0",
+      "signature": "nop",
+      "signatureRaw": "nop",
+      "co": "1111111",
+      "cop": "0000000000",
+      "nwords": 1,
+      "clk_cycles": 1,
+      "fields": [
+        {
+          "name": "nop",
+          "type": "co",
+          "startbit": 6,
+          "stopbit": 0
+        },
+        {
+          "name": "cop",
+          "type": "cop",
+          "startbit": 31,
+          "stopbit": 28,
+          "valueField": "1111"
+        }
+      ],
+      "definition": "",
+      "separated": [],
+      "help": ""
+    },
+    {
+      "name": "nop2",
+      "type": "Arithmetic integer",
+      "signature_definition": "F0",
+      "signature": "nop2",
+      "signatureRaw": "nop2",
+      "co": "1000001",
+      "cop": "0000000000",
+      "nwords": 2,
+      "clk_cycles": 1,
+      "fields": [
+        {
+          "name": "nop",
+          "type": "co",
+          "startbit": 6,
+          "stopbit": 0
+        },
+        {
+          "name": "cop",
+          "type": "cop",
+          "startbit": 63,
+          "stopbit": 60,
+          "valueField": "1001"
+        }
+      ],
+      "definition": "",
+      "separated": [],
+      "help": ""
+    },
+    {
+      "name": "imm",
+      "type": "Arithmetic integer",
+      "signature_definition": "F0 F1 F2 F3",
+      "signature": "inm,inm-signed,inm-unsigned,address",
+      "signatureRaw": "inm inms inmu addr",
+      "co": "0000000",
+      "cop": "0000000000",
+      "nwords": 1,
+      "clk_cycles": 1,
+      "fields": [
+        {
+          "name": "imm",
+          "type": "co",
+          "startbit": 6,
+          "stopbit": 0
+        },
+        {
+          "name": "inms",
+          "type": "inm-signed",
+          "startbit": 29,
+          "stopbit": 26
+        },
+        {
+          "name": "inmu",
+          "type": "inm-unsigned",
+          "startbit": 4,
+          "stopbit": 1
+        },
+        {
+          "name": "addr",
+          "type": "address",
+          "startbit": 13,
+          "stopbit": 10
+        }
+      ],
+      "definition": "",
+      "separated": [],
+      "help": ""
+    },
+    {
+      "name": "reg",
+      "type": "Arithmetic integer",
+      "signature_definition": "F0 F1 F2 F3 F4",
+      "signature": "reg,Ctrl-Reg,INT-Reg,SFP-Reg,DFP-Reg",
+      "signatureRaw": "reg ctrl int sfp dfp",
+      "co": "0000000",
+      "cop": "0000000000",
+      "nwords": 1,
+      "clk_cycles": 1,
+      "fields": [
+        {
+          "name": "reg",
+          "type": "co",
+          "startbit": 6,
+          "stopbit": 0
+        },
+        {
+          "name": "ctrl",
+          "type": "Ctrl-Reg",
+          "startbit": 31,
+          "stopbit": 30
+        },
+        {
+          "name": "int",
+          "type": "INT-Reg",
+          "startbit": 27,
+          "stopbit": 26
+        },
+        {
+          "name": "sfp",
+          "type": "SFP-Reg",
+          "startbit": 5,
+          "stopbit": 4
+        },
+        {
+          "name": "dfp",
+          "type": "DFP-Reg",
+          "startbit": 1,
+          "stopbit": 0
+        }
+      ],
+      "definition": "",
+      "separated": [],
+      "help": ""
+    },
+    {
+      "name": "off",
+      "type": "Arithmetic integer",
+      "signature_definition": "F0 F1 F2",
+      "signature": "off,offset_bytes,offset_words",
+      "signatureRaw": "off bytes words",
+      "co": "0000000",
+      "cop": "0000000000",
+      "nwords": 1,
+      "clk_cycles": 1,
+      "fields": [
+        {
+          "name": "off",
+          "type": "co",
+          "startbit": 6,
+          "stopbit": 0
+        },
+        {
+          "name": "bytes",
+          "type": "offset_bytes",
+          "startbit": 31,
+          "stopbit": 28
+        },
+        {
+          "name": "words",
+          "type": "offset_words",
+          "startbit": 3,
+          "stopbit": 0
+        }
+      ],
+      "definition": "",
+      "separated": [],
+      "help": ""
+    },
+    {
+      "name": "multi",
+      "type": "Arithmetic integer",
+      "signature_definition": "F0",
+      "signature": "multi",
+      "signatureRaw": "multi",
+      "co": "1110011",
+      "cop": "0000000000",
+      "nwords": 1,
+      "clk_cycles": 1,
+      "fields": [
+        {
+          "name": "multi",
+          "type": "co",
+          "startbit": 6,
+          "stopbit": 0
+        }
+      ],
+      "definition": "",
+      "separated": [],
+      "help": ""
+    },
+    {
+      "name": "multi",
+      "type": "Arithmetic integer",
+      "signature_definition": "F0 $",
+      "signature": "multi,$",
+      "signatureRaw": "multi $",
+      "co": "1011101",
+      "cop": "0000000000",
+      "nwords": 1,
+      "clk_cycles": 1,
+      "fields": [
+        {
+          "name": "multi",
+          "type": "co",
+          "startbit": 6,
+          "stopbit": 0
+        }
+      ],
+      "definition": "",
+      "separated": [],
+      "help": ""
+    }
+  ],
+  "pseudoinstructions": [],
+  "directives": [
+    {
+      "name": ".data",
+      "action": "data_segment",
+      "size": null
+    },
+    {
+      "name": ".text",
+      "action": "code_segment",
+      "size": null
+    },
+    {
+      "name": ".zero",
+      "action": "space",
+      "size": "1"
+    },
+    {
+      "name": ".align",
+      "action": "align",
+      "size": null
+    },
+    {
+      "name": ".balign",
+      "action": "balign",
+      "size": null
+    },
+    {
+      "name": ".string",
+      "action": "ascii_null_end",
+      "size": null
+    },
+    {
+      "name": ".stringn",
+      "action": "ascii_not_null_end",
+      "size": null
+    },
+    {
+      "name": ".byte",
+      "action": "byte",
+      "size": "1"
+    },
+    {
+      "name": ".half",
+      "action": "half_word",
+      "size": "2"
+    },
+    {
+      "name": ".word",
+      "action": "word",
+      "size": "4"
+    },
+    {
+      "name": ".dword",
+      "action": "double_word",
+      "size": "8"
+    },
+    {
+      "name": ".float",
+      "action": "float",
+      "size": null
+    },
+    {
+      "name": ".double",
+      "action": "double",
+      "size": null
+    }
+  ],
+  "memory_layout": [
+    {
+      "name": "text start",
+      "value": "0x00000000"
+    },
+    {
+      "name": "text end",
+      "value": "0x0000000f"
+    },
+    {
+      "name": "data start",
+      "value": "0x00000010"
+    },
+    {
+      "name": "data end",
+      "value": "0x000000ff"
+    },
+    {
+      "name": "stack start",
+      "value": "0x0FFFFFFC"
+    },
+    {
+      "name": "stack end",
+      "value": "0x0FFFFFFF"
+    }
+  ]
+}
