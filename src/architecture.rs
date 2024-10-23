@@ -262,10 +262,10 @@ pub enum InstructionFieldType {
     },
     /// Immediate signed integer
     #[serde(rename = "inm-signed")]
-    InmSigned,
+    ImmSigned,
     /// Immediate unsigned integer
     #[serde(rename = "inm-unsigned")]
-    InmUnsigned,
+    ImmUnsigned,
     /// Offset from the instruction address in bytes
     #[serde(rename = "offset_bytes")]
     OffsetBytes,
@@ -284,7 +284,7 @@ pub enum InstructionFieldType {
     /// Single precision floating point register
     #[serde(rename = "SFP-Reg")]
     SingleFPReg,
-    /// Immediate address, equivalent to `InmUnsigned`
+    /// Immediate address, equivalent to `ImmUnsigned`
     Address,
 }
 

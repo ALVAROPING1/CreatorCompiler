@@ -365,8 +365,8 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                     #[allow(clippy::cast_possible_wrap)]
                     InstructionFieldType::Co => (def.co.0 as i64, def.name.to_string()),
                     val_type @ (InstructionFieldType::Address
-                    | InstructionFieldType::InmSigned
-                    | InstructionFieldType::InmUnsigned
+                    | InstructionFieldType::ImmSigned
+                    | InstructionFieldType::ImmUnsigned
                     | InstructionFieldType::OffsetBytes
                     | InstructionFieldType::OffsetWords) => {
                         let value = match value {
@@ -430,7 +430,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                         value,
                         matches!(
                             field.r#type,
-                            InstructionFieldType::InmSigned
+                            InstructionFieldType::ImmSigned
                                 | InstructionFieldType::OffsetBytes
                                 | InstructionFieldType::OffsetWords
                         ),
