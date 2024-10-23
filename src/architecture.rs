@@ -260,10 +260,10 @@ pub enum InstructionFieldType {
         #[schemars(with = "String")]
         value: BaseN<2>,
     },
-    /// Inmediatte signed integer
+    /// Immediate signed integer
     #[serde(rename = "inm-signed")]
     InmSigned,
-    /// Inmediatte unsigned integer
+    /// Immediate unsigned integer
     #[serde(rename = "inm-unsigned")]
     InmUnsigned,
     /// Offset from the instruction address in bytes
@@ -284,7 +284,7 @@ pub enum InstructionFieldType {
     /// Single precision floating point register
     #[serde(rename = "SFP-Reg")]
     SingleFPReg,
-    /// Inmediatte address, equivalent to `InmUnsigned`
+    /// Immediate address, equivalent to `InmUnsigned`
     Address,
 }
 
