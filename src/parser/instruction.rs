@@ -11,7 +11,7 @@ use super::{expression, lexer, ParseError, Spanned, Token};
 use crate::architecture::{BitRange, InstructionField, InstructionFieldType};
 
 /// Instruction argument value
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Argument {
     /// Identifier
     Identifier(String),
@@ -128,5 +128,150 @@ impl<'a> Instruction<'a> {
 impl<'a> std::fmt::Debug for Instruction<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("InstructionParser").finish()
+    }
+}
+
+#[allow(clippy::unwrap_used)]
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::architecture::NonEmptyRangeInclusiveU8;
+    use crate::parser::{expression::BinaryOp, Expr};
+
+    fn fields() -> [InstructionField<'static, BitRange>; 3] {
+        let field = |co| InstructionField {
+            name: "",
+            r#type: if co {
+                InstructionFieldType::Co
+            } else {
+                InstructionFieldType::ImmSigned
+            },
+            range: BitRange::build(vec![NonEmptyRangeInclusiveU8::build(0, 0).unwrap()]).unwrap(),
+        };
+        [field(true), field(false), field(false)]
+    }
+
+    fn parse(parser: &Instruction, src: &str) -> Result<Output, ()> {
+        let ast = (lexer::lexer().parse(src).unwrap(), 0..src.chars().count());
+        parser.parse(&ast).map_err(|e| eprintln!("{e:?}"))
+    }
+
+    const fn co_arg() -> (Spanned<Argument>, usize) {
+        ((Argument::Identifier(String::new()), 0..0), 0)
+    }
+
+    fn ident(name: &str) -> Argument {
+        Argument::Identifier(name.into())
+    }
+
+    const fn number(x: u32) -> Argument {
+        Argument::Number(Expr::Integer(x))
+    }
+
+    #[test]
+    fn no_args() {
+        let parser = Instruction::build("F0", &fields()).unwrap();
+        assert_eq!(parse(&parser, ""), Ok(vec![co_arg()]));
+        assert_eq!(parse(&parser, "a"), Err(()));
+    }
+
+    #[test]
+    fn one_arg() {
+        let parser = Instruction::build("F0 F1", &fields()).unwrap();
+        assert_eq!(parse(&parser, ""), Err(()));
+        assert_eq!(parse(&parser, ","), Err(()));
+        assert_eq!(parse(&parser, "$"), Err(()));
+        assert_eq!(
+            parse(&parser, "a"),
+            Ok(vec![co_arg(), ((ident("a"), 0..1), 1)])
+        );
+        assert_eq!(
+            parse(&parser, "1"),
+            Ok(vec![co_arg(), ((number(1), 0..1), 1)])
+        );
+        assert_eq!(
+            parse(&parser, "1 + 1"),
+            Ok(vec![
+                co_arg(),
+                (
+                    (
+                        Argument::Number(Expr::BinaryOp {
+                            op: (BinaryOp::Add, 2..3),
+                            lhs: Box::new((Expr::Integer(1), 0..1)),
+                            rhs: Box::new((Expr::Integer(1), 4..5))
+                        }),
+                        0..5
+                    ),
+                    1
+                )
+            ])
+        );
+    }
+
+    #[test]
+    fn multiple_arg() {
+        let parser = Instruction::build("F0 F2 F1", &fields()).unwrap();
+        assert_eq!(parse(&parser, ""), Err(()));
+        assert_eq!(parse(&parser, ","), Err(()));
+        assert_eq!(parse(&parser, "a"), Err(()));
+        assert_eq!(parse(&parser, "a, b"), Err(()));
+        assert_eq!(
+            parse(&parser, "a 1"),
+            Ok(vec![
+                co_arg(),
+                ((ident("a"), 0..1), 2),
+                ((number(1), 2..3), 1)
+            ])
+        );
+        assert_eq!(
+            parse(&parser, "b 2"),
+            Ok(vec![
+                co_arg(),
+                ((ident("b"), 0..1), 2),
+                ((number(2), 2..3), 1)
+            ])
+        );
+    }
+
+    #[test]
+    fn comma_separator() {
+        let parser = Instruction::build("F0 F1, F2", &fields()).unwrap();
+        assert_eq!(parse(&parser, "1 2"), Err(()));
+        assert_eq!(
+            parse(&parser, "1, 2"),
+            Ok(vec![
+                co_arg(),
+                ((number(1), 0..1), 1),
+                ((number(2), 3..4), 2)
+            ])
+        );
+    }
+
+    #[test]
+    fn literals() {
+        let parser = Instruction::build("F0 ,1 F1 $(F2)", &fields()).unwrap();
+        assert_eq!(parse(&parser, "2 5"), Err(()));
+        assert_eq!(parse(&parser, ",1 2 5"), Err(()));
+        assert_eq!(parse(&parser, ",1 2 (5)"), Err(()));
+        assert_eq!(parse(&parser, ",1 2 $5"), Err(()));
+        assert_eq!(parse(&parser, ",3 2 $(5)"), Err(()));
+        assert_eq!(
+            parse(&parser, ",1 2 $(5)"),
+            Ok(vec![
+                co_arg(),
+                ((number(2), 3..4), 1),
+                ((number(5), 7..8), 2)
+            ])
+        );
+        let parser = Instruction::build("F0 1 * -F1", &fields()).unwrap();
+        assert_eq!(parse(&parser, "2"), Err(()));
+        assert_eq!(parse(&parser, "-2"), Err(()));
+        assert_eq!(parse(&parser, "* -2"), Err(()));
+        assert_eq!(parse(&parser, "1 * 2"), Err(()));
+        assert_eq!(parse(&parser, "1 -2"), Err(()));
+        assert_eq!(
+            parse(&parser, "1 * -2"),
+            Ok(vec![co_arg(), ((number(2), 5..6), 1)])
+        );
     }
 }
