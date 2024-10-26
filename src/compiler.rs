@@ -163,8 +163,8 @@ fn compile_data(
     mut labels: Vec<Spanned<String>>,
     args: Spanned<Vec<Spanned<DataToken>>>,
 ) -> Result<(), CompileError> {
-    if let Some((alignment, span)) = alignment.take() {
-        if let Some((start, size)) = section.try_align(alignment).add_span(&span)? {
+    if let Some((align, span)) = alignment.take() {
+        if let Some((start, size)) = section.try_align(align).add_span(&span)? {
             memory.push(Data {
                 address: start,
                 labels: Vec::new(),
@@ -282,7 +282,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                                 DirectiveAlignment::Exponential => 2_u64.pow(value),
                                 DirectiveAlignment::Byte => value.into(),
                             },
-                            directive.name.1,
+                            directive.name.1.start..directive.args.1.end,
                         ));
                         continue;
                     }
@@ -474,12 +474,10 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
 #[allow(clippy::unwrap_used)]
 #[cfg(test)]
 mod test {
-    use super::{BitField, Integer, Value};
-    use super::{CompileError, CompiledCode, Data, Instruction, LabelTable, Span};
-    use crate::architecture::{BitRange, FloatType, IntegerType, NonEmptyRangeInclusiveU8};
+    use super::*;
+    use crate::architecture::{Architecture, BitRange, IntegerType, NonEmptyRangeInclusiveU8};
 
     fn compile(src: &str) -> Result<CompiledCode, CompileError> {
-        use crate::architecture::Architecture;
         let arch = Architecture::from_json(include_str!("../tests/architecture.json")).unwrap();
         let ast = crate::parser::parse(src).unwrap();
         super::compile(&arch, ast)
@@ -591,6 +589,7 @@ mod test {
 
     #[test]
     fn instruction_fields_regs() {
+        // Simple
         let x = compile(".text\nmain: reg ctrl1, x2, ft1, ft2").unwrap();
         let binary = "01001000000000000000000000010010";
         let tbl = label_table([("main", 0, 6..11)]);
@@ -600,6 +599,7 @@ mod test {
             vec![inst(0, &["main"], "reg ctrl1 x2 ft1 ft2", binary, 12..35)]
         );
         assert_eq!(x.data_memory, vec![]);
+        // Aliases
         let x = compile(".text\nmain: reg ctrl1, two, ft1, ft2").unwrap();
         assert_eq!(x.label_table, tbl);
         assert_eq!(
@@ -611,12 +611,12 @@ mod test {
 
     #[test]
     fn instruction_fields_immediate() {
-        let x = compile(".text\nmain: imm -7, 11, 15").unwrap();
-        let binary = "00100100000000000011110000010110";
+        let x = compile(".text\nmain: imm -7, 255, 11").unwrap();
+        let binary = "00100100000000000010110111111110";
         assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
         assert_eq!(
             x.instructions,
-            vec![inst(0, &["main"], "imm -7 11 15", binary, 12..26)]
+            vec![inst(0, &["main"], "imm -7 255 11", binary, 12..27)]
         );
         assert_eq!(x.data_memory, vec![]);
     }
@@ -851,6 +851,389 @@ mod test {
                     data(17, &[], Value::Padding(size - 1)),
                     data(17 + size - 1, &[], Value::Space(1))
                 ]
+            );
+        }
+    }
+
+    #[test]
+    fn unallowed_statement() {
+        assert_eq!(
+            compile(".data\nnop\n.text\nmain: nop"),
+            Err(ErrorKind::UnallowedStatementType {
+                section: Some((DirectiveSegment::Data, 0..5)),
+                found: DirectiveSegment::Code,
+            }
+            .add_span(&(6..9))),
+        );
+        assert_eq!(
+            compile(".text\nmain: nop\n.byte 1"),
+            Err(ErrorKind::UnallowedStatementType {
+                section: Some((DirectiveSegment::Code, 0..5)),
+                found: DirectiveSegment::Data,
+            }
+            .add_span(&(16..23))),
+        );
+        assert_eq!(
+            compile("nop\n.text\nmain: nop"),
+            Err(ErrorKind::UnallowedStatementType {
+                section: None,
+                found: DirectiveSegment::Code,
+            }
+            .add_span(&(0..3))),
+        );
+        assert_eq!(
+            compile(".byte 1\n.text\nmain: nop"),
+            Err(ErrorKind::UnallowedStatementType {
+                section: None,
+                found: DirectiveSegment::Data,
+            }
+            .add_span(&(0..7))),
+        );
+    }
+
+    #[test]
+    fn unknown_directive() {
+        assert_eq!(
+            compile(".test\n.text\nmain: nop"),
+            Err(ErrorKind::UnknownDirective(".test".into()).add_span(&(0..5))),
+        );
+    }
+
+    #[test]
+    fn unknown_instruction() {
+        assert_eq!(
+            compile(".text\nmain: test"),
+            Err(ErrorKind::UnknownInstruction("test".into()).add_span(&(12..16))),
+        );
+    }
+
+    #[test]
+    fn unknown_label() {
+        assert_eq!(
+            compile(".text\nmain: imm 0, 0, test"),
+            Err(ErrorKind::UnknownLabel("test".into()).add_span(&(22..26))),
+        );
+    }
+
+    #[test]
+    fn unknown_register() {
+        assert_eq!(
+            compile(".text\nmain: reg x0, x0, ft1, ft2"),
+            Err(ErrorKind::UnknownRegister {
+                name: "x0".into(),
+                bank: ComponentType::Ctrl,
+            }
+            .add_span(&(16..18))),
+        );
+        // Register names should be case sensitive
+        assert_eq!(
+            compile(".text\nmain: reg pc, x0, ft1, ft2"),
+            Err(ErrorKind::UnknownRegister {
+                name: "pc".into(),
+                bank: ComponentType::Ctrl,
+            }
+            .add_span(&(16..18))),
+        );
+        assert_eq!(
+            compile(".text\nmain: reg PC, PC, ft1, ft2"),
+            Err(ErrorKind::UnknownRegister {
+                name: "PC".into(),
+                bank: ComponentType::Int,
+            }
+            .add_span(&(20..22))),
+        );
+        assert_eq!(
+            compile(".text\nmain: reg PC, x0, x0, ft2"),
+            Err(ErrorKind::UnknownRegister {
+                name: "x0".into(),
+                bank: ComponentType::Float,
+            }
+            .add_span(&(24..26))),
+        );
+    }
+
+    #[test]
+    fn section_args() {
+        assert_eq!(
+            compile(".data 1\n.text\nmain: nop"),
+            Err(ErrorKind::IncorrectDirectiveArgumentNumber {
+                expected: ArgumentNumber::new(0, false),
+                found: 1
+            }
+            .add_span(&(6..7))),
+        );
+    }
+
+    #[test]
+    fn padding_args_number() {
+        for directive in ["zero  ", "align ", "balign"] {
+            assert_eq!(
+                compile(&format!(".data\n.{directive}\n.text\nmain: nop")),
+                Err(ErrorKind::IncorrectDirectiveArgumentNumber {
+                    expected: ArgumentNumber::new(1, false),
+                    found: 0
+                }
+                .add_span(&(13..14))),
+                "{directive}"
+            );
+            assert_eq!(
+                compile(&format!(".data\n.{directive} 1, 2\n.text\nmain: nop")),
+                Err(ErrorKind::IncorrectDirectiveArgumentNumber {
+                    expected: ArgumentNumber::new(1, false),
+                    found: 2
+                }
+                .add_span(&(14..18))),
+                "{directive}"
+            );
+        }
+    }
+
+    #[test]
+    fn padding_negative() {
+        for directive in ["zero  ", "align ", "balign"] {
+            assert_eq!(
+                compile(&format!(".data\n.{directive} -1\n.text\nmain: nop")),
+                Err(ErrorKind::UnallowedNegativeValue(-1).add_span(&(14..16))),
+                "{directive}"
+            );
+        }
+    }
+
+    #[test]
+    fn int_args_type() {
+        for directive in [
+            "zero  ", "align ", "balign", "byte  ", "half  ", "word  ", "dword ",
+        ] {
+            assert_eq!(
+                compile(&format!(".data\n.{directive} \"a\"\n.text\nmain: nop")),
+                Err(ErrorKind::IncorrectArgumentType {
+                    expected: ArgumentType::Expression,
+                    found: ArgumentType::String
+                }
+                .add_span(&(14..17))),
+                "{directive}"
+            );
+            assert_eq!(
+                compile(&format!(".data\n.{directive} 1.0\n.text\nmain: nop")),
+                Err(ErrorKind::UnallowedFloat.add_span(&(14..17))),
+                "{directive}"
+            );
+        }
+        assert_eq!(
+            compile(".text\nmain: imm 0, 0, 1.0"),
+            Err(ErrorKind::UnallowedFloat.add_span(&(22..25))),
+        );
+        assert_eq!(
+            compile(".text\nmain: reg PC, 0, ft1, ft2"),
+            Err(ErrorKind::IncorrectArgumentType {
+                expected: ArgumentType::RegisterName,
+                found: ArgumentType::Expression,
+            }
+            .add_span(&(20..21))),
+        );
+    }
+
+    #[test]
+    fn data_no_args() {
+        for directive in ["byte  ", "float ", "string"] {
+            assert_eq!(
+                compile(&format!(".data\n.{directive}\n.text\nmain: nop")),
+                Err(ErrorKind::IncorrectDirectiveArgumentNumber {
+                    expected: ArgumentNumber::new(1, true),
+                    found: 0
+                }
+                .add_span(&(13..14))),
+                "{directive}"
+            );
+        }
+    }
+
+    #[test]
+    fn data_unaligned() {
+        for (directive, size) in [
+            ("half  ", 2),
+            ("word  ", 4),
+            ("dword ", 8),
+            ("float ", 4),
+            ("double", 8),
+        ] {
+            assert_eq!(
+                compile(&format!(".data\n.byte 0\n.{directive} 1\n.text\nmain: nop")),
+                Err(ErrorKind::DataUnaligned {
+                    address: 17,
+                    word_size: 4,
+                    alignment: size,
+                }
+                .add_span(&(22..23))),
+                "{directive}",
+            );
+        }
+    }
+
+    #[test]
+    fn int_args_size() {
+        // Data directives
+        assert_eq!(
+            compile(".data\n.byte 256\n.text\nmain: nop"),
+            Err(ErrorKind::IntegerTooBig(256, -128..256).add_span(&(12..15))),
+        );
+        assert_eq!(
+            compile(".data\n.byte -129\n.text\nmain: nop"),
+            Err(ErrorKind::IntegerTooBig(-129, -128..256).add_span(&(12..16))),
+        );
+        assert_eq!(
+            compile(".data\n.half 65536\n.text\nmain: nop"),
+            Err(ErrorKind::IntegerTooBig(65536, -32768..65536).add_span(&(12..17))),
+        );
+        // Instruction arguments
+        assert_eq!(
+            compile(".text\nmain: imm 8, 0, 0"),
+            Err(ErrorKind::IntegerTooBig(8, -8..8).add_span(&(16..17))),
+        );
+        assert_eq!(
+            compile(".text\nmain: imm -9, 0, 0"),
+            Err(ErrorKind::IntegerTooBig(-9, -8..8).add_span(&(16..18))),
+        );
+        assert_eq!(
+            compile(".text\nmain: imm 0, 256, 0"),
+            Err(ErrorKind::IntegerTooBig(256, 0..256).add_span(&(19..22))),
+        );
+        assert_eq!(
+            compile(".text\nmain: imm 0, -1, 0"),
+            Err(ErrorKind::IntegerTooBig(-1, 0..256).add_span(&(19..21))),
+        );
+        assert_eq!(
+            compile(".text\nmain: imm 0, 0, 20"),
+            Err(ErrorKind::IntegerTooBig(20, 0..16).add_span(&(22..24))),
+        );
+    }
+
+    #[test]
+    fn float_args_type() {
+        assert_eq!(
+            compile(".data\n.float \"a\"\n.text\nmain: nop"),
+            Err(ErrorKind::IncorrectArgumentType {
+                expected: ArgumentType::Expression,
+                found: ArgumentType::String
+            }
+            .add_span(&(13..16))),
+        );
+    }
+
+    #[test]
+    fn string_args_type() {
+        assert_eq!(
+            compile(".data\n.string 1\n.text\nmain: nop"),
+            Err(ErrorKind::IncorrectArgumentType {
+                expected: ArgumentType::String,
+                found: ArgumentType::Expression
+            }
+            .add_span(&(14..15))),
+        );
+    }
+
+    #[test]
+    fn incorrect_instruction_syntax() {
+        let assert = |err, syntaxes: &[&str], expected_span| match err {
+            Err(CompileError {
+                span,
+                kind: ErrorKind::IncorrectInstructionSyntax(s),
+            }) => {
+                assert_eq!(span, expected_span);
+                assert_eq!(s.into_iter().map(|x| x.0).collect::<Vec<_>>(), syntaxes);
+            }
+            x => panic!("Incorrect result, expected ErrorKind::IncorrectInstructionSyntax: {x:?}"),
+        };
+        assert(compile(".text\nmain: nop 1"), &["nop"], 16..17);
+        assert(
+            compile(".text\nmain: multi &, 1"),
+            &["multi", "multi $"],
+            18..22,
+        );
+    }
+
+    #[test]
+    fn expr_eval() {
+        assert_eq!(
+            compile(".data\n.byte 1/0\n.text\nmain: nop"),
+            Err(ErrorKind::DivisionBy0.add_span(&(14..15))),
+        );
+        assert_eq!(
+            compile(".text\nmain: imm 0, 0, 1/0"),
+            Err(ErrorKind::DivisionBy0.add_span(&(24..25))),
+        );
+        assert_eq!(
+            compile(".data\n.float ~1.0\n.text\nmain: nop"),
+            Err(
+                ErrorKind::UnallowedFloatOperation(OperationKind::UnaryNegation)
+                    .add_span(&(13..14))
+            ),
+        );
+        for (op, c) in [
+            (OperationKind::BitwiseOR, '|'),
+            (OperationKind::BitwiseAND, '&'),
+            (OperationKind::BitwiseXOR, '^'),
+        ] {
+            assert_eq!(
+                compile(&format!(".data\n.float 1.0 {c} 2.0\n.text\nmain: nop")),
+                Err(ErrorKind::UnallowedFloatOperation(op).add_span(&(17..18))),
+            );
+        }
+    }
+
+    #[test]
+    fn missing_main() {
+        assert_eq!(
+            compile(".text\nnop"),
+            Err(ErrorKind::MissingMainLabel("main".into()).add_span(&(9..10))),
+        );
+        assert_eq!(
+            compile(".text\nnop\n.data"),
+            Err(ErrorKind::MissingMainLabel("main".into()).add_span(&(9..10))),
+        );
+    }
+
+    #[test]
+    fn main_in_data() {
+        assert_eq!(
+            compile(".data\nmain: .byte 1\n.text\nnop"),
+            Err(ErrorKind::MainOutsideCode("main".into()).add_span(&(6..11))),
+        );
+    }
+
+    #[test]
+    fn duplicate_label() {
+        assert_eq!(
+            compile(".text\nmain: nop\nmain: nop"),
+            Err(ErrorKind::DuplicateLabel("main".into(), 6..11).add_span(&(16..21))),
+        );
+        assert_eq!(
+            compile(".text\nmain: nop\nlabel:\nlabel: nop"),
+            Err(ErrorKind::DuplicateLabel("label".into(), 16..22).add_span(&(23..29))),
+        );
+    }
+
+    #[test]
+    fn section_full() {
+        // Instructions
+        assert_eq!(
+            compile(".text\nmain: nop\nnop\nnop\nnop\nnop"),
+            Err(ErrorKind::MemorySectionFull("Instructions").add_span(&(28..31))),
+        );
+        // Data directives
+        for (directive, span) in [
+            ("zero 5", 21..22),
+            ("word 0\n.byte 0", 29..30),
+            ("dword 0", 22..23),
+            ("double 0", 23..24),
+            ("string \"1234\"", 23..29),
+            ("stringn \"1234\"\n.stringn \"5\"", 40..43),
+            ("balign 64\n.byte 0", 15..25),
+        ] {
+            assert_eq!(
+                compile(&format!(".data\n.zero 12\n.{directive}\n.text\nmain: nop")),
+                Err(ErrorKind::MemorySectionFull("Data").add_span(&span)),
+                "{directive}",
             );
         }
     }

@@ -65,8 +65,8 @@ pub enum Kind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error {
-    span: Span,
-    kind: Kind,
+    pub span: Span,
+    pub kind: Kind,
 }
 
 macro_rules! plural {
