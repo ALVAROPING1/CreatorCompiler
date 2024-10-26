@@ -199,4 +199,28 @@ mod test {
             assert_eq!(section.try_align(6), Ok(None));
         }
     }
+
+    #[test]
+    fn try_reserve_aligned_ok() {
+        let mut section = Section::new("test9", &range(0, 17));
+        assert_eq!(section.try_reserve_aligned(2, 4), Ok(0));
+        assert_eq!(section.try_reserve_aligned(2, 4), Ok(2));
+        assert_eq!(section.try_reserve_aligned(8, 4), Ok(4));
+        assert_eq!(section.try_reserve_aligned(3, 4), Ok(12));
+        assert_eq!(section.try_reserve_aligned(3, 4), Ok(15));
+    }
+
+    #[test]
+    fn try_reserve_aligned_fail() {
+        let mut section = Section::new("test10", &range(0, 17));
+        assert_eq!(section.try_reserve_aligned(1, 3), Ok(0));
+        assert_eq!(
+            section.try_reserve_aligned(2, 3),
+            Err(ErrorKind::DataUnaligned {
+                address: 1,
+                alignment: 2,
+                word_size: 3
+            })
+        );
+    }
 }
