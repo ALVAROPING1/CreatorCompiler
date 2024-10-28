@@ -521,16 +521,19 @@ impl<'a> Architecture<'a> {
             .filter(move |instruction| instruction.name == name)
     }
 
-    /// Gets the register bank with the given type and precision
+    /// Gets the register banks with the given type and precision
     ///
     /// # Parameters
     ///
     /// * `type`: type of the bank wanted
     /// * `double_precision`: whether the registers should have single (`false`) or double (`true`)
     ///   precision
-    #[must_use]
-    pub fn find_bank(&self, r#type: ComponentType, double_precision: bool) -> Option<&Component> {
-        self.components.iter().find(|bank| {
+    pub fn find_banks(
+        &self,
+        r#type: ComponentType,
+        double_precision: bool,
+    ) -> impl Iterator<Item = &Component> {
+        self.components.iter().filter(move |bank| {
             bank.r#type == r#type
                 && if double_precision {
                     bank.double_precision_type.is_some()

@@ -409,18 +409,21 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                             | InstructionFieldType::DoubleFPReg => ComponentType::Float,
                             _ => unreachable!("We already matched one of these variants"),
                         };
-                        let bank = arch
-                            .find_bank(bank_type, val_type == InstructionFieldType::DoubleFPReg)
-                            .ok_or_else(|| {
-                                ErrorKind::UnknownRegisterBank(bank_type).add_span(&span)
-                            })?;
-                        let (i, _) = bank.find_register(&name).ok_or_else(|| {
-                            ErrorKind::UnknownRegister {
-                                name: name.clone(),
-                                bank: bank_type,
-                            }
-                            .add_span(&span)
+                        let mut banks = arch
+                            .find_banks(bank_type, val_type == InstructionFieldType::DoubleFPReg)
+                            .peekable();
+                        banks.peek().ok_or_else(|| {
+                            ErrorKind::UnknownRegisterBank(bank_type).add_span(&span)
                         })?;
+                        let (i, _) = banks
+                            .find_map(|bank| bank.find_register(&name))
+                            .ok_or_else(|| {
+                                ErrorKind::UnknownRegister {
+                                    name: name.clone(),
+                                    bank: bank_type,
+                                }
+                                .add_span(&span)
+                            })?;
                         (i64::try_from(i).unwrap(), name)
                     }
                 };
