@@ -610,6 +610,14 @@ mod test {
             vec![inst(0, &["main"], "reg ctrl1 two ft1 ft2", binary, 12..36)]
         );
         assert_eq!(x.data_memory, vec![]);
+        // Linked floating point registers
+        let x = compile(".text\nmain: reg ctrl1, x2, fs1, FD2").unwrap();
+        assert_eq!(x.label_table, tbl);
+        assert_eq!(
+            x.instructions,
+            vec![inst(0, &["main"], "reg ctrl1 x2 fs1 FD2", binary, 12..35)]
+        );
+        assert_eq!(x.data_memory, vec![]);
     }
 
     #[test]
@@ -952,6 +960,22 @@ mod test {
                 bank: ComponentType::Float,
             }
             .add_span(&(24..26))),
+        );
+        assert_eq!(
+            compile(".text\nmain: reg PC, x0, FD1, ft2"),
+            Err(ErrorKind::UnknownRegister {
+                name: "FD1".into(),
+                bank: ComponentType::Float,
+            }
+            .add_span(&(24..27))),
+        );
+        assert_eq!(
+            compile(".text\nmain: reg PC, x0, ft1, fs2"),
+            Err(ErrorKind::UnknownRegister {
+                name: "fs2".into(),
+                bank: ComponentType::Float,
+            }
+            .add_span(&(29..32))),
         );
     }
 
