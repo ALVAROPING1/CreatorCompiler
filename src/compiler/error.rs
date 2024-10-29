@@ -1,3 +1,7 @@
+//! Module containing the definition of the compiler errors
+//!
+//! The main type is [`Error`]
+
 use ariadne::{Color, Fmt, Label, Report, ReportKind, Source};
 
 use std::fmt;
@@ -9,6 +13,7 @@ use crate::parser::{ParseError, Span, Spanned};
 
 use super::ArgumentNumber;
 
+/// Type of arguments for directives/instructions
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArgumentType {
     String,
@@ -16,6 +21,7 @@ pub enum ArgumentType {
     RegisterName,
 }
 
+/// Unsupported operations for floating point numbers
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperationKind {
     UnaryNegation,
@@ -24,6 +30,7 @@ pub enum OperationKind {
     BitwiseXOR,
 }
 
+/// Error type
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Kind {
     UnknownDirective(String),
@@ -63,9 +70,12 @@ pub enum Kind {
     },
 }
 
+/// Compiler error type
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error {
+    /// Location in the assembly that produced the error
     pub span: Span,
+    /// Type of the error
     pub kind: Kind,
 }
 
@@ -80,12 +90,18 @@ macro_rules! plural {
 }
 
 impl Kind {
+    /// Adds a span to the error kind, promoting it to an [`Error`]
+    ///
+    /// # Parameters
+    ///
+    /// * `span`: location in the assembly code that caused the error
     #[must_use]
     pub const fn add_span(self, span: &Span) -> Error {
         let span = span.start..span.end;
         Error { span, kind: self }
     }
 
+    /// Gets the numeric error code of this error
     const fn error_code(&self) -> u32 {
         match self {
             Self::UnknownDirective(..) => 1,
@@ -110,6 +126,7 @@ impl Kind {
         }
     }
 
+    /// Gets a note with extra information about the error if available
     fn note(&self) -> Option<String> {
         Some(match self {
             Self::IntegerTooBig(_, bounds) => {
@@ -129,6 +146,7 @@ impl Kind {
         })
     }
 
+    /// Gets a hint about how to fix the error if available
     fn hint(&self) -> Option<String> {
         Some(match self {
             Self::DuplicateLabel(..) => "Consider renaming either of the labels".into(),
@@ -153,6 +171,7 @@ impl Kind {
         })
     }
 
+    /// Gets the label text describing the error
     fn label(&self) -> String {
         match self {
             Self::UnknownDirective(..) => "Unknown directive".into(),
@@ -187,6 +206,7 @@ impl Kind {
         }
     }
 
+    /// Gets a list of extra context labels related to the error
     fn context(&self) -> Vec<(Span, &'static str)> {
         match self {
             Self::DuplicateLabel(_, span) => {
@@ -328,8 +348,16 @@ impl crate::RenderError for Error {
     }
 }
 
+/// Trait for promoting an error `Kind` wrapped in a `Result` to an `Error`
 pub trait SpannedErr {
+    /// Type wrapped in the Ok variant
     type T;
+
+    /// Adds a span to the error kind, promoting it to an [`Error`]
+    ///
+    /// # Parameters
+    ///
+    /// * `span`: location in the assembly code that caused the error
     fn add_span(self, span: &Span) -> Result<Self::T, Error>;
 }
 
