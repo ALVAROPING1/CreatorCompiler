@@ -246,7 +246,7 @@ pub struct InstructionField<'a, BitRange> {
     pub name: &'a str,
     /// Type of the field
     #[serde(flatten)]
-    pub r#type: InstructionFieldType,
+    pub r#type: FieldType,
     /// Range of bits of the field. Ignored for pseudoinstructions
     #[serde(flatten)]
     pub range: BitRange,
@@ -261,7 +261,7 @@ pub struct BitRange(Vec<NonEmptyRangeInclusiveU8>);
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
-pub enum InstructionFieldType {
+pub enum FieldType {
     /// Opcode of the instruction
     Co,
     /// Extended operation code

@@ -8,7 +8,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 
 use super::{expression, lexer, ParseError, Spanned, Token};
-use crate::architecture::{BitRange, InstructionField, InstructionFieldType};
+use crate::architecture::{BitRange, FieldType, InstructionField};
 
 /// Instruction argument value
 #[derive(Debug, Clone, PartialEq)]
@@ -49,8 +49,8 @@ impl<'a> Instruction<'a> {
                 .get(i)
                 .ok_or("reference to undefined field")
                 .and_then(|field| match field.r#type {
-                    InstructionFieldType::Cop { .. } => Err("unallowed reference to cop field"),
-                    InstructionFieldType::Co if no_co => Err("unallowed reference to co field"),
+                    FieldType::Cop { .. } => Err("unallowed reference to cop field"),
+                    FieldType::Co if no_co => Err("unallowed reference to co field"),
                     _ => Ok(i),
                 })
         };
@@ -70,7 +70,7 @@ impl<'a> Instruction<'a> {
                 Some(Token::Identifier(ident)) if FIELD.is_match(&ident) => {
                     let i = field(ident, false)?;
                     match fields[i].r#type {
-                        InstructionFieldType::Co => {
+                        FieldType::Co => {
                             // This value should never be read, we only need it to point to the
                             // opcode instruction field
                             vec![((Argument::Identifier(String::new()), 0..0), i)]
@@ -142,9 +142,9 @@ mod test {
         let field = |co| InstructionField {
             name: "",
             r#type: if co {
-                InstructionFieldType::Co
+                FieldType::Co
             } else {
-                InstructionFieldType::ImmSigned
+                FieldType::ImmSigned
             },
             range: BitRange::build(vec![NonEmptyRangeInclusiveU8::build(0, 0).unwrap()]).unwrap(),
         };

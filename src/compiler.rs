@@ -2,8 +2,8 @@ use once_cell::sync::Lazy;
 use regex::{NoExpand, Regex};
 
 use crate::architecture::{
-    Architecture, DirectiveAction, DirectiveAlignment, DirectiveData, DirectiveSegment, FloatType,
-    Instruction as InstructionDefinition, InstructionFieldType, RegisterType, StringType,
+    Architecture, DirectiveAction, DirectiveAlignment, DirectiveData, DirectiveSegment, FieldType,
+    FloatType, Instruction as InstructionDefinition, RegisterType, StringType,
 };
 use crate::parser::{ASTNode, Argument, Data as DataToken, Expr, Span, Spanned, Statement, Token};
 
@@ -358,16 +358,16 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                 let field = &def.syntax.fields[i];
                 #[allow(clippy::cast_sign_loss)]
                 let (value, value_str) = match field.r#type {
-                    InstructionFieldType::Cop { .. } => {
+                    FieldType::Cop { .. } => {
                         unreachable!("This field type shouldn't be used for instruction arguments")
                     }
                     #[allow(clippy::cast_possible_wrap)]
-                    InstructionFieldType::Co => (def.co.0 as i64, def.name.to_string()),
-                    val_type @ (InstructionFieldType::Address
-                    | InstructionFieldType::ImmSigned
-                    | InstructionFieldType::ImmUnsigned
-                    | InstructionFieldType::OffsetBytes
-                    | InstructionFieldType::OffsetWords) => {
+                    FieldType::Co => (def.co.0 as i64, def.name.to_string()),
+                    val_type @ (FieldType::Address
+                    | FieldType::ImmSigned
+                    | FieldType::ImmUnsigned
+                    | FieldType::OffsetBytes
+                    | FieldType::OffsetWords) => {
                         let value = match value {
                             Argument::Number(expr) => expr.int()?,
                             Argument::Identifier(label) => label_table
@@ -381,16 +381,16 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                             + i64::from(word_size) * i64::from(def.nwords);
                         let offset = i64::from(value) - next_address;
                         let value = match val_type {
-                            InstructionFieldType::OffsetWords => offset / i64::from(word_size),
-                            InstructionFieldType::OffsetBytes => offset,
+                            FieldType::OffsetWords => offset / i64::from(word_size),
+                            FieldType::OffsetBytes => offset,
                             _ => value.into(),
                         };
                         (value, value.to_string())
                     }
-                    val_type @ (InstructionFieldType::IntReg
-                    | InstructionFieldType::CtrlReg
-                    | InstructionFieldType::SingleFPReg
-                    | InstructionFieldType::DoubleFPReg) => {
+                    val_type @ (FieldType::IntReg
+                    | FieldType::CtrlReg
+                    | FieldType::SingleFPReg
+                    | FieldType::DoubleFPReg) => {
                         let name = match value {
                             Argument::Number(_) => {
                                 return Err(ErrorKind::IncorrectArgumentType {
@@ -402,14 +402,10 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                             Argument::Identifier(name) => name,
                         };
                         let bank_type = match val_type {
-                            InstructionFieldType::IntReg => RegisterType::Int,
-                            InstructionFieldType::CtrlReg => RegisterType::Ctrl,
-                            InstructionFieldType::SingleFPReg => {
-                                RegisterType::Float(FloatType::Float)
-                            }
-                            InstructionFieldType::DoubleFPReg => {
-                                RegisterType::Float(FloatType::Double)
-                            }
+                            FieldType::IntReg => RegisterType::Int,
+                            FieldType::CtrlReg => RegisterType::Ctrl,
+                            FieldType::SingleFPReg => RegisterType::Float(FloatType::Float),
+                            FieldType::DoubleFPReg => RegisterType::Float(FloatType::Double),
                             _ => unreachable!("We already matched one of these variants"),
                         };
                         let mut banks = arch.find_banks(bank_type).peekable();
@@ -434,9 +430,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                         value,
                         matches!(
                             field.r#type,
-                            InstructionFieldType::ImmSigned
-                                | InstructionFieldType::OffsetBytes
-                                | InstructionFieldType::OffsetWords
+                            FieldType::ImmSigned | FieldType::OffsetBytes | FieldType::OffsetWords
                         ),
                     )
                     .add_span(&span)?;
@@ -451,7 +445,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
             }
             let fields = def.syntax.fields.iter();
             for (range, value) in fields.filter_map(|field| match field.r#type {
-                InstructionFieldType::Cop { value } => Some((&field.range, value)),
+                FieldType::Cop { value } => Some((&field.range, value)),
                 _ => None,
             }) {
                 #[allow(clippy::cast_possible_wrap)]
