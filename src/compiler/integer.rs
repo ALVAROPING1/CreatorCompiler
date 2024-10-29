@@ -1,10 +1,16 @@
+//! Module containing the definition of integers with specific sizes
+
 use super::ErrorKind;
 use crate::architecture::IntegerType;
 
+/// Sized integer
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Integer {
+    /// Numeric value
     value: u64,
+    /// Size of the integer in bits
     size: usize,
+    /// Type of the integer
     r#type: Option<IntegerType>,
 }
 
@@ -31,6 +37,7 @@ impl Integer {
         let pow = |n: usize| 1 << n;
         // TODO: improve handling of >=64 bit ints
         if size < 64 - 1 {
+            // Check that the given value fits in the specified size
             let bounds = signed.map_or_else(
                 || -pow(size - 1)..pow(size),
                 |signed| {
@@ -46,6 +53,7 @@ impl Integer {
                 return Err(ErrorKind::IntegerTooBig(value, bounds));
             };
         }
+        // Mask for bits outside of the specified size
         let mask = if size < 64 { (1 << size) - 1 } else { u64::MAX };
         #[allow(clippy::cast_sign_loss)]
         Ok(Self {
