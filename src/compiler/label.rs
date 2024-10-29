@@ -1,12 +1,16 @@
+//! Module containing the definition of assembly labels and their symbol table
+
 use std::collections::{hash_map::Entry, HashMap};
 
 use super::{CompileError, ErrorKind};
 use crate::parser::Span;
 
-/// Label semantic data
+/// Assembly label semantic data
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Label {
+    /// Address to which the label points
     address: u64,
+    /// Location of the definition of the label in the assembly
     definition: Span,
 }
 
