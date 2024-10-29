@@ -1,6 +1,9 @@
+//! Module containing the definition of a bit field
+
 use super::{ErrorKind, Integer};
 use crate::architecture::BitRange;
 
+/// Bit field
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BitField(String);
 
