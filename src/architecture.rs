@@ -92,6 +92,17 @@ pub enum ComponentType {
     Float,
 }
 
+/// Type of registers allowed
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum RegisterType {
+    /// Control registers
+    Ctrl,
+    /// Integer registers
+    Int,
+    /// Floating point registers
+    Float(FloatType),
+}
+
 /// Type of registers bigger than a single word
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
@@ -521,29 +532,24 @@ impl<'a> Architecture<'a> {
             .filter(move |instruction| instruction.name == name)
     }
 
-    /// Gets the register banks with the given type and precision
+    /// Gets the register banks with registers of the given type
     ///
     /// # Parameters
     ///
     /// * `type`: type of the bank wanted
-    /// * `double_precision`: whether the registers should have single (`false`) or double (`true`)
-    ///   precision
-    pub fn find_banks(
-        &self,
-        r#type: ComponentType,
-        double_precision: bool,
-    ) -> impl Iterator<Item = &Component> {
-        self.components.iter().filter(move |bank| {
-            bank.r#type == r#type
-                && if double_precision {
-                    bank.double_precision_type.is_some()
-                } else {
-                    matches!(
-                        bank.double_precision_type,
-                        Some(PrecisionType::Extended) | None
-                    )
-                }
-        })
+    pub fn find_banks(&self, r#type: RegisterType) -> impl Iterator<Item = &Component> {
+        let eq = move |bank: &&Component| match r#type {
+            RegisterType::Int => matches!(bank.r#type, ComponentType::Int),
+            RegisterType::Ctrl => matches!(bank.r#type, ComponentType::Ctrl),
+            RegisterType::Float(FloatType::Float) => matches!(
+                (bank.r#type, bank.double_precision_type),
+                (ComponentType::Float, None | Some(PrecisionType::Extended))
+            ),
+            RegisterType::Float(FloatType::Double) => {
+                matches!(bank.r#type, ComponentType::Float) && bank.double_precision_type.is_some()
+            }
+        };
+        self.components.iter().filter(eq)
     }
 }
 

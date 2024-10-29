@@ -2,9 +2,8 @@ use once_cell::sync::Lazy;
 use regex::{NoExpand, Regex};
 
 use crate::architecture::{
-    Architecture, ComponentType, DirectiveAction, DirectiveAlignment, DirectiveData,
-    DirectiveSegment, FloatType, Instruction as InstructionDefinition, InstructionFieldType,
-    StringType,
+    Architecture, DirectiveAction, DirectiveAlignment, DirectiveData, DirectiveSegment, FloatType,
+    Instruction as InstructionDefinition, InstructionFieldType, RegisterType, StringType,
 };
 use crate::parser::{ASTNode, Argument, Data as DataToken, Expr, Span, Spanned, Statement, Token};
 
@@ -403,15 +402,17 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                             Argument::Identifier(name) => name,
                         };
                         let bank_type = match val_type {
-                            InstructionFieldType::IntReg => ComponentType::Int,
-                            InstructionFieldType::CtrlReg => ComponentType::Ctrl,
-                            InstructionFieldType::SingleFPReg
-                            | InstructionFieldType::DoubleFPReg => ComponentType::Float,
+                            InstructionFieldType::IntReg => RegisterType::Int,
+                            InstructionFieldType::CtrlReg => RegisterType::Ctrl,
+                            InstructionFieldType::SingleFPReg => {
+                                RegisterType::Float(FloatType::Float)
+                            }
+                            InstructionFieldType::DoubleFPReg => {
+                                RegisterType::Float(FloatType::Double)
+                            }
                             _ => unreachable!("We already matched one of these variants"),
                         };
-                        let mut banks = arch
-                            .find_banks(bank_type, val_type == InstructionFieldType::DoubleFPReg)
-                            .peekable();
+                        let mut banks = arch.find_banks(bank_type).peekable();
                         banks.peek().ok_or_else(|| {
                             ErrorKind::UnknownRegisterBank(bank_type).add_span(&span)
                         })?;
@@ -932,7 +933,7 @@ mod test {
             compile(".text\nmain: reg x0, x0, ft1, ft2"),
             Err(ErrorKind::UnknownRegister {
                 name: "x0".into(),
-                bank: ComponentType::Ctrl,
+                bank: RegisterType::Ctrl,
             }
             .add_span(&(16..18))),
         );
@@ -941,7 +942,7 @@ mod test {
             compile(".text\nmain: reg pc, x0, ft1, ft2"),
             Err(ErrorKind::UnknownRegister {
                 name: "pc".into(),
-                bank: ComponentType::Ctrl,
+                bank: RegisterType::Ctrl,
             }
             .add_span(&(16..18))),
         );
@@ -949,7 +950,7 @@ mod test {
             compile(".text\nmain: reg PC, PC, ft1, ft2"),
             Err(ErrorKind::UnknownRegister {
                 name: "PC".into(),
-                bank: ComponentType::Int,
+                bank: RegisterType::Int,
             }
             .add_span(&(20..22))),
         );
@@ -957,7 +958,7 @@ mod test {
             compile(".text\nmain: reg PC, x0, x0, ft2"),
             Err(ErrorKind::UnknownRegister {
                 name: "x0".into(),
-                bank: ComponentType::Float,
+                bank: RegisterType::Float(FloatType::Float),
             }
             .add_span(&(24..26))),
         );
@@ -965,7 +966,7 @@ mod test {
             compile(".text\nmain: reg PC, x0, FD1, ft2"),
             Err(ErrorKind::UnknownRegister {
                 name: "FD1".into(),
-                bank: ComponentType::Float,
+                bank: RegisterType::Float(FloatType::Float),
             }
             .add_span(&(24..27))),
         );
@@ -973,7 +974,7 @@ mod test {
             compile(".text\nmain: reg PC, x0, ft1, fs2"),
             Err(ErrorKind::UnknownRegister {
                 name: "fs2".into(),
-                bank: ComponentType::Float,
+                bank: RegisterType::Float(FloatType::Double),
             }
             .add_span(&(29..32))),
         );

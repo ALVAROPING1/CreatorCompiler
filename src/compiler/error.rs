@@ -4,7 +4,7 @@ use std::fmt;
 use std::ops::Range;
 use std::{fmt::Write as _, io::Write as _};
 
-use crate::architecture::{ComponentType, DirectiveSegment};
+use crate::architecture::{DirectiveSegment, FloatType, RegisterType};
 use crate::parser::{ParseError, Span, Spanned};
 
 use super::ArgumentNumber;
@@ -29,10 +29,10 @@ pub enum Kind {
     UnknownDirective(String),
     UnknownInstruction(String),
     UnknownLabel(String),
-    UnknownRegisterBank(ComponentType),
+    UnknownRegisterBank(RegisterType),
     UnknownRegister {
         name: String,
-        bank: ComponentType,
+        bank: RegisterType,
     },
     IncorrectInstructionSyntax(Vec<(String, ParseError)>),
     DuplicateLabel(String, Span),
@@ -214,15 +214,26 @@ impl fmt::Display for OperationKind {
     }
 }
 
+impl fmt::Display for RegisterType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Ctrl => write!(f, "Control"),
+            Self::Int => write!(f, "Integer"),
+            Self::Float(FloatType::Float) => write!(f, "SingleFloatingPoint"),
+            Self::Float(FloatType::Double) => write!(f, "DoubleFloatingPoint"),
+        }
+    }
+}
+
 impl fmt::Display for Kind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::UnknownDirective(s) => write!(f, "Directive \"{s}\" isn't defined"),
             Self::UnknownInstruction(s) => write!(f, "Instruction \"{s}\" isn't defined"),
             Self::UnknownLabel(s) => write!(f, "Label \"{s}\" isn't defined"),
-            Self::UnknownRegisterBank(s) => write!(f, "Register bank \"{s:?}\" isn't defined"),
+            Self::UnknownRegisterBank(s) => write!(f, "Register bank of type {s} isn't defined"),
             Self::UnknownRegister { name, bank } => {
-                write!(f, "Register \"{name}\" isn't defined in bank type {bank:?}")
+                write!(f, "Register \"{name}\" isn't defined in bank type {bank}")
             }
             Self::IncorrectInstructionSyntax(..) => write!(f, "Incorrect instruction syntax"),
             Self::DuplicateLabel(s, _) => write!(f, "Label \"{s}\" is already defined"),
