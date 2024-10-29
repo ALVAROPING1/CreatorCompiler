@@ -1,3 +1,6 @@
+//! Module containing the definition of wrappers for the compiler and generate `JS` bindings for
+//! interoperability
+
 use self_cell::self_cell;
 use wasm_bindgen::prelude::*;
 
@@ -7,7 +10,7 @@ use crate::RenderError;
 mod utils;
 
 self_cell!(
-    /// Architecture description
+    /// Architecture definition
     #[wasm_bindgen]
     pub struct ArchitectureJS {
         owner: String,
@@ -40,6 +43,7 @@ impl ArchitectureJS {
         Self::try_new(json, |json| Architecture::from_json(json)).map_err(|e| e.to_string())
     }
 
+    /// Converts the architecture to a pretty printed string for debugging
     #[wasm_bindgen(js_name = toString)]
     #[must_use]
     pub fn debug(&self) -> String {
@@ -57,9 +61,12 @@ impl ArchitectureJS {
     /// Errors if the assembly code has a syntactical or semantical error
     pub fn compile(&self, src: &str) -> Result<CompiledCodeJS, String> {
         const FILENAME: &str = "assembly";
+        // Parse the source to an AST
         let ast = crate::parser::parse(src).map_err(|e| to_html(&e.render(FILENAME, src)))?;
+        // Compile the AST
         let compiled = crate::compiler::compile(self.borrow_dependent(), ast)
             .map_err(|e| to_html(&e.render(FILENAME, src)))?;
+        // Wrap the instructions in a type that can be returned to `JS`
         let instructions = compiled
             .instructions
             .into_iter()
@@ -71,6 +78,7 @@ impl ArchitectureJS {
                 user: src[x.user].to_owned(),
             })
             .collect();
+        // Wrap the data elements in a type that can be returned to `JS`
         let data = compiled.data_memory.into_iter().map(DataJS).collect();
         Ok(CompiledCodeJS { instructions, data })
     }
@@ -88,6 +96,7 @@ pub struct CompiledCodeJS {
     pub data: Vec<DataJS>,
 }
 
+/// Compiled instruction wrapper
 #[wasm_bindgen(getter_with_clone)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct InstructionJS {
