@@ -1,11 +1,16 @@
+//! Module containing the definition of the memory sections
+
 use super::ErrorKind;
 use crate::architecture::NonEmptyRangeInclusiveU64;
 
 /// Memory section manager
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Section {
+    /// Address of the start of the section
     address: u64,
+    /// Address of the end of the section
     end: u64,
+    /// Name of the section
     name: &'static str,
 }
 
@@ -86,14 +91,13 @@ impl Section {
     /// aligned
     pub fn try_reserve_aligned(&mut self, size: u64, word_size: u64) -> Result<u64, ErrorKind> {
         if self.address % size != 0 && self.address % word_size != 0 {
-            Err(ErrorKind::DataUnaligned {
+            return Err(ErrorKind::DataUnaligned {
                 address: self.address,
                 alignment: size,
                 word_size,
-            })
-        } else {
-            self.try_reserve(size)
+            });
         }
+        self.try_reserve(size)
     }
 }
 
