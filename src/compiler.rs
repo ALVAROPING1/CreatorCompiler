@@ -183,7 +183,7 @@ fn take_spanned_vec<T>(src: &mut Vec<Spanned<T>>) -> Vec<T> {
 }
 
 /// Amount of arguments expected by a directive
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ArgumentNumber {
     /// Minimum expected amount
     pub amount: usize,
@@ -197,28 +197,27 @@ impl ArgumentNumber {
     pub const fn new(amount: usize, at_least: bool) -> Self {
         Self { amount, at_least }
     }
-}
 
-/// Check if the argument number matches the expected amount
-///
-/// # Parameters
-///
-/// * `expected`: expected amount of arguments
-/// * `args`: arguments found
-///
-/// # Errors
-///
-/// Errors if the amount of arguments doesn't match the specified amount
-fn check_arg_num<T>(expected: ArgumentNumber, args: &Spanned<Vec<T>>) -> Result<(), CompileError> {
-    let len = args.0.len();
-    if len < expected.amount || (!expected.at_least && len != expected.amount) {
-        return Err(ErrorKind::IncorrectDirectiveArgumentNumber {
-            expected,
-            found: args.0.len(),
-        }
-        .add_span(&args.1));
-    };
-    Ok(())
+    /// Check if the argument number matches the amount specified
+    ///
+    /// # Parameters
+    ///
+    /// * `args`: arguments found
+    ///
+    /// # Errors
+    ///
+    /// Errors if the amount of arguments doesn't match the specified amount
+    fn check<T>(self, args: &Spanned<Vec<T>>) -> Result<(), CompileError> {
+        let len = args.0.len();
+        if len < self.amount || (!self.at_least && len != self.amount) {
+            return Err(ErrorKind::IncorrectDirectiveArgumentNumber {
+                expected: self,
+                found: args.0.len(),
+            }
+            .add_span(&args.1));
+        };
+        Ok(())
+    }
 }
 
 fn compile_data(
@@ -245,7 +244,7 @@ fn compile_data(
     }
     match data_type {
         DirectiveData::Space(size) => {
-            check_arg_num(ArgumentNumber::new(1, false), &args)?;
+            ArgumentNumber::new(1, false).check(&args)?;
             let (args, _) = args;
             let (value, span) = &args[0];
             let value = value.to_expr(span)?.int()?;
@@ -259,7 +258,7 @@ fn compile_data(
             });
         }
         DirectiveData::Int(size, int_type) => {
-            check_arg_num(ArgumentNumber::new(1, true), &args)?;
+            ArgumentNumber::new(1, true).check(&args)?;
             for (value, span) in args.0 {
                 let value = value.to_expr(&span)?.int()?;
                 memory.push(Data {
@@ -275,7 +274,7 @@ fn compile_data(
             }
         }
         DirectiveData::Float(float_type) => {
-            check_arg_num(ArgumentNumber::new(1, true), &args)?;
+            ArgumentNumber::new(1, true).check(&args)?;
             for (value, span) in args.0 {
                 let value = value.to_expr(&span)?.float()?;
                 #[allow(clippy::cast_possible_truncation)]
@@ -293,7 +292,7 @@ fn compile_data(
             }
         }
         DirectiveData::String(str_type) => {
-            check_arg_num(ArgumentNumber::new(1, true), &args)?;
+            ArgumentNumber::new(1, true).check(&args)?;
             for (value, span) in args.0 {
                 let data = value.into_string(&span)?;
                 let null_terminated = str_type == StringType::AsciiNullEnd;
@@ -333,12 +332,12 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                 })?;
                 match (action, &current_section) {
                     (DirectiveAction::Segment(new_section), _) => {
-                        check_arg_num(ArgumentNumber::new(0, false), &directive.args)?;
+                        ArgumentNumber::new(0, false).check(&directive.args)?;
                         current_section = Some((new_section, node.statement.1));
                     }
                     (DirectiveAction::GlobalSymbol(_), _) => todo!(),
                     (DirectiveAction::Alignment(align_type), Some((DirectiveSegment::Data, _))) => {
-                        check_arg_num(ArgumentNumber::new(1, false), &directive.args)?;
+                        ArgumentNumber::new(1, false).check(&directive.args)?;
                         let (args, _) = directive.args;
                         let (value, span) = &args[0];
                         let value = value.to_expr(span)?.int()?;
