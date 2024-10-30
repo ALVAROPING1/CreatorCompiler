@@ -37,11 +37,11 @@ type Output = Vec<(Spanned<Argument>, usize)>;
 
 fn parse_instruction<'a>(
     arch: &'a Architecture,
-    (name, name_span): Spanned<&str>,
+    name: Spanned<String>,
     args: &Spanned<Vec<Spanned<Token>>>,
 ) -> Result<(&'a InstructionDefinition<'a>, Output), CompileError> {
     let mut errs = Vec::new();
-    for inst in arch.find_instructions(name) {
+    for inst in arch.find_instructions(&name.0) {
         let result = inst.syntax.parser.parse(args);
         match result {
             Ok(parsed_args) => return Ok((inst, parsed_args)),
@@ -49,7 +49,7 @@ fn parse_instruction<'a>(
         }
     }
     Err(if errs.is_empty() {
-        ErrorKind::UnknownInstruction(name.to_string()).add_span(&name_span)
+        ErrorKind::UnknownInstruction(name.0).add_span(&name.1)
     } else {
         ErrorKind::IncorrectInstructionSyntax(errs).add_span(&args.1)
     })
@@ -316,8 +316,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                 }
                 let (name, span) = instruction.name;
                 instruction_eof = node.statement.1.end;
-                let (def, args) =
-                    parse_instruction(arch, (&name, span.clone()), &instruction.args)?;
+                let (def, args) = parse_instruction(arch, (name, span.clone()), &instruction.args)?;
                 let addr = code_section
                     .try_reserve(u64::from(word_size) * u64::from(def.nwords))
                     .add_span(&span)?;
