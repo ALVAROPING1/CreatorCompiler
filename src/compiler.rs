@@ -1,3 +1,8 @@
+//! Module containing the definition of the assembly compiler
+//!
+//! The entry point for compiler code is the [`compile()`] function. Users are expected to parse
+//! the code first to an AST with [`crate::parser::parse()`]
+
 use once_cell::sync::Lazy;
 use regex::{NoExpand, Regex};
 
@@ -31,23 +36,43 @@ pub use integer::Integer;
 *  - Rework argument number types
 **/
 
+// Regex for replacement templates in the translation spec of instructions
 static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"[fF][0-9]+").expect("This shouldn't fail"));
 
+// Parsed instruction arguments type
 type Output = Vec<(Spanned<Argument>, usize)>;
 
+/// Parse the arguments of an instruction according to any of its definitions. If the arguments
+/// match the syntax of multiple definitions, the first definition is always used
+///
+/// # Parameters
+///
+/// * `arch`: architecture definition
+/// * `name`: name of the instruction
+/// * `args`: vector of tokens that form the instruction arguments
+///
+/// # Errors
+///
+/// Errors if the instruction name doesn't exist, or if the arguments doesn't match the syntax of
+/// any of the instruction definitions for this instruction name
 fn parse_instruction<'a>(
     arch: &'a Architecture,
     name: Spanned<String>,
     args: &Spanned<Vec<Spanned<Token>>>,
 ) -> Result<(&'a InstructionDefinition<'a>, Output), CompileError> {
+    // Errors produced on each of the attempted parses
     let mut errs = Vec::new();
+    // Get all instruction definitions with the given name
     for inst in arch.find_instructions(&name.0) {
-        let result = inst.syntax.parser.parse(args);
-        match result {
+        // Try to parse the given arguments according to the syntax of the current definition
+        match inst.syntax.parser.parse(args) {
+            // If parsing is successful, assume this definition is the correct one and return it
             Ok(parsed_args) => return Ok((inst, parsed_args)),
+            // Otherwise, append the produced error to the error vector and try the next definition
             Err(e) => errs.push((inst.syntax.user_syntax.to_string(), e)),
         }
     }
+    // If we didn't get any errors, we didn't find any definitions for the instruction
     Err(if errs.is_empty() {
         ErrorKind::UnknownInstruction(name.0).add_span(&name.1)
     } else {
@@ -55,6 +80,7 @@ fn parse_instruction<'a>(
     })
 }
 
+/// Compiled instruction
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Instruction {
     /// Address of the instruction
@@ -65,31 +91,49 @@ pub struct Instruction {
     pub loaded: String,
     /// Instruction encoded in binary
     pub binary: BitField,
-    /// Span of the instruction in the code
+    /// Span of the instruction in the assembly code
     pub user: Span,
 }
 
+/// Value to add to the data segment
 #[derive(Debug, PartialEq, Clone)]
 pub enum Value {
+    /// Integer value
     Integer(Integer),
+    /// Reserved space initialized to 0
     Space(u64),
+    /// Padding added to align elements
     Padding(u64),
+    /// Single precision floating point value
     Float(f32),
+    /// Double precision floating point value
     Double(f64),
-    String { data: String, null_terminated: bool },
+    /// UTF-8 string
+    String {
+        /// Byte sequence of the string, encoded in UTF-8
+        data: String,
+        /// Whether the string is terminated by a null byte
+        null_terminated: bool,
+    },
 }
 
+/// Compiled data segment element
 #[derive(Debug, PartialEq, Clone)]
 pub struct Data {
-    /// Address of the value
+    /// Address of the element
     pub address: u64,
-    /// Labels pointing to this data value
+    /// Labels pointing to this data element
     pub labels: Vec<String>,
-    /// Data value
+    /// Value of the data element
     pub value: Value,
 }
 
 impl DataToken {
+    /// Convert the value to a string
+    ///
+    /// # Parameters
+    ///
+    /// * `span`: span of the value in the assembly code
     fn into_string(self, span: &Span) -> Result<String, CompileError> {
         match self {
             Self::String(s) => Ok(s),
@@ -101,6 +145,11 @@ impl DataToken {
         }
     }
 
+    /// Convert the value to an expression
+    ///
+    /// # Parameters
+    ///
+    /// * `span`: span of the value in the assembly code
     const fn to_expr(&self, span: &Span) -> Result<&Expr, CompileError> {
         match self {
             Self::Number(expr) => Ok(expr),
@@ -113,15 +162,24 @@ impl DataToken {
     }
 }
 
+/// Compilation result
 #[derive(Debug, PartialEq, Clone)]
 pub struct CompiledCode {
+    /// Symbol table for labels
     pub label_table: LabelTable,
+    /// Compiled instructions
     pub instructions: Vec<Instruction>,
+    /// Compiled data elements
     pub data_memory: Vec<Data>,
 }
 
-fn take_spanned_vec<T>(dest: &mut Vec<Spanned<T>>) -> Vec<T> {
-    std::mem::take(dest).into_iter().map(|x| x.0).collect()
+/// Convert a vector of spanned elements to a vector of elements, leaving an empty vector
+///
+/// # Parameters
+///
+/// * `src`: source vector to take the data from
+fn take_spanned_vec<T>(src: &mut Vec<Spanned<T>>) -> Vec<T> {
+    std::mem::take(src).into_iter().map(|x| x.0).collect()
 }
 
 /// Amount of arguments expected by a directive
@@ -134,12 +192,23 @@ pub struct ArgumentNumber {
 }
 
 impl ArgumentNumber {
+    /// Create a new `ArgumentNumber`
     #[must_use]
     pub const fn new(amount: usize, at_least: bool) -> Self {
         Self { amount, at_least }
     }
 }
 
+/// Check if the argument number matches the expected amount
+///
+/// # Parameters
+///
+/// * `expected`: expected amount of arguments
+/// * `args`: arguments found
+///
+/// # Errors
+///
+/// Errors if the amount of arguments doesn't match the specified amount
 fn check_arg_num<T>(expected: ArgumentNumber, args: &Spanned<Vec<T>>) -> Result<(), CompileError> {
     let len = args.0.len();
     if len < expected.amount || (!expected.at_least && len != expected.amount) {
