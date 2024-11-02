@@ -12,8 +12,8 @@ pub enum Number {
     Float(f64),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
-pub struct BaseN<const N: u8>(pub u64);
+#[derive(Debug, PartialEq, Eq, Clone, Copy, PartialOrd, Ord, JsonSchema)]
+pub struct BaseN<const N: u8>(#[schemars(with = "String")] pub u64);
 
 #[derive(Deserialize, JsonSchema)]
 #[serde(untagged)]
@@ -125,3 +125,26 @@ impl_NonEmptyRangeInclusive!(
     (u64, NonEmptyRangeInclusiveU64),
     (u8, NonEmptyRangeInclusiveU8)
 );
+
+macro_rules! schema_from {
+    ($dst:ident$(<$lt:lifetime>)?, $src:ty) => {
+        impl $(<$lt>)? JsonSchema for $dst$(<$lt>)? {
+            fn schema_name() -> String {
+                <$src as JsonSchema>::schema_name()
+            }
+
+            fn schema_id() -> std::borrow::Cow<'static, str> {
+                <$src as JsonSchema>::schema_id()
+            }
+
+            fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+                <$src as JsonSchema>::json_schema(gen)
+            }
+
+            fn is_referenceable() -> bool {
+                <$src as JsonSchema>::is_referenceable()
+            }
+        }
+    };
+}
+pub(super) use schema_from;

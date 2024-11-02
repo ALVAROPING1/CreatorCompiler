@@ -15,7 +15,6 @@ pub struct Architecture<'a> {
     /// memory alignment, main function, passing convention, and sensitive register
     /// name
     #[serde(borrow)]
-    #[schemars(with = "[json::Config<'a>; 8]")]
     arch_conf: Config<'a>,
     /// Components (register banks) of the architecture. It's assumed that the first register of
     /// the first bank will contain the program counter
@@ -25,11 +24,9 @@ pub struct Architecture<'a> {
     /// Pseudoinstructions allowed
     pseudoinstructions: Vec<Pseudoinstruction<'a>>,
     /// Directives allowed
-    #[schemars(with = "Vec<json::Directive>")]
     directives: Vec<Directive<'a>>,
     /// Memory layout of the architecture
     /// Order of elements is assumed to be text start/end, data start/end, and stack start/end
-    #[schemars(with = "[Pair<json::MemoryLayoutKeys, String>; 6]")]
     memory_layout: MemoryLayout,
 }
 
@@ -54,6 +51,7 @@ pub struct Config<'a> {
     /// TODO: what does this represent? is this used currently?
     sensitive_register_name: bool,
 }
+utils::schema_from!(Config<'a>, [json::Config<'a>; 8]);
 
 /// Endianness of data in the architecture
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
@@ -170,10 +168,8 @@ pub struct Instruction<'a> {
     r#type: InstructionType,
     /// Syntax of the instruction
     #[serde(flatten)]
-    #[schemars(with = "json::InstructionSyntax")]
     pub syntax: InstructionSyntax<'a>,
     /// Binary op code
-    #[schemars(with = "String")]
     pub co: BaseN<2>,
     /// Size of the instruction
     pub nwords: u8,
@@ -229,6 +225,7 @@ pub struct InstructionSyntax<'a> {
     /// Parameters of the instruction
     pub fields: Vec<InstructionField<'a, BitRange>>,
 }
+utils::schema_from!(InstructionSyntax<'a>, json::InstructionSyntax);
 
 /// Allowed instruction properties
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
@@ -256,6 +253,7 @@ pub struct InstructionField<'a, BitRange> {
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 #[serde(try_from = "json::BitRange")]
 pub struct BitRange(Vec<NonEmptyRangeInclusiveU8>);
+utils::schema_from!(BitRange, json::BitRange);
 
 /// Allowed instruction field types
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
@@ -268,7 +266,6 @@ pub enum FieldType {
     Cop {
         /// Fixed value of this field in the binary instruction (specified as a binary string)
         #[serde(rename = "valueField")]
-        #[schemars(with = "String")]
         value: BaseN<2>,
     },
     /// Immediate signed integer
@@ -342,6 +339,7 @@ pub struct Directive<'a> {
     /// Action of the directive
     pub action: DirectiveAction<DirectiveData>,
 }
+utils::schema_from!(Directive<'a>, json::Directive);
 
 /// Allowed actions for directives
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
@@ -439,6 +437,7 @@ pub struct MemoryLayout {
     /// Addresses reserved for the stack segment
     stack: NonEmptyRangeInclusiveU64,
 }
+utils::schema_from!(MemoryLayout, [Pair<json::MemoryLayoutKeys, BaseN<16>>; 6]);
 
 impl<'a> Architecture<'a> {
     /// Generate a `JSON` schema

@@ -119,7 +119,6 @@ pub struct InstructionSyntax<'a> {
     #[serde(rename = "signatureRaw")]
     pub signature_raw: &'a str,
     /// Parameters of the instruction
-    #[schemars(with = "Vec<super::InstructionField<BitRange>>")]
     pub fields: Vec<super::InstructionField<'a, super::BitRange>>,
 }
 
@@ -152,8 +151,8 @@ pub enum Config<'a> {
     Name(&'a str),
     /// Word size
     Bits(
-        #[schemars(with = "utils::StringOrT<u8>")]
         #[serde(deserialize_with = "utils::from_str")]
+        #[schemars(with = "utils::StringOrT<u8>")]
         u8,
     ),
     /// Description of the architecture
