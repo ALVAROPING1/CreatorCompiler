@@ -106,7 +106,7 @@ impl TryFrom<BitRange> for super::BitRange {
 
 /// Instruction syntax specification
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
-pub struct InstructionSyntax<'a> {
+pub struct InstructionSyntax<'a, BitRange> {
     /// Order of the fields/literal characters in the instruction text. `[fF]\d+` is interpreted as
     /// the field with index i of the instruction. Other characters are interpreted literally
     /// Ex: `F0 F3 F1 (F2)`
@@ -119,13 +119,13 @@ pub struct InstructionSyntax<'a> {
     #[serde(rename = "signatureRaw")]
     pub signature_raw: &'a str,
     /// Parameters of the instruction
-    pub fields: Vec<super::InstructionField<'a, super::BitRange>>,
+    pub fields: Vec<super::InstructionField<'a, BitRange>>,
 }
 
-impl<'a> TryFrom<InstructionSyntax<'a>> for super::InstructionSyntax<'a> {
+impl<'a, T> TryFrom<InstructionSyntax<'a, T>> for super::InstructionSyntax<'a, T> {
     type Error = &'static str;
 
-    fn try_from(value: InstructionSyntax<'a>) -> Result<Self, Self::Error> {
+    fn try_from(value: InstructionSyntax<'a, T>) -> Result<Self, Self::Error> {
         let format = |fmt: &str| {
             let fmt = fmt.replace(" (", "(");
             fmt.split_once(' ')

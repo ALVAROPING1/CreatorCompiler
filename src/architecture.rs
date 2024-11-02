@@ -168,7 +168,7 @@ pub struct Instruction<'a> {
     r#type: InstructionType,
     /// Syntax of the instruction
     #[serde(flatten)]
-    pub syntax: InstructionSyntax<'a>,
+    pub syntax: InstructionSyntax<'a, BitRange>,
     /// Binary op code
     pub co: BaseN<2>,
     /// Size of the instruction
@@ -214,8 +214,8 @@ pub enum InstructionType {
 
 /// Instruction syntax specification
 #[derive(Deserialize, Debug, Clone)]
-#[serde(try_from = "json::InstructionSyntax")]
-pub struct InstructionSyntax<'a> {
+#[serde(try_from = "json::InstructionSyntax<BitRange>")]
+pub struct InstructionSyntax<'a, BitRange> {
     /// Parser for the syntax of the instruction
     pub parser: crate::parser::Instruction<'a>,
     /// Translated instruction's syntax
@@ -225,7 +225,7 @@ pub struct InstructionSyntax<'a> {
     /// Parameters of the instruction
     pub fields: Vec<InstructionField<'a, BitRange>>,
 }
-utils::schema_from!(InstructionSyntax<'a>, json::InstructionSyntax);
+utils::schema_from!(InstructionSyntax<'a, T>, json::InstructionSyntax<T>);
 
 /// Allowed instruction properties
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
@@ -297,29 +297,16 @@ pub enum FieldType {
 }
 
 /// Pseudoinstruction specification
-#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
+#[derive(Deserialize, JsonSchema, Debug, Clone)]
 struct Pseudoinstruction<'a> {
     /// Name of the pseudoinstruction
     name: &'a str,
-    /// Order of the fields/literal characters in the instruction text. `[fF]\d+` is interpreted as
-    /// the field with index i of the instruction, although the number is ignored and `signature_raw`
-    /// is used instead. Other characters are interpreted literally
-    /// Ex: `F0 F3 F1 (F2)`
-    signature_definition: &'a str,
-    /// Comma-separated list of the type of each field in the instruction, in the order in which
-    /// they appear in the instruction. Valid values are those in `InstructionFieldType`, except
-    /// `Co` and `Cop`. Instruction opcode is specified literally, other characters are interpreted
-    /// literally so that `signature_definition` can capture the value corresponding to each field
-    /// when used as a regex
-    signature: &'a str,
-    /// Same as `signature`, but with a space-separated list of field names
-    #[serde(rename = "signatureRaw")]
-    signature_raw: &'a str,
+    /// Syntax of the instruction
+    #[serde(flatten)]
+    pub syntax: InstructionSyntax<'a, ()>,
     /// Size of the pseudoinstruction. Ignored since some pseudoinstructions can have different sizes
     /// depending on the instructions they are replaced with
     nwords: Integer,
-    /// Parameters of the pseudoinstruction. Bit positions of fields are ignored
-    fields: Vec<InstructionField<'a, ()>>,
     /// Code to execute for the instruction
     // Can't be a reference because there might be escape sequences, which require
     // modifying the data on deserialization

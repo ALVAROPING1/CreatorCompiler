@@ -8,7 +8,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 
 use super::{expression, lexer, ParseError, Spanned, Token};
-use crate::architecture::{BitRange, FieldType, InstructionField};
+use crate::architecture::{FieldType, InstructionField};
 
 /// Instruction argument value
 #[derive(Debug, Clone, PartialEq)]
@@ -37,7 +37,7 @@ impl<'a> Instruction<'a> {
     /// # Errors
     ///
     /// Errors if the syntax specification is invalid
-    pub fn build(fmt: &str, fields: &[InstructionField<BitRange>]) -> Result<Self, &'static str> {
+    pub fn build<T>(fmt: &str, fields: &[InstructionField<T>]) -> Result<Self, &'static str> {
         // Regex for a instruction argument placeholder
         static FIELD: Lazy<Regex> =
             Lazy::new(|| Regex::new(r"^[fF][0-9]+$").expect("This shouldn't fail"));
@@ -64,9 +64,10 @@ impl<'a> Instruction<'a> {
 
         // Creates an initial dummy parser that consumes no input
         let parser = any().ignored().or(end()).rewind();
-        // Validate the first token is a field placeholder pointing to the opcode
+        // Validate the first token is a field placeholder pointing to the opcode/instruction name
         let mut parser = parser
             .to(match tokens.next() {
+                // First token is a placeholder => check that it points to the opcode field
                 Some(Token::Identifier(ident)) if FIELD.is_match(&ident) => {
                     let i = field(ident, false)?;
                     match fields[i].r#type {
@@ -78,6 +79,10 @@ impl<'a> Instruction<'a> {
                         _ => return Err("the first field should have type `co`"),
                     }
                 }
+                // First token is an identifier => assume it's the instruction name
+                // There is no opcode field specification => assume it shouldn't be included in the
+                // output
+                Some(Token::Identifier(_)) => vec![],
                 _ => return Err("unexpected first token of signature definition"),
             })
             .boxed();
@@ -135,10 +140,9 @@ impl<'a> std::fmt::Debug for Instruction<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::architecture::NonEmptyRangeInclusiveU8;
     use crate::parser::{expression::BinaryOp, Expr};
 
-    fn fields() -> [InstructionField<'static, BitRange>; 3] {
+    fn fields() -> [InstructionField<'static, ()>; 3] {
         let field = |co| InstructionField {
             name: "",
             r#type: if co {
@@ -146,7 +150,7 @@ mod test {
             } else {
                 FieldType::ImmSigned
             },
-            range: BitRange::build(vec![NonEmptyRangeInclusiveU8::build(0, 0).unwrap()]).unwrap(),
+            range: (),
         };
         [field(true), field(false), field(false)]
     }

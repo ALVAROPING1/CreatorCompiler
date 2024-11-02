@@ -127,8 +127,8 @@ impl_NonEmptyRangeInclusive!(
 );
 
 macro_rules! schema_from {
-    ($dst:ident$(<$lt:lifetime>)?, $src:ty) => {
-        impl $(<$lt>)? JsonSchema for $dst$(<$lt>)? {
+    ($dst:ident$(<$($lt:lifetime)? $($(,)? $t:ident)?>)?, $src:ty) => {
+        impl $(<$($lt)? $(, $t: JsonSchema)?>)? JsonSchema for $dst$(<$($lt)? $(, $t)?>)? {
             fn schema_name() -> String {
                 <$src as JsonSchema>::schema_name()
             }
