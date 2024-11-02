@@ -135,10 +135,7 @@ impl Kind {
             Self::IncorrectInstructionSyntax(errs) => {
                 let mut res = "Allowed formats:".to_string();
                 for (syntax, _) in errs {
-                    // NOTE: using line jumps messes ariadne's formatting of notes, so we have to
-                    // replicate the margin manually for each new line
-                    write!(res, "\n   {} {syntax}", "│".fg(Color::Fixed(240)))
-                        .expect("The write macro can't fail for `String`s");
+                    write!(res, "\n{syntax}").expect("The write macro can't fail for `String`s");
                 }
                 res
             }
@@ -309,7 +306,7 @@ impl fmt::Display for Kind {
 
 impl crate::RenderError for Error {
     fn format(self, filename: &str, src: &str, mut buffer: &mut Vec<u8>) {
-        let mut report = Report::build(ReportKind::Error, filename, self.span.start)
+        let mut report = Report::build(ReportKind::Error, (filename, self.span.clone()))
             .with_code(format!("E{:02}", self.kind.error_code()))
             .with_message(self.kind.to_string())
             .with_label(

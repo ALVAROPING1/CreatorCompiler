@@ -36,7 +36,7 @@ impl crate::RenderError for Error {
             .map(|e| e.map(|c| c.to_string()))
             .chain(parse.into_iter().map(|e| e.map(|tok| tok.to_string())))
             .for_each(|e| {
-                Report::build(ReportKind::Error, filename, e.span().start)
+                Report::build(ReportKind::Error, (filename, e.span()))
                     .with_message(match e.reason() {
                         SimpleReason::Custom(msg) => msg.clone(),
                         _ => e.to_string(),
