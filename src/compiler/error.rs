@@ -204,16 +204,16 @@ impl Kind {
     }
 
     /// Gets a list of extra context labels related to the error
-    fn context(&self) -> Vec<(Span, &'static str)> {
+    fn context(&self) -> Vec<(&Span, &'static str)> {
         match self {
             Self::DuplicateLabel(_, span) => {
-                vec![(span.clone(), "Label previously defined here")]
+                vec![(span, "Label previously defined here")]
             }
             Self::UnallowedStatementType {
                 section: Some(section),
                 ..
             } => {
-                vec![(section.1.clone(), "Section previously started here")]
+                vec![(&section.1, "Section previously started here")]
             }
             _ => Vec::new(),
         }
@@ -315,7 +315,7 @@ impl crate::RenderError for Error {
                     .with_color(Color::Red),
             )
             .with_labels(self.kind.context().into_iter().map(|label| {
-                Label::new((filename, label.0))
+                Label::new((filename, label.0.clone()))
                     .with_message(format!("{} {}", "Note:".fg(Color::BrightBlue), label.1))
                     .with_color(Color::BrightBlue)
                     .with_order(10)
