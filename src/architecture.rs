@@ -555,7 +555,7 @@ impl<'a> Component<'a> {
 }
 
 impl BitRange {
-    /// Calculates the size of this field in bits
+    /// Calculates the size of this range in bits
     #[must_use]
     pub fn size(&self) -> usize {
         // We need a closure because there are multiple methods for different types
@@ -568,10 +568,12 @@ impl BitRange {
             .into()
     }
 
+    /// Gets an iterator of the ranges of bits specified
     pub fn iter(&self) -> impl Iterator<Item = &NonEmptyRangeInclusiveU8> {
         self.0.iter()
     }
 
+    /// Creates a new `BitRange`
     #[must_use]
     pub fn build(ranges: Vec<NonEmptyRangeInclusiveU8>) -> Option<Self> {
         if ranges.is_empty() {
