@@ -436,21 +436,23 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                     | FieldType::OffsetBytes
                     | FieldType::OffsetWords) => {
                         let value = match value {
-                            Argument::Number(expr) => expr.int()?,
-                            Argument::Identifier(label) => label_table
-                                .get(&label)
-                                .ok_or_else(|| ErrorKind::UnknownLabel(label).add_span(&span))?
-                                .address()
-                                .try_into()
-                                .unwrap(),
-                        };
-                        let next_address = i64::try_from(address).unwrap()
-                            + i64::from(word_size) * i64::from(def.nwords);
-                        let offset = i64::from(value) - next_address;
-                        let value = match val_type {
-                            FieldType::OffsetWords => offset / i64::from(word_size),
-                            FieldType::OffsetBytes => offset,
-                            _ => value.into(),
+                            Argument::Number(expr) => expr.int()?.into(),
+                            Argument::Identifier(label) => {
+                                let value: i64 = label_table
+                                    .get(&label)
+                                    .ok_or_else(|| ErrorKind::UnknownLabel(label).add_span(&span))?
+                                    .address()
+                                    .try_into()
+                                    .unwrap();
+                                let next_address = i64::try_from(address).unwrap()
+                                    + i64::from(word_size) * i64::from(def.nwords);
+                                let offset = value - next_address;
+                                match val_type {
+                                    FieldType::OffsetWords => offset / i64::from(word_size),
+                                    FieldType::OffsetBytes => offset,
+                                    _ => value,
+                                }
+                            }
                         };
                         (value, value.to_string())
                     }
@@ -696,24 +698,32 @@ mod test {
 
     #[test]
     fn instruction_fields_offsets_aligned() {
-        let x = compile(".text\nmain: off 7, 12").unwrap();
-        let binary = "00110000000000000000000000000010";
+        let x = compile(".text\nmain: off 7, -8").unwrap();
+        let binary = "01110000000000000000000000001000";
         assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
         assert_eq!(
             x.instructions,
-            vec![inst(0, &["main"], "off 3 2", binary, 12..21)]
+            vec![inst(0, &["main"], "off 7 -8", binary, 12..21)]
+        );
+        assert_eq!(x.data_memory, vec![]);
+        let x = compile(".text\nmain: off main, main").unwrap();
+        let binary = "11000000000000000000000000001111";
+        assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
+        assert_eq!(
+            x.instructions,
+            vec![inst(0, &["main"], "off -4 -1", binary, 12..26)]
         );
         assert_eq!(x.data_memory, vec![]);
     }
 
     #[test]
     fn instruction_fields_offsets_unaligned() {
-        let x = compile(".text\nmain: off 6, 11").unwrap();
-        let binary = "00100000000000000000000000000001";
+        let x = compile(".text\nmain: off 6, 7").unwrap();
+        let binary = "01100000000000000000000000000111";
         assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
         assert_eq!(
             x.instructions,
-            vec![inst(0, &["main"], "off 2 1", binary, 12..21)]
+            vec![inst(0, &["main"], "off 6 7", binary, 12..20)]
         );
         assert_eq!(x.data_memory, vec![]);
     }
