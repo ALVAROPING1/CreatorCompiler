@@ -205,6 +205,8 @@ pub enum InstructionType {
     #[serde(rename = "Unconditional bifurcation")]
     UnconditionalBifurcation,
     Syscall,
+    #[serde(rename = "Function call")]
+    FunctionCall,
     #[serde(rename = "Transfer between registers")]
     TransferRegister,
     #[serde(rename = "Memory access")]
