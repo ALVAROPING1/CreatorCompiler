@@ -96,6 +96,16 @@ pub struct CompiledCodeJS {
     pub data: Vec<DataJS>,
 }
 
+#[wasm_bindgen]
+impl CompiledCodeJS {
+    /// Converts the compiled code to a pretty printed string for debugging
+    #[wasm_bindgen(js_name = toString)]
+    #[must_use]
+    pub fn debug(&self) -> String {
+        format!("{self:#?}")
+    }
+}
+
 /// Compiled instruction wrapper
 #[wasm_bindgen(getter_with_clone)]
 #[derive(Debug, PartialEq, Eq, Clone)]

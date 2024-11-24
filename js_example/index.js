@@ -28,7 +28,7 @@ document.getElementById("compile_btn").onclick = function() {
     console.log(data)
     window["instructions"] = instructions
     window["data"] = data
-    out.innerHTML = "Code compiled successfully";
+    out.innerHTML = `Code compiled successfully\n${compiled.toString()}`
   } catch (e) {
     out.innerHTML = e;
   }
