@@ -1390,6 +1390,10 @@ mod test {
             compile(".text\nmain: nop\nnop\nnop\nnop\nimm 0, 0, 0"),
             Err(ErrorKind::MemorySectionFull("Instructions").add_span(&(28..39))),
         );
+        assert_eq!(
+            compile(".text\nmain: nop\nnop\nnop\nnop2"),
+            Err(ErrorKind::MemorySectionFull("Instructions").add_span(&(24..28))),
+        );
         // Data directives
         for (directive, span) in [
             ("zero 5", 21..22),
