@@ -8,7 +8,7 @@ use regex::{NoExpand, Regex};
 
 use crate::architecture::{
     Architecture, DirectiveAction, DirectiveAlignment, DirectiveData, DirectiveSegment, FieldType,
-    FloatType, Instruction as InstructionDefinition, RegisterType, StringType,
+    FloatType, RegisterType, StringType,
 };
 use crate::parser::{ASTNode, Argument, Data as DataToken, Expr, Span, Spanned, Statement, Token};
 
@@ -28,11 +28,13 @@ use section::Section;
 mod integer;
 pub use integer::Integer;
 
+mod pseudoinstruction;
+pub use pseudoinstruction::{Error as PseudoinstructionError, Kind as PseudoinstructionErrorKind};
+
 /* TODO:
 *  - Refactor code
 *  - Remove uses of unwrap, propagating errors accordingly
 *  - Combine `crate::parser::Error` with `crate::compiler::Error`
-*  - Implement pseudoinstructions
 *  - Rework argument number types
 **/
 
@@ -40,7 +42,12 @@ pub use integer::Integer;
 static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"[fF][0-9]+").expect("This shouldn't fail"));
 
 // Parsed instruction arguments type
-type Output = Vec<(Spanned<Argument>, usize)>;
+type Args = Vec<(Spanned<Argument>, usize)>;
+
+enum InstructionDefinition<'arch> {
+    Real(&'arch crate::architecture::Instruction<'arch>),
+    Pseudo(&'arch crate::architecture::Pseudoinstruction<'arch>),
+}
 
 /// Parse the arguments of an instruction according to any of its definitions. If the arguments
 /// match the syntax of multiple definitions, the first definition is always used
@@ -59,7 +66,7 @@ fn parse_instruction<'a>(
     arch: &'a Architecture,
     name: Spanned<String>,
     args: &Spanned<Vec<Spanned<Token>>>,
-) -> Result<(&'a InstructionDefinition<'a>, Output), CompileError> {
+) -> Result<(InstructionDefinition<'a>, Args), CompileError> {
     // Errors produced on each of the attempted parses
     let mut errs = Vec::new();
     // Get all instruction definitions with the given name
@@ -67,7 +74,17 @@ fn parse_instruction<'a>(
         // Try to parse the given arguments according to the syntax of the current definition
         match inst.syntax.parser.parse(args) {
             // If parsing is successful, assume this definition is the correct one and return it
-            Ok(parsed_args) => return Ok((inst, parsed_args)),
+            Ok(parsed_args) => return Ok((InstructionDefinition::Real(inst), parsed_args)),
+            // Otherwise, append the produced error to the error vector and try the next definition
+            Err(e) => errs.push((inst.syntax.user_syntax.to_string(), e)),
+        }
+    }
+    // Get all pseudoinstruction definitions with the given name
+    for inst in arch.find_pseudoinstructions(&name.0) {
+        // Try to parse the given arguments according to the syntax of the current definition
+        match inst.syntax.parser.parse(args) {
+            // If parsing is successful, assume this definition is the correct one and return it
+            Ok(parsed_args) => return Ok((InstructionDefinition::Pseudo(inst), parsed_args)),
             // Otherwise, append the produced error to the error vector and try the next definition
             Err(e) => errs.push((inst.syntax.user_syntax.to_string(), e)),
         }
@@ -78,6 +95,55 @@ fn parse_instruction<'a>(
     } else {
         ErrorKind::IncorrectInstructionSyntax(errs).add_span(&args.1)
     })
+}
+
+// TODO: refactor complex intermediate types
+
+fn process_instruction<'arch>(
+    arch: &'arch Architecture,
+    section: &mut Section,
+    label_table: &mut LabelTable,
+    parsed_instructions: &mut Vec<(
+        Vec<String>,
+        u64,
+        Span,
+        (&'arch crate::architecture::Instruction<'arch>, Args),
+    )>,
+    instruction: (InstructionDefinition<'arch>, Args),
+    span: Span,
+) -> Result<(), CompileError> {
+    match instruction.0 {
+        // Base case: we have a real instruction => push it to the parsed instructions normally
+        InstructionDefinition::Real(def) => {
+            let word_size = arch.word_size() / 8;
+            let addr = section
+                .try_reserve(u64::from(word_size) * u64::from(def.nwords))
+                .add_span(&span)?;
+            parsed_instructions.push((Vec::new(), addr, span, (def, instruction.1)));
+        }
+        // Recursive case: we have a pseudoinstruction => expand it into multiple instructions and
+        // process each of them recursively
+        InstructionDefinition::Pseudo(def) => {
+            let instructions = pseudoinstruction::expand(
+                arch,
+                label_table,
+                section.get(),
+                (def, span.clone()),
+                &instruction.1,
+            )?;
+            for instruction in instructions {
+                process_instruction(
+                    arch,
+                    section,
+                    label_table,
+                    parsed_instructions,
+                    instruction,
+                    span.clone(),
+                )?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Compiled instruction
@@ -383,20 +449,25 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                     .add_span(&node.statement.1));
                 }
                 let (name, span) = instruction.name;
-                instruction_eof = node.statement.1.end;
-                let (def, args) = parse_instruction(arch, (name, span.clone()), &instruction.args)?;
-                let addr = code_section
-                    .try_reserve(u64::from(word_size) * u64::from(def.nwords))
-                    .add_span(&span)?;
+                let instruction = parse_instruction(arch, (name, span.clone()), &instruction.args)?;
                 for (label, span) in &node.labels {
-                    label_table.insert(label.clone(), Label::new(addr, span.clone()))?;
+                    label_table
+                        .insert(label.clone(), Label::new(code_section.get(), span.clone()))?;
                 }
-                parsed_instructions.push((
-                    node.labels.into_iter().map(|x| x.0).collect(),
-                    addr,
-                    node.statement.1,
-                    (def, args),
-                ));
+                let span = node.statement.1;
+                instruction_eof = span.end;
+                let first_idx = parsed_instructions.len();
+                process_instruction(
+                    arch,
+                    &mut code_section,
+                    &mut label_table,
+                    &mut parsed_instructions,
+                    instruction,
+                    span,
+                )?;
+                if let Some(inst) = parsed_instructions.get_mut(first_idx) {
+                    inst.0 = node.labels.into_iter().map(|x| x.0).collect();
+                }
             }
         }
     }
@@ -1316,8 +1387,8 @@ mod test {
     fn section_full() {
         // Instructions
         assert_eq!(
-            compile(".text\nmain: nop\nnop\nnop\nnop\nnop"),
-            Err(ErrorKind::MemorySectionFull("Instructions").add_span(&(28..31))),
+            compile(".text\nmain: nop\nnop\nnop\nnop\nimm 0, 0, 0"),
+            Err(ErrorKind::MemorySectionFull("Instructions").add_span(&(28..39))),
         );
         // Data directives
         for (directive, span) in [

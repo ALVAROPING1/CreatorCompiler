@@ -14,7 +14,14 @@ crate-type = [
 [features]
 default = ["js"]
 # Enable JS interoperability support
-js = ["console_error_panic_hook", "wasm-bindgen", "self_cell", "ansi-to-html"]
+js = [
+    "console_error_panic_hook",
+    "wasm-bindgen",
+    "self_cell",
+    "ansi-to-html",
+    "pseudoinstructions",
+]
+pseudoinstructions = ["js-sys"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -30,6 +37,7 @@ wasm-bindgen = { version = "0.2.84", optional = true }
 console_error_panic_hook = { version = "0.1.7", optional = true }
 self_cell = { version = "1.0.4", optional = true }
 ansi-to-html = { version = "0.2.1", optional = true, features = ["lazy-init"] }
+js-sys = { version = "0.3.72", optional = true }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.34"

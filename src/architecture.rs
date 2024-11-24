@@ -124,11 +124,11 @@ pub struct Register<'a> {
     /// Current value of the register
     value: Number,
     /// Default value of the register
-    default_value: Number,
+    default_value: Option<Number>,
     /// Properties of this register
     properties: Vec<RegisterProperty>,
     /// Smaller registers that make up this register when the double precision mode is `Linked`
-    simple_reg: Option<[&'a str; 2]>,
+    pub simple_reg: Option<[&'a str; 2]>,
 }
 
 /// Properties of a register
@@ -178,7 +178,7 @@ pub struct Instruction<'a> {
     /// Code to execute for the instruction
     // Can't be a reference because there might be escape sequences, which require
     // modifying the data on deserialization
-    definition: String,
+    pub definition: String,
     /// Determines whether the field `i` is separated in the resulting binary instruction. Ignored
     #[deprecated = "Values are obtained from the variant used in BitPosition in each field"]
     separated: Option<Vec<bool>>,
@@ -300,19 +300,16 @@ pub enum FieldType {
 
 /// Pseudoinstruction specification
 #[derive(Deserialize, JsonSchema, Debug, Clone)]
-struct Pseudoinstruction<'a> {
+pub struct Pseudoinstruction<'a> {
     /// Name of the pseudoinstruction
-    name: &'a str,
+    pub name: &'a str,
     /// Syntax of the instruction
     #[serde(flatten)]
     pub syntax: InstructionSyntax<'a, ()>,
-    /// Size of the pseudoinstruction. Ignored since some pseudoinstructions can have different sizes
-    /// depending on the instructions they are replaced with
-    nwords: Integer,
     /// Code to execute for the instruction
     // Can't be a reference because there might be escape sequences, which require
     // modifying the data on deserialization
-    definition: String,
+    pub definition: String,
     /// Help information of the instruction
     help: &'a str,
     /// Properties of the instruction
@@ -516,6 +513,20 @@ impl<'a> Architecture<'a> {
         name: &'c str,
     ) -> impl Iterator<Item = &'b Instruction> + 'c {
         self.instructions
+            .iter()
+            .filter(move |instruction| instruction.name == name)
+    }
+
+    /// Gets the pseudoinstructions with the given name
+    ///
+    /// # Parameters
+    ///
+    /// * `name`: name to search for
+    pub fn find_pseudoinstructions<'b: 'c, 'c>(
+        &'b self,
+        name: &'c str,
+    ) -> impl Iterator<Item = &'b Pseudoinstruction> + 'c {
+        self.pseudoinstructions
             .iter()
             .filter(move |instruction| instruction.name == name)
     }

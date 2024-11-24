@@ -99,6 +99,7 @@ dependencies = [
  "ariadne",
  "chumsky",
  "console_error_panic_hook",
+ "js-sys",
  "once_cell",
  "regex",
  "schemars",

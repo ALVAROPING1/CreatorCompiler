@@ -11,7 +11,7 @@ use std::{fmt::Write as _, io::Write as _};
 use crate::architecture::{DirectiveSegment, FloatType, RegisterType};
 use crate::parser::{ParseError, Span, Spanned};
 
-use super::ArgumentNumber;
+use super::{ArgumentNumber, PseudoinstructionError, PseudoinstructionErrorKind};
 
 /// Type of arguments for directives/instructions
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,6 +68,10 @@ pub enum Kind {
         section: Option<Spanned<DirectiveSegment>>,
         found: DirectiveSegment,
     },
+    PseudoinstructionError {
+        name: String,
+        error: Box<PseudoinstructionError>,
+    },
 }
 
 /// Compiler error type
@@ -123,6 +127,7 @@ impl Kind {
             Self::UnallowedFloat => 17,
             Self::UnallowedFloatOperation(..) => 18,
             Self::UnallowedStatementType { .. } => 19,
+            Self::PseudoinstructionError { .. } => 20,
         }
     }
 
@@ -200,6 +205,7 @@ impl Kind {
             Self::UnallowedStatementType { .. } => {
                 "This statement can't be used in the current section".into()
             }
+            Self::PseudoinstructionError { .. } => "While evaluating this pseudoinstruction".into(),
         }
     }
 
@@ -300,6 +306,7 @@ impl fmt::Display for Kind {
                     }
                 )
             }
+            Self::PseudoinstructionError {name, ..} => write!(f, "Error while evaluating pseudoinstruction \"{name}\""),
         }
     }
 }
@@ -330,18 +337,65 @@ impl crate::RenderError for Error {
         report
             .finish()
             .write((filename, Source::from(src)), &mut buffer)
-            .expect("Writing to an in-memory vector can't fail");
+            .expect("Writing to an in-memory vector shouldn't fail");
 
-        if let Kind::IncorrectInstructionSyntax(errs) = self.kind {
-            for (syntax, err) in errs {
-                write!(
-                    &mut buffer,
-                    "\nThe syntax `{syntax}` failed with the following reason:\n"
-                )
-                .expect("Writing to an in-memory vector can't fail");
-                err.format(filename, src, buffer);
+        match self.kind {
+            Kind::IncorrectInstructionSyntax(errs) => {
+                for (syntax, err) in errs {
+                    writeln!(
+                        &mut buffer,
+                        "\nThe syntax `{syntax}` failed with the following reason:"
+                    )
+                    .expect("Writing to an in-memory vector can't fail");
+                    err.format(filename, src, buffer);
+                }
             }
+            Kind::PseudoinstructionError { error, .. } => {
+                writeln!(&mut buffer).expect("Writing to an in-memory vector can't fail");
+                error.format(filename, src, buffer);
+            }
+            _ => {}
         }
+    }
+}
+
+impl PseudoinstructionErrorKind {
+    /// Gets the label text describing the error
+    fn label(&self) -> &'static str {
+        match self {
+            Self::UnknownFieldName(..) => "Unknown field name",
+            Self::UnknownFieldNumber(..) => "Unknown field number",
+            Self::EvaluationError(..) => "While evaluating this code",
+            Self::ParseError { .. } => todo!(),
+        }
+    }
+}
+
+impl fmt::Display for PseudoinstructionErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::UnknownFieldName(s) => write!(f, "Field \"{s}\" isn't defined"),
+            Self::UnknownFieldNumber(s) => write!(f, "Field number \"{s}\" isn't defined"),
+            Self::EvaluationError(s) => write!(f, "Error evaluating JS code:\n{s}"),
+            Self::ParseError { .. } => todo!(),
+        }
+    }
+}
+
+impl crate::RenderError for PseudoinstructionError {
+    fn format(self, _: &str, _: &str, mut buffer: &mut Vec<u8>) {
+        static FILENAME: &str = "<pseudoinstruction expansion>";
+        let src = &self.definition;
+        Report::build(ReportKind::Error, (FILENAME, self.span.clone()))
+            .with_message(self.kind.to_string())
+            .with_label(
+                Label::new((FILENAME, self.span))
+                    .with_message(self.kind.label())
+                    .with_color(Color::Red),
+            )
+            .finish()
+            .write((FILENAME, Source::from(src)), &mut buffer)
+            .expect("Writing to an in-memory vector shouldn't fail");
     }
 }
 

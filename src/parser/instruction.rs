@@ -127,6 +127,21 @@ impl<'a> Instruction<'a> {
         let stream = Stream::from_iter(end..end + 1, code.0.iter().cloned());
         Ok(self.0.parse(stream)?)
     }
+
+    /// Lexes an instruction represented as a string
+    ///
+    /// # Parameters
+    ///
+    /// * `code`: code to lex
+    ///
+    /// # Errors
+    ///
+    /// Errors if there is an error lexing the code
+    pub fn lex(code: &str) -> Result<(&str, Vec<Spanned<Token>>), ParseError> {
+        let (name, args) = code.trim().split_once(' ').unwrap_or((code, ""));
+        let tokens = super::lexer::lexer().parse(args)?;
+        Ok((name, tokens))
+    }
 }
 
 // Boxed parsers don't implement `Debug`, so we need to implement it manually as an opaque box
