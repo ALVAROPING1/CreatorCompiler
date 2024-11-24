@@ -191,7 +191,7 @@ impl Kind {
             Self::IntegerTooBig(val, _) | Self::UnallowedNegativeValue(val) => {
                 format!("This expression has value {val}")
             }
-            Self::MemorySectionFull(..) => "This value doesn't fit in the available space".into(),
+            Self::MemorySectionFull(..) => "This element doesn't fit in the available space".into(),
             Self::DataUnaligned { .. } => "This value isn't aligned".into(),
             Self::IncorrectDirectiveArgumentNumber { found, .. } => {
                 format!("This directive has {found} argument{}", plural!(*found))
