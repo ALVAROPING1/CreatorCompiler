@@ -26,6 +26,20 @@ type Output = Vec<(Spanned<Argument>, usize)>;
 #[derive(Clone)]
 pub struct Instruction<'a>(BoxedParser<'a, Token, Output, Simple<Token>>);
 
+/// Parses an identifier in the form `[fF]\d+` into a number
+///
+/// # Parameters
+///
+/// * `identifier`: identifier to parse
+///
+/// # Panics
+///
+/// Panics if the identifier doesn't follow the regex `[fF]\d+`
+fn number(identifier: &str) -> usize {
+    static MSG: &str = "This should have already matched a number";
+    identifier[1..].parse().expect(MSG)
+}
+
 impl<'a> Instruction<'a> {
     /// Creates a new `Instruction` parser
     ///
@@ -44,7 +58,7 @@ impl<'a> Instruction<'a> {
 
         // Gets the field number the placeholder points to and validates that it has a correct type
         let field = |ident: String, no_co: bool| -> Result<usize, _> {
-            let i: usize = ident[1..].parse().expect("this already matched a number");
+            let i: usize = number(&ident);
             fields
                 .get(i)
                 .ok_or("reference to undefined field")
