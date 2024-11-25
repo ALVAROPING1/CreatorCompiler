@@ -4,10 +4,9 @@ use regex::{Captures, Regex};
 use crate::architecture::{Architecture, FloatType, Pseudoinstruction, RegisterType};
 use crate::parser::ParseError;
 
-use super::{
-    Args, Argument, ArgumentType, CompileError, ErrorKind, InstructionDefinition, LabelTable, Span,
-    Spanned,
-};
+use super::{Argument, ParsedArgs};
+use super::{ArgumentType, CompileError, ErrorKind, InstructionDefinition, LabelTable};
+use super::{Span, Spanned};
 
 /// Pseudoinstruction evaluation error
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,8 +105,8 @@ pub fn expand<'b, 'a: 'b>(
     label_table: &LabelTable,
     address: u64,
     instruction: Spanned<&'b Pseudoinstruction>,
-    args: &Args,
-) -> Result<Vec<(InstructionDefinition<'a>, Args)>, CompileError> {
+    args: &ParsedArgs,
+) -> Result<Vec<(InstructionDefinition<'a>, ParsedArgs)>, CompileError> {
     // Regex used
     static ALIAS_DOUBLE: Lazy<Regex> = crate::regex!(r"aliasDouble\(([^;]+);(\d+)\)");
     static FIELD_VALUE: Lazy<Regex> = crate::regex!(r"Field\.(\d+)\.\((\d+),(\d+)\)\.(\w+)");
@@ -123,9 +122,9 @@ pub fn expand<'b, 'a: 'b>(
     let (instruction, span) = instruction;
 
     // Get the argument corresponding to the field with the given name
-    let get_arg = |arg: &str| {
+    let get_arg = |name: &str| {
         args.iter()
-            .find(|x| instruction.syntax.fields[x.1].name == arg)
+            .find(|arg| instruction.syntax.fields[arg.field_idx].name == name)
     };
 
     // Expansion
@@ -142,7 +141,7 @@ pub fn expand<'b, 'a: 'b>(
             }
             .compile_error(instruction, &span)
         })?;
-        let name = reg_name(&name.0)?;
+        let name = reg_name(&name.value)?;
         let i: usize = num(i);
         for bank in arch.find_banks(RegisterType::Float(FloatType::Double)) {
             if let Some((_, reg)) = bank.find_register(name) {
@@ -170,7 +169,7 @@ pub fn expand<'b, 'a: 'b>(
                 }
                 .compile_error(instruction, &span)
             })?
-            .0;
+            .value;
         let start_bit = num(start_bit);
         let end_bit = num(end_bit);
         #[allow(clippy::cast_possible_truncation)]
@@ -217,7 +216,7 @@ pub fn expand<'b, 'a: 'b>(
                 }
                 .compile_error(instruction, &span)
             })?
-            .0;
+            .value;
         #[allow(clippy::cast_possible_truncation)]
         let size = match value {
             Argument::Number(expr) => match expr.int() {
@@ -317,13 +316,13 @@ pub fn expand<'b, 'a: 'b>(
             let (def, mut args) =
                 super::parse_instruction(arch, (name.to_owned(), 0..0), &(args, 0..0))?;
             for arg in &mut args {
-                arg.0 .1 = span.clone();
-                let value = &arg.0;
+                arg.value.1 = span.clone();
+                let value = &arg.value;
                 match &value.0 {
                     Argument::Number(_) => continue,
                     Argument::Identifier(ident) => {
                         if let Some(pseudoinstruction_arg) = get_arg(ident) {
-                            arg.0 = pseudoinstruction_arg.0.clone();
+                            arg.value = pseudoinstruction_arg.value.clone();
                         }
                     }
                 }

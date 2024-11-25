@@ -10,6 +10,7 @@ use crate::architecture::{
     Architecture, DirectiveAction, DirectiveAlignment, DirectiveData, DirectiveSegment, FieldType,
     FloatType, RegisterType, StringType,
 };
+use crate::parser::instruction::ParsedArgs;
 use crate::parser::{ASTNode, Argument, Data as DataToken, Expr, Span, Spanned, Statement, Token};
 
 mod label;
@@ -41,9 +42,6 @@ pub use pseudoinstruction::{Error as PseudoinstructionError, Kind as Pseudoinstr
 // Regex for replacement templates in the translation spec of instructions
 static RE: Lazy<Regex> = crate::regex!(r"[fF][0-9]+");
 
-// Parsed instruction arguments type
-type Args = Vec<(Spanned<Argument>, usize)>;
-
 enum InstructionDefinition<'arch> {
     Real(&'arch crate::architecture::Instruction<'arch>),
     Pseudo(&'arch crate::architecture::Pseudoinstruction<'arch>),
@@ -66,7 +64,7 @@ fn parse_instruction<'a>(
     arch: &'a Architecture,
     name: Spanned<String>,
     args: &Spanned<Vec<Spanned<Token>>>,
-) -> Result<(InstructionDefinition<'a>, Args), CompileError> {
+) -> Result<(InstructionDefinition<'a>, ParsedArgs), CompileError> {
     // Errors produced on each of the attempted parses
     let mut errs = Vec::new();
     // Get all instruction definitions with the given name
@@ -107,9 +105,9 @@ fn process_instruction<'arch>(
         Vec<String>,
         u64,
         Span,
-        (&'arch crate::architecture::Instruction<'arch>, Args),
+        (&'arch crate::architecture::Instruction<'arch>, ParsedArgs),
     )>,
-    instruction: (InstructionDefinition<'arch>, Args),
+    instruction: (InstructionDefinition<'arch>, ParsedArgs),
     span: Span,
 ) -> Result<(), CompileError> {
     match instruction.0 {
@@ -492,8 +490,8 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
             let mut binary_instruction =
                 BitField::new(usize::from(word_size) * usize::from(def.nwords) * 8);
             let mut translated_instruction = def.syntax.output_syntax.to_string();
-            for ((value, span), i) in args {
-                let field = &def.syntax.fields[i];
+            for arg in args {
+                let field = &def.syntax.fields[arg.field_idx];
                 #[allow(clippy::cast_sign_loss)]
                 let (value, value_str) = match field.r#type {
                     FieldType::Cop { .. } => {
@@ -506,12 +504,14 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                     | FieldType::ImmUnsigned
                     | FieldType::OffsetBytes
                     | FieldType::OffsetWords) => {
-                        let value = match value {
+                        let value = match arg.value.0 {
                             Argument::Number(expr) => expr.int()?.into(),
                             Argument::Identifier(label) => {
                                 let value: i64 = label_table
                                     .get(&label)
-                                    .ok_or_else(|| ErrorKind::UnknownLabel(label).add_span(&span))?
+                                    .ok_or_else(|| {
+                                        ErrorKind::UnknownLabel(label).add_span(&arg.value.1)
+                                    })?
                                     .address()
                                     .try_into()
                                     .unwrap();
@@ -531,13 +531,13 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                     | FieldType::CtrlReg
                     | FieldType::SingleFPReg
                     | FieldType::DoubleFPReg) => {
-                        let name = match value {
+                        let name = match arg.value.0 {
                             Argument::Number(_) => {
                                 return Err(ErrorKind::IncorrectArgumentType {
                                     expected: ArgumentType::RegisterName,
                                     found: ArgumentType::Expression,
                                 }
-                                .add_span(&span))
+                                .add_span(&arg.value.1))
                             }
                             Argument::Identifier(name) => name,
                         };
@@ -550,7 +550,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                         };
                         let mut banks = arch.find_banks(bank_type).peekable();
                         banks.peek().ok_or_else(|| {
-                            ErrorKind::UnknownRegisterBank(bank_type).add_span(&span)
+                            ErrorKind::UnknownRegisterBank(bank_type).add_span(&arg.value.1)
                         })?;
                         let (i, _) = banks
                             .find_map(|bank| bank.find_register(&name))
@@ -559,7 +559,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                                     name: name.clone(),
                                     bank: bank_type,
                                 }
-                                .add_span(&span)
+                                .add_span(&arg.value.1)
                             })?;
                         (i64::try_from(i).unwrap(), name)
                     }
@@ -573,7 +573,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                             FieldType::ImmSigned | FieldType::OffsetBytes | FieldType::OffsetWords
                         ),
                     )
-                    .add_span(&span)?;
+                    .add_span(&arg.value.1)?;
                 // FIXME: if a register is defined in the architecture with a name that uses the
                 // same pattern we replace here, and it is used in the code, further replacements
                 // will replace the name of the register, leading to an incorrect output. We have

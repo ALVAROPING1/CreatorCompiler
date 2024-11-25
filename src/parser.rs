@@ -14,7 +14,7 @@ pub use lexer::Token;
 mod error;
 pub use error::Error as ParseError;
 
-mod instruction;
+pub mod instruction;
 pub use instruction::{Argument, Instruction};
 
 /// Range of characters in the source code of an element

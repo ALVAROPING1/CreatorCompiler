@@ -19,12 +19,21 @@ pub enum Argument {
     Number(expression::Expr),
 }
 
-/// Output type of parsing the arguments of an instruction
-type Output = Vec<(Spanned<Argument>, usize)>;
+/// Value of a parsed argument
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParsedArgument {
+    /// Parsed argument value
+    pub value: Spanned<Argument>,
+    /// Index of the field corresponding to this value in the instruction fields definition
+    pub field_idx: usize,
+}
+
+/// Arguments parsed by the instruction
+pub type ParsedArgs = Vec<ParsedArgument>;
 
 /// Instruction parser wrapper
 #[derive(Clone)]
-pub struct Instruction<'a>(BoxedParser<'a, Token, Output, Simple<Token>>);
+pub struct Instruction<'a>(BoxedParser<'a, Token, ParsedArgs, Simple<Token>>);
 
 /// Parses an identifier in the form `[fF]\d+` into a number
 ///
@@ -87,7 +96,10 @@ impl<'a> Instruction<'a> {
                         FieldType::Co => {
                             // This value should never be read, we only need it to point to the
                             // opcode instruction field
-                            vec![((Argument::Identifier(String::new()), 0..0), i)]
+                            vec![ParsedArgument {
+                                value: (Argument::Identifier(String::new()), 0..0),
+                                field_idx: i,
+                            }]
                         }
                         _ => return Err("the first field should have type `co`"),
                     }
@@ -112,7 +124,10 @@ impl<'a> Instruction<'a> {
                             expression::parser()
                                 .map(Argument::Number)
                                 .or(select! {Token::Identifier(ident) => Argument::Identifier(ident)})
-                                .map_with_span(move |arg, span| ((arg, span), i)),
+                                .map_with_span(move |arg, span| ParsedArgument {
+                                    value: (arg, span),
+                                    field_idx: i
+                                }),
                         )
                         .boxed()
                 }
@@ -134,7 +149,7 @@ impl<'a> Instruction<'a> {
     /// # Errors
     ///
     /// Errors if the code doesn't follow the syntax defined
-    pub fn parse(&self, code: &Spanned<Vec<Spanned<Token>>>) -> Result<Output, ParseError> {
+    pub fn parse(&self, code: &Spanned<Vec<Spanned<Token>>>) -> Result<ParsedArgs, ParseError> {
         let end = code.1.end;
         #[allow(clippy::range_plus_one)] // Chumsky requires an inclusive range to avoid type errors
         let stream = Stream::from_iter(end..end + 1, code.0.iter().cloned());
@@ -183,13 +198,17 @@ mod test {
         [field(true), field(false), field(false)]
     }
 
-    fn parse(parser: &Instruction, src: &str) -> Result<Output, ()> {
+    fn parse(parser: &Instruction, src: &str) -> Result<ParsedArgs, ()> {
         let ast = (lexer::lexer().parse(src).unwrap(), 0..src.chars().count());
         parser.parse(&ast).map_err(|e| eprintln!("{e:?}"))
     }
 
-    const fn co_arg() -> (Spanned<Argument>, usize) {
-        ((Argument::Identifier(String::new()), 0..0), 0)
+    const fn arg(value: Spanned<Argument>, field_idx: usize) -> ParsedArgument {
+        ParsedArgument { value, field_idx }
+    }
+
+    const fn co_arg() -> ParsedArgument {
+        arg((Argument::Identifier(String::new()), 0..0), 0)
     }
 
     fn ident(name: &str) -> Argument {
@@ -215,17 +234,17 @@ mod test {
         assert_eq!(parse(&parser, "$"), Err(()));
         assert_eq!(
             parse(&parser, "a"),
-            Ok(vec![co_arg(), ((ident("a"), 0..1), 1)])
+            Ok(vec![co_arg(), arg((ident("a"), 0..1), 1)])
         );
         assert_eq!(
             parse(&parser, "1"),
-            Ok(vec![co_arg(), ((number(1), 0..1), 1)])
+            Ok(vec![co_arg(), arg((number(1), 0..1), 1)])
         );
         assert_eq!(
             parse(&parser, "1 + 1"),
             Ok(vec![
                 co_arg(),
-                (
+                arg(
                     (
                         Argument::Number(Expr::BinaryOp {
                             op: (BinaryOp::Add, 2..3),
@@ -251,16 +270,16 @@ mod test {
             parse(&parser, "a 1"),
             Ok(vec![
                 co_arg(),
-                ((ident("a"), 0..1), 2),
-                ((number(1), 2..3), 1)
+                arg((ident("a"), 0..1), 2),
+                arg((number(1), 2..3), 1)
             ])
         );
         assert_eq!(
             parse(&parser, "b 2"),
             Ok(vec![
                 co_arg(),
-                ((ident("b"), 0..1), 2),
-                ((number(2), 2..3), 1)
+                arg((ident("b"), 0..1), 2),
+                arg((number(2), 2..3), 1)
             ])
         );
     }
@@ -273,8 +292,8 @@ mod test {
             parse(&parser, "1, 2"),
             Ok(vec![
                 co_arg(),
-                ((number(1), 0..1), 1),
-                ((number(2), 3..4), 2)
+                arg((number(1), 0..1), 1),
+                arg((number(2), 3..4), 2)
             ])
         );
     }
@@ -291,8 +310,8 @@ mod test {
             parse(&parser, ",1 2 $(5)"),
             Ok(vec![
                 co_arg(),
-                ((number(2), 3..4), 1),
-                ((number(5), 7..8), 2)
+                arg((number(2), 3..4), 1),
+                arg((number(5), 7..8), 2)
             ])
         );
         let parser = Instruction::build("F0 1 * -F1", &fields()).unwrap();
@@ -303,7 +322,7 @@ mod test {
         assert_eq!(parse(&parser, "1 -2"), Err(()));
         assert_eq!(
             parse(&parser, "1 * -2"),
-            Ok(vec![co_arg(), ((number(2), 5..6), 1)])
+            Ok(vec![co_arg(), arg((number(2), 5..6), 1)])
         );
     }
 }
