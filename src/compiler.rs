@@ -95,29 +95,43 @@ fn parse_instruction<'a>(
     })
 }
 
-// TODO: refactor complex intermediate types
+/// Processed instruction pending argument evaluation
+#[derive(Debug, Clone)]
+pub struct PendingInstruction<'arch> {
+    /// Address of the instruction
+    address: u64,
+    /// Labels pointing to this instruction
+    labels: Vec<String>,
+    /// Span of the instruction in the assembly code
+    span: Span,
+    /// Instruction definition selected
+    definition: &'arch crate::architecture::Instruction<'arch>,
+    /// Arguments parsed for this instruction
+    args: ParsedArgs,
+}
 
 fn process_instruction<'arch>(
     arch: &'arch Architecture,
     section: &mut Section,
     label_table: &mut LabelTable,
-    parsed_instructions: &mut Vec<(
-        Vec<String>,
-        u64,
-        Span,
-        (&'arch crate::architecture::Instruction<'arch>, ParsedArgs),
-    )>,
+    pending_instructions: &mut Vec<PendingInstruction<'arch>>,
     instruction: (InstructionDefinition<'arch>, ParsedArgs),
     span: Span,
 ) -> Result<(), CompileError> {
     match instruction.0 {
         // Base case: we have a real instruction => push it to the parsed instructions normally
-        InstructionDefinition::Real(def) => {
+        InstructionDefinition::Real(definition) => {
             let word_size = arch.word_size() / 8;
-            let addr = section
-                .try_reserve(u64::from(word_size) * u64::from(def.nwords))
+            let address = section
+                .try_reserve(u64::from(word_size) * u64::from(definition.nwords))
                 .add_span(&span)?;
-            parsed_instructions.push((Vec::new(), addr, span, (def, instruction.1)));
+            pending_instructions.push(PendingInstruction {
+                labels: Vec::new(),
+                args: instruction.1,
+                address,
+                span,
+                definition,
+            });
         }
         // Recursive case: we have a pseudoinstruction => expand it into multiple instructions and
         // process each of them recursively
@@ -134,7 +148,7 @@ fn process_instruction<'arch>(
                     arch,
                     section,
                     label_table,
-                    parsed_instructions,
+                    pending_instructions,
                     instruction,
                     span.clone(),
                 )?;
@@ -382,7 +396,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
     let mut code_section = Section::new("Instructions", arch.code_section());
     let mut data_section = Section::new("Data", arch.data_section());
     let word_size = arch.word_size() / 8;
-    let mut parsed_instructions = Vec::new();
+    let mut pending_instructions = Vec::new();
     let mut data_memory = Vec::new();
     let mut alignment: Option<Spanned<u64>> = None;
     let mut instruction_eof = 0;
@@ -454,17 +468,17 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                 }
                 let span = node.statement.1;
                 instruction_eof = span.end;
-                let first_idx = parsed_instructions.len();
+                let first_idx = pending_instructions.len();
                 process_instruction(
                     arch,
                     &mut code_section,
                     &mut label_table,
-                    &mut parsed_instructions,
+                    &mut pending_instructions,
                     instruction,
                     span,
                 )?;
-                if let Some(inst) = parsed_instructions.get_mut(first_idx) {
-                    inst.0 = node.labels.into_iter().map(|x| x.0).collect();
+                if let Some(inst) = pending_instructions.get_mut(first_idx) {
+                    inst.labels = node.labels.into_iter().map(|x| x.0).collect();
                 }
             }
         }
@@ -484,13 +498,14 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
             }
         }
     }
-    parsed_instructions
+    pending_instructions
         .into_iter()
-        .map(|(labels, address, inst_span, (def, args))| {
+        .map(|inst| {
+            let def = inst.definition;
             let mut binary_instruction =
                 BitField::new(usize::from(word_size) * usize::from(def.nwords) * 8);
             let mut translated_instruction = def.syntax.output_syntax.to_string();
-            for arg in args {
+            for arg in inst.args {
                 let field = &def.syntax.fields[arg.field_idx];
                 #[allow(clippy::cast_sign_loss)]
                 let (value, value_str) = match field.r#type {
@@ -515,7 +530,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                                     .address()
                                     .try_into()
                                     .unwrap();
-                                let next_address = i64::try_from(address).unwrap()
+                                let next_address = i64::try_from(inst.address).unwrap()
                                     + i64::from(word_size) * i64::from(def.nwords);
                                 let offset = value - next_address;
                                 match val_type {
@@ -594,11 +609,11 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                     .unwrap();
             }
             Ok(Instruction {
-                labels,
-                address,
+                labels: inst.labels,
+                address: inst.address,
                 binary: binary_instruction,
                 loaded: translated_instruction,
-                user: inst_span,
+                user: inst.span,
             })
         })
         .collect::<Result<Vec<_>, _>>()
