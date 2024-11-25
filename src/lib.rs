@@ -33,3 +33,15 @@ pub trait RenderError {
         String::from_utf8(buffer).expect("the rendered error should be valid UTF-8")
     }
 }
+
+/// Builds a new lazily-initialized regex with a given literal string
+///
+/// # Panics
+///
+/// Panics if the literal string isn't a valid regex
+macro_rules! build_regex {
+    ($re:expr) => {
+        Lazy::new(|| Regex::new($re).expect("All regexes should compile"))
+    };
+}
+use build_regex as regex;

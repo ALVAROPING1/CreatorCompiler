@@ -53,8 +53,7 @@ impl<'a> Instruction<'a> {
     /// Errors if the syntax specification is invalid
     pub fn build<T>(fmt: &str, fields: &[InstructionField<T>]) -> Result<Self, &'static str> {
         // Regex for a instruction argument placeholder
-        static FIELD: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"^[fF][0-9]+$").expect("This shouldn't fail"));
+        static FIELD: Lazy<Regex> = crate::regex!(r"^[fF][0-9]+$");
 
         // Gets the field number the placeholder points to and validates that it has a correct type
         let field = |ident: String, no_co: bool| -> Result<usize, _> {

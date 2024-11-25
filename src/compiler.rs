@@ -39,7 +39,7 @@ pub use pseudoinstruction::{Error as PseudoinstructionError, Kind as Pseudoinstr
 **/
 
 // Regex for replacement templates in the translation spec of instructions
-static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"[fF][0-9]+").expect("This shouldn't fail"));
+static RE: Lazy<Regex> = crate::regex!(r"[fF][0-9]+");
 
 // Parsed instruction arguments type
 type Args = Vec<(Spanned<Argument>, usize)>;

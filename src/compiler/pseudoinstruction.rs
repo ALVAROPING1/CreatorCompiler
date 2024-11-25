@@ -100,12 +100,6 @@ fn capture_span(captures: &Captures, i: usize) -> Span {
         .range()
 }
 
-macro_rules! regex {
-    ($re:expr) => {
-        Lazy::new(|| Regex::new($re).expect("All regexes should compile"))
-    };
-}
-
 #[allow(clippy::too_many_lines)]
 pub fn expand<'b, 'a: 'b>(
     arch: &'a Architecture,
@@ -115,12 +109,12 @@ pub fn expand<'b, 'a: 'b>(
     args: &Args,
 ) -> Result<Vec<(InstructionDefinition<'a>, Args)>, CompileError> {
     // Regex used
-    static ALIAS_DOUBLE: Lazy<Regex> = regex!(r"aliasDouble\(([^;]+);(\d+)\)");
-    static FIELD_VALUE: Lazy<Regex> = regex!(r"Field\.(\d+)\.\((\d+),(\d+)\)\.(\w+)");
-    static FIELD_SIZE: Lazy<Regex> = regex!(r"Field\.(\d+)\.SIZE");
-    static NO_RET_OP: Lazy<Regex> = regex!(r"no_ret_op\{([^}]*?)\};");
-    static OP: Lazy<Regex> = regex!(r"op\{([^}]*?)\}");
-    static INSTRUCTIONS: Lazy<Regex> = regex!(r"\{(.*?)\}");
+    static ALIAS_DOUBLE: Lazy<Regex> = crate::regex!(r"aliasDouble\(([^;]+);(\d+)\)");
+    static FIELD_VALUE: Lazy<Regex> = crate::regex!(r"Field\.(\d+)\.\((\d+),(\d+)\)\.(\w+)");
+    static FIELD_SIZE: Lazy<Regex> = crate::regex!(r"Field\.(\d+)\.SIZE");
+    static NO_RET_OP: Lazy<Regex> = crate::regex!(r"no_ret_op\{([^}]*?)\};");
+    static OP: Lazy<Regex> = crate::regex!(r"op\{([^}]*?)\}");
+    static INSTRUCTIONS: Lazy<Regex> = crate::regex!(r"\{(.*?)\}");
 
     let num = |x: &str| {
         x.parse()
