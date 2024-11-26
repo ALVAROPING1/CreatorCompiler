@@ -365,7 +365,7 @@ impl PseudoinstructionErrorKind {
     fn label(&self) -> &'static str {
         match self {
             Self::UnknownFieldName(..) => "Unknown field name",
-            Self::UnknownFieldNumber(..) => "Unknown field number",
+            Self::UnknownFieldNumber(..) => "Field index out of bounds",
             Self::UnknownFieldType(..) => "Unknown field type",
             Self::EmptyBitRange => "Empty bit range",
             Self::BitRangeOutOfBounds { .. } => "Bit range out of bounds",
@@ -379,7 +379,7 @@ impl fmt::Display for PseudoinstructionErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::UnknownFieldName(s) => write!(f, "Field `{s}` isn't defined"),
-            Self::UnknownFieldNumber(x) => write!(f, "Field number `{x}` isn't defined"),
+            Self::UnknownFieldNumber(x) => write!(f, "Field index `{x}` is out of bounds"),
             Self::UnknownFieldType(s) => write!(f, "Unknown field type `{s}`"),
             Self::EmptyBitRange => write!(f, "Bit range is empty"),
             Self::BitRangeOutOfBounds { upper_bound, msb } => write!(
