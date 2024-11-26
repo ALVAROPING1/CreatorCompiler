@@ -366,6 +366,9 @@ impl PseudoinstructionErrorKind {
         match self {
             Self::UnknownFieldName(..) => "Unknown field name",
             Self::UnknownFieldNumber(..) => "Unknown field number",
+            Self::UnknownFieldType(..) => "Unknown field type",
+            Self::EmptyBitRange => "Empty bit range",
+            Self::BitRangeOutOfBounds { .. } => "Bit range out of bounds",
             Self::EvaluationError(..) => "While evaluating this code",
             Self::ParseError { .. } => todo!(),
         }
@@ -376,7 +379,13 @@ impl fmt::Display for PseudoinstructionErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::UnknownFieldName(s) => write!(f, "Field `{s}` isn't defined"),
-            Self::UnknownFieldNumber(s) => write!(f, "Field number `{s}` isn't defined"),
+            Self::UnknownFieldNumber(x) => write!(f, "Field number `{x}` isn't defined"),
+            Self::UnknownFieldType(s) => write!(f, "Unknown field type `{s}`"),
+            Self::EmptyBitRange => write!(f, "Bit range is empty"),
+            Self::BitRangeOutOfBounds { upper_bound, msb } => write!(
+                f,
+                "Bit range is of bounds, upper bound is {upper_bound} but the MSB is {msb}"
+            ),
             Self::EvaluationError(s) => write!(f, "Error evaluating JS code:\n{s}"),
             Self::ParseError { .. } => todo!(),
         }

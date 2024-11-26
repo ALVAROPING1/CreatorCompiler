@@ -13,6 +13,12 @@ use super::{Span, Spanned};
 pub enum Kind {
     UnknownFieldName(String),
     UnknownFieldNumber(usize),
+    UnknownFieldType(String),
+    EmptyBitRange,
+    BitRangeOutOfBounds {
+        upper_bound: usize,
+        msb: usize,
+    },
     EvaluationError(String),
     ParseError {
         instruction: String,
@@ -159,7 +165,7 @@ pub fn expand<'b, 'a: 'b>(
     while let Some(x) = FIELD_VALUE.captures(&def) {
         let (_, [arg, start_bit, end_bit, ty]) = x.extract();
         let arg_num = num(arg) - 1;
-        let (value, span) = &args
+        let (value, value_span) = &args
             .get(arg_num)
             .ok_or_else(|| {
                 Error {
@@ -170,20 +176,25 @@ pub fn expand<'b, 'a: 'b>(
                 .compile_error(instruction, &span)
             })?
             .value;
-        let start_bit = num(start_bit);
-        let end_bit = num(end_bit);
         #[allow(clippy::cast_possible_truncation)]
         let field = match value {
             Argument::Number(expr) => match ty {
                 "int" => format!("{:032b}", expr.int()?),
                 "float" => format!("{:032b}", (expr.float()? as f32).to_bits()),
                 "double" => format!("{:064b}", expr.float()?.to_bits()),
-                _ => panic!(),
+                ty => {
+                    return Err(Error {
+                        definition: def.clone(),
+                        span: capture_span(&x, 4),
+                        kind: Kind::UnknownFieldType(ty.to_owned()),
+                    }
+                    .compile_error(instruction, &span))
+                }
             },
             Argument::Identifier(label) => {
                 let val: u32 = label_table
                     .get(label)
-                    .ok_or_else(|| ErrorKind::UnknownLabel(label.clone()).add_span(span))?
+                    .ok_or_else(|| ErrorKind::UnknownLabel(label.clone()).add_span(value_span))?
                     .address()
                     .try_into()
                     .unwrap();
@@ -191,14 +202,40 @@ pub fn expand<'b, 'a: 'b>(
                     "int" => format!("{val:032b}"),
                     "float" => format!("{:032b}", (f64::from(val) as f32).to_bits()),
                     "double" => format!("{:064b}", f64::from(val).to_bits()),
-                    _ => panic!(),
+                    ty => {
+                        return Err(Error {
+                            definition: def.clone(),
+                            span: capture_span(&x, 4),
+                            kind: Kind::UnknownFieldType(ty.to_owned()),
+                        }
+                        .compile_error(instruction, &span))
+                    }
                 }
             }
         };
-        let len = field.len() - 1;
-        assert!(start_bit <= len, "{start_bit} <= {len}");
-        assert!(end_bit <= len, "{end_bit} <= {len}");
-        let field = format!("0b{}", &field[len - start_bit..=len - end_bit]);
+        let start_bit = num(start_bit);
+        let end_bit = num(end_bit);
+        let msb = field.len() - 1;
+        if start_bit < end_bit {
+            return Err(Error {
+                definition: def.clone(),
+                span: capture_span(&x, 2).start..capture_span(&x, 3).end,
+                kind: Kind::EmptyBitRange,
+            }
+            .compile_error(instruction, &span));
+        }
+        if start_bit > msb {
+            return Err(Error {
+                definition: def.clone(),
+                span: capture_span(&x, 2).start..capture_span(&x, 3).end,
+                kind: Kind::BitRangeOutOfBounds {
+                    upper_bound: start_bit,
+                    msb,
+                },
+            }
+            .compile_error(instruction, &span));
+        }
+        let field = format!("0b{}", &field[msb - start_bit..=msb - end_bit]);
         def.replace_range(capture_span(&x, 0), &field);
     }
 
