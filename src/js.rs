@@ -1,5 +1,5 @@
-//! Module containing the definition of wrappers for the compiler and generate `JS` bindings for
-//! interoperability
+//! Module containing the definition of wrappers for the compiler and generattion of `JS` bindings
+//! for interoperability
 
 use self_cell::self_cell;
 use wasm_bindgen::prelude::*;
