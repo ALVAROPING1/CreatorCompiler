@@ -1,7 +1,7 @@
 pub mod architecture;
 pub mod compiler;
 #[cfg(feature = "js")]
-pub mod js;
+mod js;
 pub mod parser;
 pub mod span;
 
