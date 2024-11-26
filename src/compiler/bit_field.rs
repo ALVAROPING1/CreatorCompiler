@@ -8,7 +8,7 @@ use crate::architecture::BitRange;
 pub struct BitField(String);
 
 impl BitField {
-    /// Constructs a new bit field with the given size
+    /// Creates a new bit field with the given size, initialized to all 0s
     ///
     /// # Parameters
     ///
