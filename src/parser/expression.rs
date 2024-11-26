@@ -6,7 +6,7 @@
 use chumsky::prelude::*;
 
 use super::{Parser, Span, Spanned, Token};
-use crate::compiler::{CompileError, ErrorKind, OperationKind};
+use crate::compiler::{error::OperationKind, CompileError, ErrorKind};
 
 /// Allowed unary operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

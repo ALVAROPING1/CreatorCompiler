@@ -17,9 +17,9 @@ use crate::span::{Span, Spanned};
 mod label;
 use label::{Label, Table as LabelTable};
 
-mod error;
-use error::SpannedErr as _;
-pub use error::{ArgumentType, Error as CompileError, Kind as ErrorKind, OperationKind};
+pub mod error;
+use error::{ArgumentType, SpannedErr as _};
+pub use error::{Error as CompileError, Kind as ErrorKind};
 
 mod bit_field;
 use bit_field::BitField;
@@ -1351,14 +1351,14 @@ mod test {
         assert_eq!(
             compile(".data\n.float ~1.0\n.text\nmain: nop"),
             Err(
-                ErrorKind::UnallowedFloatOperation(OperationKind::UnaryNegation)
+                ErrorKind::UnallowedFloatOperation(error::OperationKind::UnaryNegation)
                     .add_span(&(13..14))
             ),
         );
         for (op, c) in [
-            (OperationKind::BitwiseOR, '|'),
-            (OperationKind::BitwiseAND, '&'),
-            (OperationKind::BitwiseXOR, '^'),
+            (error::OperationKind::BitwiseOR, '|'),
+            (error::OperationKind::BitwiseAND, '&'),
+            (error::OperationKind::BitwiseXOR, '^'),
         ] {
             assert_eq!(
                 compile(&format!(".data\n.float 1.0 {c} 2.0\n.text\nmain: nop")),
