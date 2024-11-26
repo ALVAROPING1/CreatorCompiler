@@ -9,7 +9,8 @@ use std::ops::Range;
 use std::{fmt::Write as _, io::Write as _};
 
 use crate::architecture::{DirectiveSegment, FloatType, RegisterType};
-use crate::parser::{ParseError, Span, Spanned};
+use crate::parser::ParseError;
+use crate::span::{Span, Spanned};
 
 use super::{ArgumentNumber, PseudoinstructionError, PseudoinstructionErrorKind};
 

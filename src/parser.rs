@@ -5,6 +5,8 @@
 
 use chumsky::{prelude::*, stream::Stream};
 
+use crate::span::{Span, Spanned};
+
 mod expression;
 pub use expression::Expr;
 
@@ -16,11 +18,6 @@ pub use error::Error as ParseError;
 
 pub mod instruction;
 pub use instruction::{Argument, Instruction};
-
-/// Range of characters in the source code of an element
-pub type Span = std::ops::Range<usize>;
-/// Value with an attached `Span`
-pub type Spanned<T> = (T, Span);
 
 /// Generic parser type definition
 macro_rules! Parser {

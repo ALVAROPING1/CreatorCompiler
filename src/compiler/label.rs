@@ -3,7 +3,7 @@
 use std::collections::{hash_map::Entry, HashMap};
 
 use super::{CompileError, ErrorKind};
-use crate::parser::Span;
+use crate::span::Span;
 
 /// Assembly label semantic data
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -11,7 +11,8 @@ use crate::architecture::{
     FloatType, RegisterType, StringType,
 };
 use crate::parser::instruction::ParsedArgs;
-use crate::parser::{ASTNode, Argument, Data as DataToken, Expr, Span, Spanned, Statement, Token};
+use crate::parser::{ASTNode, Argument, Data as DataToken, Expr, Statement, Token};
+use crate::span::{Span, Spanned};
 
 mod label;
 use label::{Label, Table as LabelTable};
