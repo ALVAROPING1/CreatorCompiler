@@ -186,7 +186,7 @@ impl Kind {
             Self::IncorrectInstructionSyntax(..) => "Incorrect syntax".into(),
             Self::DuplicateLabel(..) => "Duplicate label".into(),
             Self::MissingMainLabel(main) => {
-                format!("Consider adding a label called \"{main}\" to an instruction")
+                format!("Consider adding a label called `{main}` to an instruction")
             }
             Self::MainOutsideCode(..) => "Label defined here".into(),
             Self::IntegerTooBig(val, _) | Self::UnallowedNegativeValue(val) => {
@@ -198,7 +198,7 @@ impl Kind {
                 format!("This directive has {found} argument{}", plural!(*found))
             }
             Self::IncorrectArgumentType { found, .. } => {
-                format!("This argument has type \"{found:?}\"")
+                format!("This argument has type `{found:?}`")
             }
             Self::DivisionBy0 => "This expression has value 0".into(),
             Self::UnallowedFloat => "This value can't be used".into(),
@@ -252,21 +252,21 @@ impl fmt::Display for RegisterType {
 impl fmt::Display for Kind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::UnknownDirective(s) => write!(f, "Directive \"{s}\" isn't defined"),
-            Self::UnknownInstruction(s) => write!(f, "Instruction \"{s}\" isn't defined"),
-            Self::UnknownLabel(s) => write!(f, "Label \"{s}\" isn't defined"),
+            Self::UnknownDirective(s) => write!(f, "Directive `{s}` isn't defined"),
+            Self::UnknownInstruction(s) => write!(f, "Instruction `{s}` isn't defined"),
+            Self::UnknownLabel(s) => write!(f, "Label `{s}` isn't defined"),
             Self::UnknownRegisterBank(s) => write!(f, "Register bank of type {s} isn't defined"),
             Self::UnknownRegister { name, bank } => {
-                write!(f, "Register \"{name}\" isn't defined in bank type {bank}")
+                write!(f, "Register `{name}` isn't defined in bank type {bank}")
             }
             Self::IncorrectInstructionSyntax(..) => write!(f, "Incorrect instruction syntax"),
-            Self::DuplicateLabel(s, _) => write!(f, "Label \"{s}\" is already defined"),
-            Self::MissingMainLabel(s) => write!(f, "Main label \"{s}\" not found"),
+            Self::DuplicateLabel(s, _) => write!(f, "Label `{s}` is already defined"),
+            Self::MissingMainLabel(s) => write!(f, "Main label `{s}` not found"),
             Self::MainOutsideCode(s) => {
-                write!(f, "Main label \"{s}\" defined outside of the text segment")
+                write!(f, "Main label `{s}` defined outside of the text segment")
             }
             Self::IntegerTooBig(val, _) => {
-                write!(f, "Field is too small to contain value \"{val}\"")
+                write!(f, "Field is too small to contain value `{val}`")
             }
             Self::MemorySectionFull(name) => write!(f, "{name} memory segment is full"),
             Self::DataUnaligned { address, alignment, word_size } => write!(
@@ -282,7 +282,7 @@ impl fmt::Display for Kind {
             ),
             Self::IncorrectArgumentType { expected, found } => write!(
                 f,
-                "Incorrect argument type, expected \"{expected:?}\" but found \"{found:?}\""
+                "Incorrect argument type, expected `{expected:?}` but found `{found:?}`"
             ),
             Self::DivisionBy0 => write!(f, "Can't divide by 0"),
             Self::UnallowedFloat => {
@@ -295,7 +295,7 @@ impl fmt::Display for Kind {
             Self::UnallowedStatementType { section, found } => {
                 write!(
                     f,
-                    "Can't use \"{}\" statements while in section \"{}\"",
+                    "Can't use `{}` statements while in section `{}`",
                     match found {
                         DirectiveSegment::Code => "instruction",
                         DirectiveSegment::Data => "data directive",
@@ -307,7 +307,7 @@ impl fmt::Display for Kind {
                     }
                 )
             }
-            Self::PseudoinstructionError {name, ..} => write!(f, "Error while evaluating pseudoinstruction \"{name}\""),
+            Self::PseudoinstructionError {name, ..} => write!(f, "Error while evaluating pseudoinstruction `{name}`"),
         }
     }
 }
@@ -375,8 +375,8 @@ impl PseudoinstructionErrorKind {
 impl fmt::Display for PseudoinstructionErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::UnknownFieldName(s) => write!(f, "Field \"{s}\" isn't defined"),
-            Self::UnknownFieldNumber(s) => write!(f, "Field number \"{s}\" isn't defined"),
+            Self::UnknownFieldName(s) => write!(f, "Field `{s}` isn't defined"),
+            Self::UnknownFieldNumber(s) => write!(f, "Field number `{s}` isn't defined"),
             Self::EvaluationError(s) => write!(f, "Error evaluating JS code:\n{s}"),
             Self::ParseError { .. } => todo!(),
         }
