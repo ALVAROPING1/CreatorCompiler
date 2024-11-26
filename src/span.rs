@@ -3,5 +3,5 @@
 
 /// Range of characters in the source code of an element
 pub type Span = std::ops::Range<usize>;
-/// Value with an attached `Span`
+/// Value with an attached [`Span`]
 pub type Spanned<T> = (T, Span);

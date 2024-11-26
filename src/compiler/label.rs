@@ -15,7 +15,7 @@ pub struct Label {
 }
 
 impl Label {
-    /// Constructs a new `Label` with the given data
+    /// Constructs a new [`Label`] with the given data
     ///
     /// # Parameters
     ///
@@ -52,7 +52,7 @@ impl Table {
     ///
     /// # Errors
     ///
-    /// Errors with `ErrorKind::DuplicateLabel` if the label has already been inserted
+    /// Errors with [`ErrorKind::DuplicateLabel`] if the label has already been inserted
     pub fn insert(&mut self, label: String, data: Label) -> Result<(), CompileError> {
         match self.0.entry(label) {
             Entry::Vacant(e) => {

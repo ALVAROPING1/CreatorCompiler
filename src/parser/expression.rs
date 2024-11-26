@@ -56,8 +56,8 @@ impl Expr {
     ///
     /// # Errors
     ///
-    /// Returns a `ErrorKind::UnallowedFloat` if a float literal is used, and a `ErrorKind::DivisionBy0`
-    /// if a division by 0 is attempted
+    /// Returns a [`ErrorKind::UnallowedFloat`] if a float literal is used, and a
+    /// [`ErrorKind::DivisionBy0`] if a division by 0 is attempted
     pub fn int(&self) -> Result<i32, CompileError> {
         #[allow(clippy::cast_possible_wrap)]
         Ok(match self {
@@ -93,8 +93,8 @@ impl Expr {
     ///
     /// # Errors
     ///
-    /// Returns a `ErrorKind::UnallowedFloatOperation` if an operation that's undefined with floats
-    /// is attempted
+    /// Returns a [`ErrorKind::UnallowedFloatOperation`] if an operation that's undefined with
+    /// floats is attempted
     pub fn float(&self) -> Result<f64, CompileError> {
         let err = |op, s| ErrorKind::UnallowedFloatOperation(op).add_span(s);
         Ok(match self {

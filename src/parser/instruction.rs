@@ -50,7 +50,7 @@ fn number(identifier: &str) -> usize {
 }
 
 impl<'a> Instruction<'a> {
-    /// Creates a new `Instruction` parser
+    /// Creates a new [`Instruction`] parser
     ///
     /// # Parameters
     ///

@@ -15,19 +15,19 @@ pub struct Integer {
 }
 
 impl Integer {
-    /// Creates a new `Integer`
+    /// Creates a new [`Integer`]
     ///
     /// # Parameters
     ///
     /// * `value`: numeric value of the integer
     /// * `size`: size in bits of the integer
     /// * `r#type`: type of the integer
-    /// * `signed`: If `Some`, strictly checks if value fits in the size given as signed/unsigned.
-    ///   If `None`, casts the value to unsigned before checking
+    /// * `signed`: If [`Some`], strictly checks if value fits in the size given as signed/unsigned.
+    ///   If [`None`], casts the value to unsigned before checking
     ///
     /// # Errors
     ///
-    /// Returns a `ErrorKind::ValueTooBig` if the value doesn't fit in the specified size
+    /// Returns a [`ErrorKind::IntegerTooBig`] if the value doesn't fit in the specified size
     pub fn build(
         value: i64,
         size: usize,

@@ -41,7 +41,7 @@ impl BitField {
     ///
     /// # Errors
     ///
-    /// Returns a `ErrorKind::ValueTooBig` if the data doesn't fit in the bit ranges
+    /// Returns a [`ErrorKind::IntegerTooBig`] if the data doesn't fit in the bit ranges
     pub fn replace(&mut self, range: &BitRange, data: i64, signed: bool) -> Result<(), ErrorKind> {
         let field_size = range.size();
         let data = Integer::build(data, field_size, None, Some(signed))?.to_string();
@@ -55,7 +55,7 @@ impl BitField {
         Ok(())
     }
 
-    /// Extracts a string slice containing the entire `BitField`
+    /// Extracts a string slice containing the entire [`BitField`]
     #[must_use]
     pub fn as_str(&self) -> &str {
         self.0.as_str()

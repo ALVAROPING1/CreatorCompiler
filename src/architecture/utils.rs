@@ -102,7 +102,7 @@ macro_rules! impl_NonEmptyRangeInclusive {
     ($(($ty:ty, $name:ident)),+) => {
         $(
             impl NonEmptyRangeInclusive<$ty, std::num::NonZero<$ty>> {
-                /// Create a new `NonEmptyRangeInclusive`
+                /// Create a new [`NonEmptyRangeInclusive`]
                 ///
                 /// # Parameters
                 ///
@@ -148,7 +148,7 @@ impl_NonEmptyRangeInclusive!(
     (u8, NonEmptyRangeInclusiveU8)
 );
 
-/// Derive implementation of `JsonSchema` from the implementation of a different type
+/// Derive implementation of [`JsonSchema`] from the implementation of a different type
 macro_rules! schema_from {
     ($dst:ident$(<$($lt:lifetime)? $($(,)? $t:ident)?>)?, $src:ty) => {
         impl $(<$($lt)? $(, $t: JsonSchema)?>)? JsonSchema for $dst$(<$($lt)? $(, $t)?>)? {

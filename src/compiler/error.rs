@@ -400,7 +400,7 @@ impl crate::RenderError for PseudoinstructionError {
     }
 }
 
-/// Trait for promoting an error `Kind` wrapped in a `Result` to an `Error`
+/// Trait for promoting an error [`Kind`] wrapped in a [`Result`] to an [`Error`]
 pub trait SpannedErr {
     /// Type wrapped in the Ok variant
     type T;

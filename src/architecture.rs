@@ -590,7 +590,7 @@ impl BitRange {
         self.0.iter()
     }
 
-    /// Creates a new `BitRange`
+    /// Creates a new [`BitRange`]
     #[must_use]
     pub fn build(ranges: Vec<NonEmptyRangeInclusiveU8>) -> Option<Self> {
         if ranges.is_empty() {

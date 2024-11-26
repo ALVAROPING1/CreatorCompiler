@@ -15,7 +15,7 @@ pub struct Section {
 }
 
 impl Section {
-    /// Constructs a new `Section` with the given data
+    /// Constructs a new [`Section`] with the given data
     ///
     /// # Parameters
     ///
@@ -43,7 +43,7 @@ impl Section {
     ///
     /// # Errors
     ///
-    /// Returns a `ErrorKind::MemorySectionFull` if the there is not enough space in the section
+    /// Returns a [`ErrorKind::MemorySectionFull`] if the there is not enough space in the section
     /// left for the requested allocation
     pub fn try_reserve(&mut self, size: u64) -> Result<u64, ErrorKind> {
         let res = self.address;
@@ -56,7 +56,7 @@ impl Section {
     }
 
     /// Aligns the first available address with the size given and returns the skipped region as
-    /// `Some((start_addr, size))`. Returns `None` if the address was already aligned
+    /// `Some((start_addr, size))`. Returns [`None`] if the address was already aligned
     ///
     /// # Parameters
     ///
@@ -64,7 +64,7 @@ impl Section {
     ///
     /// # Errors
     ///
-    /// Returns a `ErrorKind::MemorySectionFull` if the there is not enough space in the section
+    /// Returns a [`ErrorKind::MemorySectionFull`] if the there is not enough space in the section
     /// left for the requested alignment
     pub fn try_align(&mut self, align_size: u64) -> Result<Option<(u64, u64)>, ErrorKind> {
         let offset = self.address % align_size;
@@ -86,8 +86,8 @@ impl Section {
     ///
     /// # Errors
     ///
-    /// Returns a `ErrorKind::MemorySectionFull` if the there is not enough space in the section
-    /// left for the requested allocation, or a `ErrorKind::DataUnaligned` if the region isn't
+    /// Returns a [`ErrorKind::MemorySectionFull`] if the there is not enough space in the section
+    /// left for the requested allocation, or a [`ErrorKind::DataUnaligned`] if the region isn't
     /// aligned
     pub fn try_reserve_aligned(&mut self, size: u64, word_size: u64) -> Result<u64, ErrorKind> {
         if self.address % size != 0 && self.address % word_size != 0 {
