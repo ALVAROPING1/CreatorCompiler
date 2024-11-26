@@ -1,3 +1,6 @@
+//! Module containing conversion methods between the format used by the architecture JSON
+//! specification and our internal representation
+
 use schemars::JsonSchema;
 use serde::Deserialize;
 
