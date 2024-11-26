@@ -1,3 +1,7 @@
+//! Module containing the specification of the architecture definition structure
+//!
+//! The entry point for the specification is the [`Architecture`] struct
+
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
 
