@@ -20,6 +20,7 @@ impl Label {
     /// # Parameters
     ///
     /// * `address`: memory address the label points at
+    /// * `definition`: [`Span`] where the label was defined
     pub const fn new(address: u64, definition: Span) -> Self {
         Self {
             address,
