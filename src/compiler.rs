@@ -271,7 +271,7 @@ pub struct ArgumentNumber {
 }
 
 impl ArgumentNumber {
-    /// Create a new [`ArgumentNumber`]
+    /// Creates a new [`ArgumentNumber`]
     #[must_use]
     pub const fn new(amount: usize, at_least: bool) -> Self {
         Self { amount, at_least }

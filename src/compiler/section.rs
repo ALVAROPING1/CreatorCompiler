@@ -15,7 +15,7 @@ pub struct Section {
 }
 
 impl Section {
-    /// Constructs a new [`Section`] with the given data
+    /// Creates a new [`Section`] with the given data
     ///
     /// # Parameters
     ///

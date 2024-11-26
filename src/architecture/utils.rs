@@ -102,7 +102,7 @@ macro_rules! impl_NonEmptyRangeInclusive {
     ($(($ty:ty, $name:ident)),+) => {
         $(
             impl NonEmptyRangeInclusive<$ty, std::num::NonZero<$ty>> {
-                /// Create a new [`NonEmptyRangeInclusive`]
+                /// Creates a new [`NonEmptyRangeInclusive`]
                 ///
                 /// # Parameters
                 ///

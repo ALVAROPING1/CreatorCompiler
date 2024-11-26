@@ -15,7 +15,7 @@ pub struct Label {
 }
 
 impl Label {
-    /// Constructs a new [`Label`] with the given data
+    /// Creates a new [`Label`] with the given data
     ///
     /// # Parameters
     ///
