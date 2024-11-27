@@ -33,7 +33,7 @@ impl Label {
         self.address
     }
 
-    /// Gets the address this label is pointing in
+    /// Gets the [`Span`] where the label was defined
     pub const fn span(&self) -> &Span {
         &self.definition
     }
