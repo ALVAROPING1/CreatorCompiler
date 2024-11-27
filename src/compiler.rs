@@ -303,21 +303,11 @@ fn compile_data(
     label_table: &mut LabelTable,
     section: &mut Section,
     memory: &mut Vec<Data>,
-    alignment: &mut Option<Spanned<u64>>,
     word_size: u64,
     data_type: DirectiveData,
     mut labels: Vec<Spanned<String>>,
     args: Spanned<Vec<Spanned<DataToken>>>,
 ) -> Result<(), CompileError> {
-    if let Some((align, span)) = alignment.take() {
-        if let Some((start, size)) = section.try_align(align).add_span(&span)? {
-            memory.push(Data {
-                address: start,
-                labels: Vec::new(),
-                value: Value::Padding(size),
-            });
-        }
-    }
     for (label, span) in &labels {
         label_table.insert(label.to_owned(), Label::new(section.get(), span.clone()))?;
     }
@@ -399,7 +389,6 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
     let word_size = arch.word_size() / 8;
     let mut pending_instructions = Vec::new();
     let mut data_memory = Vec::new();
-    let mut alignment: Option<Spanned<u64>> = None;
     let mut instruction_eof = 0;
     let mut current_section: Option<Spanned<DirectiveSegment>> = None;
 
@@ -423,21 +412,31 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                         let value = u32::try_from(value).map_err(|_| {
                             ErrorKind::UnallowedNegativeValue(value.into()).add_span(span)
                         })?;
-                        alignment = Some((
+                        let (align, span) = (
                             match align_type {
                                 DirectiveAlignment::Exponential => 2_u64.pow(value),
                                 DirectiveAlignment::Byte => value.into(),
                             },
                             directive.name.1.start..directive.args.1.end,
-                        ));
-                        continue;
+                        );
+                        let (start, size) = data_section.try_align(align).add_span(&span)?;
+                        for (label, span) in &node.labels {
+                            label_table
+                                .insert(label.to_owned(), Label::new(start, span.clone()))?;
+                        }
+                        if size != 0 {
+                            data_memory.push(Data {
+                                address: start,
+                                labels: node.labels.into_iter().map(|x| x.0).collect(),
+                                value: Value::Padding(size),
+                            });
+                        }
                     }
                     (DirectiveAction::Data(data_type), Some((DirectiveSegment::Data, _))) => {
                         compile_data(
                             &mut label_table,
                             &mut data_section,
                             &mut data_memory,
-                            &mut alignment,
                             word_size.into(),
                             data_type,
                             node.labels,
@@ -988,17 +987,20 @@ mod test {
     fn exp_align() {
         for size in [1, 3] {
             let x = compile(&format!(
-                ".data\n.zero 1\n.align {size}\n.zero 1\n.text\nmain: nop"
+                ".data\n.zero 1\na: b: .align {size}\n.zero 1\n.text\nmain: nop"
             ))
             .unwrap();
-            assert_eq!(x.label_table, label_table([("main", 0, 37..42)]));
-            assert_eq!(x.instructions, vec![main_nop(43..46)]);
+            assert_eq!(
+                x.label_table,
+                label_table([("main", 0, 43..48), ("a", 17, 14..16), ("b", 17, 17..19)])
+            );
+            assert_eq!(x.instructions, vec![main_nop(49..52)]);
             let alignment = 2u64.pow(size) - 1;
             assert_eq!(
                 x.data_memory,
                 vec![
                     data(16, &[], Value::Space(1)),
-                    data(17, &[], Value::Padding(alignment)),
+                    data(17, &["a", "b"], Value::Padding(alignment)),
                     data(17 + alignment, &[], Value::Space(1))
                 ]
             );
@@ -1009,20 +1011,82 @@ mod test {
     fn byte_align() {
         for size in [2, 8] {
             let x = compile(&format!(
-                ".data\n.zero 1\n.balign {size}\n.zero 1\n.text\nmain: nop"
+                ".data\n.zero 1\na: .balign {size}\n.zero 1\n.text\nmain: nop"
             ))
             .unwrap();
-            assert_eq!(x.label_table, label_table([("main", 0, 38..43)]));
-            assert_eq!(x.instructions, vec![main_nop(44..47)]);
+            assert_eq!(
+                x.label_table,
+                label_table([("main", 0, 41..46), ("a", 17, 14..16)])
+            );
+            assert_eq!(x.instructions, vec![main_nop(47..50)]);
+            let alignment = size - 1;
             assert_eq!(
                 x.data_memory,
                 vec![
                     data(16, &[], Value::Space(1)),
-                    data(17, &[], Value::Padding(size - 1)),
-                    data(17 + size - 1, &[], Value::Space(1))
+                    data(17, &["a"], Value::Padding(alignment)),
+                    data(17 + alignment, &[], Value::Space(1))
                 ]
             );
         }
+    }
+
+    #[test]
+    fn align_end() {
+        for s in [1, 3] {
+            let x = compile(&format!(".data\n.zero 1\n.align {s}\n.text\nmain: nop")).unwrap();
+            assert_eq!(x.label_table, label_table([("main", 0, 29..34)]));
+            assert_eq!(x.instructions, vec![main_nop(35..38)]);
+            let alignment = 2u64.pow(s) - 1;
+            assert_eq!(
+                x.data_memory,
+                vec![
+                    data(16, &[], Value::Space(1)),
+                    data(17, &[], Value::Padding(alignment)),
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn already_aligned() {
+        for size in [0, 1, 2] {
+            let x = compile(&format!(
+                ".data\n.zero 4\na: .align {size}\n.zero 1\n.text\nmain: nop"
+            ))
+            .unwrap();
+            assert_eq!(
+                x.label_table,
+                label_table([("main", 0, 40..45), ("a", 20, 14..16)])
+            );
+            assert_eq!(x.instructions, vec![main_nop(46..49)]);
+            assert_eq!(
+                x.data_memory,
+                vec![
+                    data(16, &[], Value::Space(4)),
+                    data(20, &[], Value::Space(1))
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn align_decrease() {
+        let x =
+            compile(".data\n.zero 4\na: .align 3\nb: .align 2\n.zero 1\n.text\nmain: nop").unwrap();
+        assert_eq!(
+            x.label_table,
+            label_table([("main", 0, 52..57), ("a", 20, 14..16), ("b", 24, 26..28)])
+        );
+        assert_eq!(x.instructions, vec![main_nop(58..61)]);
+        assert_eq!(
+            x.data_memory,
+            vec![
+                data(16, &[], Value::Space(4)),
+                data(20, &["a"], Value::Padding(4)),
+                data(24, &[], Value::Space(1))
+            ]
+        );
     }
 
     #[test]
