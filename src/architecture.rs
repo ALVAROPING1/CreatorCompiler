@@ -336,6 +336,8 @@ utils::schema_from!(Directive<'a>, json::Directive);
 #[serde(untagged)]
 #[serde(rename_all = "snake_case")]
 pub enum DirectiveAction<DirectiveData> {
+    /// Ignore this directive
+    Nop(Nop),
     /// Switch to the given segment
     Segment(DirectiveSegment),
     /// Store symbols in an external symbols table
@@ -351,6 +353,13 @@ pub enum DirectiveAction<DirectiveData> {
 #[serde(rename_all = "snake_case")]
 pub enum GlobalSymbol {
     GlobalSymbol,
+}
+
+/// Ignore this directive
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum Nop {
+    Nop,
 }
 
 /// Memory segment to switch to

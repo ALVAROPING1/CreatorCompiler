@@ -62,6 +62,7 @@ impl<'a> TryFrom<Directive<'a>> for super::Directive<'a> {
                 DirectiveAction::Alignment(x) => DirectiveAction::Alignment(x),
                 DirectiveAction::Segment(x) => DirectiveAction::Segment(x),
                 DirectiveAction::GlobalSymbol(x) => DirectiveAction::GlobalSymbol(x),
+                DirectiveAction::Nop(x) => DirectiveAction::Nop(x),
             },
         })
     }

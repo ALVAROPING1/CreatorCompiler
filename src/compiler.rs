@@ -404,6 +404,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                         current_section = Some((new_section, node.statement.1));
                     }
                     (DirectiveAction::GlobalSymbol(_), _) => todo!(),
+                    (DirectiveAction::Nop(_), _) => {}
                     (DirectiveAction::Alignment(align_type), Some((DirectiveSegment::Data, _))) => {
                         ArgumentNumber::new(1, false).check(&directive.args)?;
                         let (args, _) = directive.args;
