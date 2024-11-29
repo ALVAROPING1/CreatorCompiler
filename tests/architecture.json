@@ -402,9 +402,9 @@
     {
       "name": "multi",
       "type": "Arithmetic integer",
-      "signature_definition": "F0",
-      "signature": "multi",
-      "signatureRaw": "multi",
+      "signature_definition": "F0 F1",
+      "signature": "multi,inm-unsigned",
+      "signatureRaw": "multi imm4",
       "co": "1110011",
       "cop": "0000000000",
       "nwords": 1,
@@ -415,6 +415,12 @@
           "type": "co",
           "startbit": 6,
           "stopbit": 0
+        },
+        {
+          "name": "imm4",
+          "type": "inm-unsigned",
+          "startbit": 31,
+          "stopbit": 28
         }
       ],
       "definition": "",
@@ -437,6 +443,34 @@
           "type": "co",
           "startbit": 6,
           "stopbit": 0
+        }
+      ],
+      "definition": "",
+      "separated": [],
+      "help": ""
+    },
+    {
+      "name": "multi",
+      "type": "Arithmetic integer",
+      "signature_definition": "F0 F1",
+      "signature": "multi,inm-unsigned",
+      "signatureRaw": "multi imm5",
+      "co": "1000001",
+      "cop": "0000000000",
+      "nwords": 1,
+      "clk_cycles": 1,
+      "fields": [
+        {
+          "name": "multi",
+          "type": "co",
+          "startbit": 6,
+          "stopbit": 0
+        },
+        {
+          "name": "imm5",
+          "type": "inm-unsigned",
+          "startbit": 31,
+          "stopbit": 27
         }
       ],
       "definition": "",

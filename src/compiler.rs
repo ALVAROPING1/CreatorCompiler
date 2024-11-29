@@ -49,7 +49,12 @@ enum InstructionDefinition<'arch> {
 }
 
 /// Parse the arguments of an instruction according to any of its definitions. If the arguments
-/// match the syntax of multiple definitions, the first definition is always used
+/// match the syntax of multiple definitions, one of them is selected according to the following
+/// criteria:
+/// - If there are multiple definitions in which the arguments fit, the first one is used. For
+///   arguments whose size can't be known, it's assumed that they will fit
+/// - If there are no definitions in which the arguments fit, the last one that parsed correctly is
+///   used
 ///
 /// # Parameters
 ///
@@ -66,6 +71,7 @@ fn parse_instruction<'a>(
     name: Spanned<String>,
     args: &Spanned<Vec<Spanned<Token>>>,
 ) -> Result<(InstructionDefinition<'a>, ParsedArgs), CompileError> {
+    let mut possible_def = None;
     // Errors produced on each of the attempted parses
     let mut errs = Vec::new();
     // Get all instruction definitions with the given name
@@ -73,7 +79,50 @@ fn parse_instruction<'a>(
         // Try to parse the given arguments according to the syntax of the current definition
         match inst.syntax.parser.parse(args) {
             // If parsing is successful, assume this definition is the correct one and return it
-            Ok(parsed_args) => return Ok((InstructionDefinition::Real(inst), parsed_args)),
+            Ok(parsed_args) => {
+                // Check if all the arguments fit in the current instruction definition
+                let ok = parsed_args.iter().all(|arg| {
+                    // Get the current field
+                    let field = &inst.syntax.fields[arg.field_idx];
+                    // Get the value
+                    let value = match (field.r#type, &arg.value.0) {
+                        // If the field expects a number and the argument value is a number,
+                        // evaluate the number
+                        (
+                            FieldType::Address
+                            | FieldType::ImmSigned
+                            | FieldType::ImmUnsigned
+                            | FieldType::OffsetBytes
+                            | FieldType::OffsetWords,
+                            Argument::Number(expr),
+                        ) => match expr.int() {
+                            Ok(val) => val.into(),
+                            // If there was any error, assume the argument fits. This should be
+                            // properly handled later when the arguments are fully evaluated
+                            Err(_) => return true,
+                        },
+                        // Otherwise, assume the argument fits to avoid circular dependencies
+                        _ => return true,
+                    };
+                    // Check if it fits by trying to build an integer with the required size
+                    Integer::build(
+                        value,
+                        field.range.size(),
+                        None,
+                        Some(matches!(
+                            field.r#type,
+                            FieldType::ImmSigned | FieldType::OffsetBytes | FieldType::OffsetWords
+                        )),
+                    )
+                    .is_ok()
+                });
+                // If all arguments fit the current definition, use it as the correct one
+                if ok {
+                    return Ok((InstructionDefinition::Real(inst), parsed_args));
+                }
+                // Otherwise, store it in case this is the only matching definition
+                possible_def = Some((inst, parsed_args));
+            }
             // Otherwise, append the produced error to the error vector and try the next definition
             Err(e) => errs.push((inst.syntax.user_syntax.to_string(), e)),
         }
@@ -88,6 +137,12 @@ fn parse_instruction<'a>(
             Err(e) => errs.push((inst.syntax.user_syntax.to_string(), e)),
         }
     }
+    // None of the definitions matched perfectly
+    // If there is a matching definition that failed due to argument sizes, use it
+    if let Some((def, args)) = possible_def {
+        return Ok((InstructionDefinition::Real(def), args));
+    }
+    // Otherwise, return the appropriate error
     // If we didn't get any errors, we didn't find any definitions for the instruction
     Err(if errs.is_empty() {
         ErrorKind::UnknownInstruction(name.0).add_span(&name.1)
@@ -723,20 +778,31 @@ mod test {
 
     #[test]
     fn instruction_multiple_defs() {
-        let x = compile(".text\nmain: multi").unwrap();
-        let binary = "00000000000000000000000001110011";
+        // Definition 1
+        let x = compile(".text\nmain: multi 15").unwrap();
+        let binary = "11110000000000000000000001110011";
         assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
         assert_eq!(
             x.instructions,
-            vec![inst(0, &["main"], "multi", binary, 12..17)]
+            vec![inst(0, &["main"], "multi 15", binary, 12..20)]
         );
         assert_eq!(x.data_memory, vec![]);
+        // Definition 2
         let x = compile(".text\nmain: multi $").unwrap();
         let binary = "00000000000000000000000001011101";
         assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
         assert_eq!(
             x.instructions,
             vec![inst(0, &["main"], "multi $", binary, 12..19)]
+        );
+        assert_eq!(x.data_memory, vec![]);
+        // Definition 3
+        let x = compile(".text\nmain: multi 17").unwrap();
+        let binary = "10001000000000000000000001000001";
+        assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
+        assert_eq!(
+            x.instructions,
+            vec![inst(0, &["main"], "multi 17", binary, 12..20)]
         );
         assert_eq!(x.data_memory, vec![]);
     }
@@ -1398,7 +1464,7 @@ mod test {
         assert(compile(".text\nmain: nop 1"), &["nop"], 16..17);
         assert(
             compile(".text\nmain: multi &, 1"),
-            &["multi", "multi $"],
+            &["multi imm4", "multi $", "multi imm5"],
             18..22,
         );
     }
