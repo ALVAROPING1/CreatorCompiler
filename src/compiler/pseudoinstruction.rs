@@ -333,7 +333,7 @@ pub fn expand<'b, 'a: 'b>(
         def = js::to_string(result);
     };
 
-    def.split(';')
+    def.split_terminator(';')
         .map(|inst| {
             let (name, args) = crate::parser::Instruction::lex(inst).map_err(|error| {
                 let addr_of = |str: &str| str.as_ptr() as usize;
