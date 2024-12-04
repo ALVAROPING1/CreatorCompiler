@@ -20,6 +20,7 @@ pub enum ArgumentType {
     String,
     Expression,
     RegisterName,
+    Label,
 }
 
 /// Unsupported operations for floating point numbers

@@ -8,7 +8,7 @@ use regex::{NoExpand, Regex};
 
 use crate::architecture::{
     Architecture, DirectiveAction, DirectiveAlignment, DirectiveData, DirectiveSegment, FieldType,
-    FloatType, RegisterType, StringType,
+    FloatType, IntegerType, RegisterType, StringType,
 };
 use crate::parser::instruction::ParsedArgs;
 use crate::parser::{ASTNode, Argument, Data as DataToken, Expr, Statement, Token};
@@ -229,6 +229,36 @@ pub struct Instruction {
     pub user: Span,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ExprOrIdent {
+    /// Identifier
+    Identifier(String),
+    /// Expression that can be evaluated to a number
+    Number(Expr),
+}
+
+/// Value to add to the data segment pending argument evaluation
+#[derive(Debug, PartialEq, Clone)]
+pub enum PendingValue {
+    /// Integer value
+    Integer(Spanned<ExprOrIdent>, u8, IntegerType),
+    /// Reserved space initialized to 0
+    Space(u64),
+    /// Padding added to align elements
+    Padding(u64),
+    /// Single precision floating point value
+    Float(f32),
+    /// Double precision floating point value
+    Double(f64),
+    /// UTF-8 string
+    String {
+        /// Byte sequence of the string, encoded in UTF-8
+        data: String,
+        /// Whether the string is terminated by a null byte
+        null_terminated: bool,
+    },
+}
+
 /// Value to add to the data segment
 #[derive(Debug, PartialEq, Clone)]
 pub enum Value {
@@ -249,6 +279,17 @@ pub enum Value {
         /// Whether the string is terminated by a null byte
         null_terminated: bool,
     },
+}
+
+/// Compiled data segment element
+#[derive(Debug, PartialEq, Clone)]
+pub struct PendingData {
+    /// Address of the element
+    pub address: u64,
+    /// Labels pointing to this data element
+    pub labels: Vec<String>,
+    /// Value of the data element
+    pub value: PendingValue,
 }
 
 /// Compiled data segment element
@@ -274,9 +315,13 @@ impl DataToken {
             Self::Number(_) => Err(ErrorKind::IncorrectArgumentType {
                 expected: ArgumentType::String,
                 found: ArgumentType::Expression,
-            }
-            .add_span(span)),
+            }),
+            Self::Label(_) => Err(ErrorKind::IncorrectArgumentType {
+                expected: ArgumentType::String,
+                found: ArgumentType::Label,
+            }),
         }
+        .add_span(span)
     }
 
     /// Convert the value to an expression
@@ -284,15 +329,19 @@ impl DataToken {
     /// # Parameters
     ///
     /// * `span`: span of the value in the assembly code
-    const fn to_expr(&self, span: &Span) -> Result<&Expr, CompileError> {
+    fn to_expr(&self, span: &Span) -> Result<&Expr, CompileError> {
         match self {
             Self::Number(expr) => Ok(expr),
             Self::String(_) => Err(ErrorKind::IncorrectArgumentType {
                 expected: ArgumentType::Expression,
                 found: ArgumentType::String,
-            }
-            .add_span(span)),
+            }),
+            Self::Label(_) => Err(ErrorKind::IncorrectArgumentType {
+                expected: ArgumentType::Expression,
+                found: ArgumentType::Label,
+            }),
         }
+        .add_span(span)
     }
 }
 
@@ -357,7 +406,7 @@ impl ArgumentNumber {
 fn compile_data(
     label_table: &mut LabelTable,
     section: &mut Section,
-    memory: &mut Vec<Data>,
+    memory: &mut Vec<PendingData>,
     word_size: u64,
     data_type: DirectiveData,
     mut labels: Vec<Spanned<String>>,
@@ -375,25 +424,32 @@ fn compile_data(
             let size = u64::try_from(value)
                 .map_err(|_| ErrorKind::UnallowedNegativeValue(value.into()).add_span(span))?
                 * u64::from(size);
-            memory.push(Data {
+            memory.push(PendingData {
                 address: section.try_reserve(size).add_span(span)?,
                 labels: take_spanned_vec(&mut labels),
-                value: Value::Space(size),
+                value: PendingValue::Space(size),
             });
         }
         DirectiveData::Int(size, int_type) => {
             ArgumentNumber::new(1, true).check(&args)?;
             for (value, span) in args.0 {
-                let value = value.to_expr(&span)?.int()?;
-                memory.push(Data {
+                let value = match value {
+                    DataToken::Number(expr) => ExprOrIdent::Number(expr),
+                    DataToken::Label(label) => ExprOrIdent::Identifier(label),
+                    DataToken::String(_) => {
+                        return Err(ErrorKind::IncorrectArgumentType {
+                            expected: ArgumentType::Expression,
+                            found: ArgumentType::String,
+                        }
+                        .add_span(&span))
+                    }
+                };
+                memory.push(PendingData {
                     address: section
                         .try_reserve_aligned(size.into(), word_size)
                         .add_span(&span)?,
                     labels: take_spanned_vec(&mut labels),
-                    value: Value::Integer(
-                        Integer::build(value.into(), (size * 8).into(), Some(int_type), None)
-                            .add_span(&span)?,
-                    ),
+                    value: PendingValue::Integer((value, span), size, int_type),
                 });
             }
         }
@@ -403,10 +459,10 @@ fn compile_data(
                 let value = value.to_expr(&span)?.float()?;
                 #[allow(clippy::cast_possible_truncation)]
                 let (value, size) = match float_type {
-                    FloatType::Float => (Value::Float(value as f32), 4),
-                    FloatType::Double => (Value::Double(value), 8),
+                    FloatType::Float => (PendingValue::Float(value as f32), 4),
+                    FloatType::Double => (PendingValue::Double(value), 8),
                 };
-                memory.push(Data {
+                memory.push(PendingData {
                     address: section
                         .try_reserve_aligned(size, word_size)
                         .add_span(&span)?,
@@ -420,12 +476,12 @@ fn compile_data(
             for (value, span) in args.0 {
                 let data = value.into_string(&span)?;
                 let null_terminated = str_type == StringType::AsciiNullEnd;
-                memory.push(Data {
+                memory.push(PendingData {
                     address: section
                         .try_reserve(data.len() as u64 + u64::from(null_terminated))
                         .add_span(&span)?,
                     labels: take_spanned_vec(&mut labels),
-                    value: Value::String {
+                    value: PendingValue::String {
                         data,
                         null_terminated,
                     },
@@ -443,7 +499,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
     let mut data_section = Section::new("Data", arch.data_section());
     let word_size = arch.word_size() / 8;
     let mut pending_instructions = Vec::new();
-    let mut data_memory = Vec::new();
+    let mut pending_data = Vec::new();
     let mut instruction_eof = 0;
     let mut current_section: Option<Spanned<DirectiveSegment>> = None;
 
@@ -481,10 +537,10 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                                 .insert(label.to_owned(), Label::new(start, span.clone()))?;
                         }
                         if size != 0 {
-                            data_memory.push(Data {
+                            pending_data.push(PendingData {
                                 address: start,
                                 labels: node.labels.into_iter().map(|x| x.0).collect(),
-                                value: Value::Padding(size),
+                                value: PendingValue::Padding(size),
                             });
                         }
                     }
@@ -492,7 +548,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                         compile_data(
                             &mut label_table,
                             &mut data_section,
-                            &mut data_memory,
+                            &mut pending_data,
                             word_size.into(),
                             data_type,
                             node.labels,
@@ -539,6 +595,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
             }
         }
     }
+
     match label_table.get(arch.main_label()) {
         None => {
             #[allow(clippy::range_plus_one)] // Ariadne works with exclusive ranges
@@ -554,7 +611,8 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
             }
         }
     }
-    pending_instructions
+
+    let instructions = pending_instructions
         .into_iter()
         .map(|inst| {
             let def = inst.definition;
@@ -672,12 +730,51 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                 user: inst.span,
             })
         })
-        .collect::<Result<Vec<_>, _>>()
-        .map(|instructions| CompiledCode {
-            label_table,
-            instructions,
-            data_memory,
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let data_memory = pending_data
+        .into_iter()
+        .map(|data| {
+            Ok(Data {
+                address: data.address,
+                labels: data.labels,
+                value: match data.value {
+                    PendingValue::Integer((value, span), size, int_type) => {
+                        let value = match value {
+                            ExprOrIdent::Identifier(label) => label_table
+                                .get(&label)
+                                .ok_or_else(|| ErrorKind::UnknownLabel(label).add_span(&span))?
+                                .address()
+                                .try_into()
+                                .unwrap(),
+                            ExprOrIdent::Number(expr) => expr.int()?,
+                        };
+                        Value::Integer(
+                            Integer::build(value.into(), (size * 8).into(), Some(int_type), None)
+                                .add_span(&span)?,
+                        )
+                    }
+                    PendingValue::Space(x) => Value::Space(x),
+                    PendingValue::Padding(x) => Value::Padding(x),
+                    PendingValue::Float(x) => Value::Float(x),
+                    PendingValue::Double(x) => Value::Double(x),
+                    PendingValue::String {
+                        data,
+                        null_terminated,
+                    } => Value::String {
+                        data,
+                        null_terminated,
+                    },
+                },
+            })
         })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(CompiledCode {
+        label_table,
+        instructions,
+        data_memory,
+    })
 }
 
 #[allow(clippy::unwrap_used)]

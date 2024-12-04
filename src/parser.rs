@@ -33,6 +33,8 @@ pub enum Data {
     String(String),
     /// Numeric expression
     Number(Expr),
+    /// Label name
+    Label(String),
 }
 
 /// AST node for instructions
@@ -87,19 +89,24 @@ fn parser<'a>() -> Parser!(Token, Vec<ASTNode>, 'a) {
 
     // Directive statement:
     // `directive -> (directive_name \n)
-    //             | (directive_name \n* expression (\n* , \n* expression)* \n)`
+    //             | (directive_name expression (\n* , \n* expression)* \n)`
     let directive = directive_name
         .then(
             // Arguments of the directive. Comma-separated list of expressions. Each expression can
-            // have any amount of newlines prefixing it, and any amount of newlines following it if
-            // they are followed by a comma (indicating that more expressions will follow,
-            // otherwise a single newline is required as the statement end)
+            // have any amount of newlines prefixing it except the first (to avoid ambiguities in
+            // cases where a directive without arguments is followed by an instruction), and any
+            // amount of newlines following it if they are followed by a comma (indicating that more
+            // expressions will follow, otherwise a single newline is required as the statement end)
             newline()
-                .repeated()
+                .not()
+                .rewind()
                 .ignore_then(
                     expression::parser()
                         .map(Data::Number)
-                        .or(select! {Token::String(s) => Data::String(s)})
+                        .or(select! {
+                            Token::String(s) => Data::String(s),
+                            Token::Identifier(s) => Data::Label(s),
+                        })
                         .map_with_span(|x, span| (x, span)),
                 )
                 .then_ignore(
