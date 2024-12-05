@@ -838,6 +838,10 @@ mod test {
         }
     }
 
+    fn int_val(x: i64, size: usize, ty: IntegerType) -> Value {
+        Value::Integer(Integer::build(x, size, Some(ty), None).unwrap())
+    }
+
     #[test]
     fn nop() {
         // Minimal
@@ -1033,68 +1037,59 @@ mod test {
 
     #[test]
     fn int() {
-        // 1 argument
-        let x = compile(".data\na: .byte 1\n.text\nmain: nop").unwrap();
-        assert_eq!(
-            x.label_table,
-            label_table([("main", 0, 23..28), ("a", 16, 6..8)])
-        );
-        assert_eq!(x.instructions, vec![main_nop(29..32)]);
-        assert_eq!(
-            x.data_memory,
-            vec![data(
-                16,
-                &["a"],
-                Value::Integer(Integer::build(1, 8, Some(IntegerType::Byte), None).unwrap(),)
-            )]
-        );
-        // Multiple arguments
-        let x = compile(".data\nb: .byte -128, 255\n.text\nmain: nop").unwrap();
-        assert_eq!(
-            x.label_table,
-            label_table([("main", 0, 31..36), ("b", 16, 6..8)])
-        );
-        assert_eq!(x.instructions, vec![main_nop(37..40)]);
-        assert_eq!(
-            x.data_memory,
-            vec![
-                data(
-                    16,
-                    &["b"],
-                    Value::Integer(Integer::build(128, 8, Some(IntegerType::Byte), None).unwrap())
-                ),
-                data(
-                    17,
-                    &[],
-                    Value::Integer(Integer::build(255, 8, Some(IntegerType::Byte), None).unwrap())
-                )
-            ]
-        );
         let test_cases = [
-            ("half ", 2, IntegerType::HalfWord),
-            ("word ", 4, IntegerType::Word),
-            ("dword", 8, IntegerType::DoubleWord),
+            ("byte ", 1u8, IntegerType::Byte, 2u64.pow(8) - 128),
+            ("half ", 2, IntegerType::HalfWord, 2u64.pow(16) - 128),
+            ("word ", 4, IntegerType::Word, 2u64.pow(32) - 128),
+            ("dword", 8, IntegerType::DoubleWord, u64::MAX - 127),
         ];
-        for (name, size, r#type) in test_cases {
-            let x = compile(&format!(".data\n.{name} 1, 2\n.text\nmain: nop")).unwrap();
-            assert_eq!(x.label_table, label_table([("main", 0, 24..29)]));
+        #[allow(clippy::cast_possible_wrap)]
+        for (name, size, r#type, val) in test_cases {
+            let bits = usize::from(size * 8);
+            // 1 argument
+            let x = compile(&format!(".data\na: .{name} 1\n.text\nmain: nop")).unwrap();
+            assert_eq!(
+                x.label_table,
+                label_table([("main", 0, 24..29), ("a", 16, 6..8)])
+            );
             assert_eq!(x.instructions, vec![main_nop(30..33)]);
             assert_eq!(
                 x.data_memory,
+                vec![data(16, &["a"], int_val(1, bits, r#type))]
+            );
+            // Multiple arguments
+            let x = compile(&format!(".data\nb: .{name} -128, 255\n.text\nmain: nop")).unwrap();
+            assert_eq!(
+                x.label_table,
+                label_table([("main", 0, 32..37), ("b", 16, 6..8)])
+            );
+            assert_eq!(x.instructions, vec![main_nop(38..41)]);
+            assert_eq!(
+                x.data_memory,
                 vec![
-                    data(
-                        16,
-                        &[],
-                        Value::Integer(Integer::build(1, size * 8, Some(r#type), None).unwrap())
-                    ),
-                    data(
-                        (16 + size).try_into().unwrap(),
-                        &[],
-                        Value::Integer(Integer::build(2, size * 8, Some(r#type), None).unwrap())
-                    )
+                    data(16, &["b"], int_val(val as i64, bits, r#type)),
+                    data((16 + size).into(), &[], int_val(255, bits, r#type))
                 ]
             );
         }
+    }
+
+    #[test]
+    fn int_label() {
+        let x = compile(".data\na: .byte a, b\nb: .byte main\n.text\nmain: nop").unwrap();
+        assert_eq!(
+            x.label_table,
+            label_table([("main", 0, 40..45), ("a", 16, 6..8), ("b", 18, 20..22)])
+        );
+        assert_eq!(x.instructions, vec![main_nop(46..49)]);
+        assert_eq!(
+            x.data_memory,
+            vec![
+                data(16, &["a"], int_val(16, 8, IntegerType::Byte)),
+                data(17, &[], int_val(18, 8, IntegerType::Byte)),
+                data(18, &["b"], int_val(0, 8, IntegerType::Byte)),
+            ]
+        );
     }
 
     #[test]
@@ -1144,17 +1139,11 @@ mod test {
                 label_table([("main", 0, 28..33), ("a", 16, 6..8)])
             );
             assert_eq!(x.instructions, vec![main_nop(34..37)]);
-            assert_eq!(
-                x.data_memory,
-                vec![data(
-                    16,
-                    &["a"],
-                    Value::String {
-                        data: "a".into(),
-                        null_terminated
-                    }
-                )]
-            );
+            let str = |x: &str| Value::String {
+                data: x.into(),
+                null_terminated,
+            };
+            assert_eq!(x.data_memory, vec![data(16, &["a"], str("a"))]);
             // Multiple arguments
             let x = compile(&format!(".data\nb: .{name} \"b\", \"0\"\n.text\nmain: nop")).unwrap();
             assert_eq!(
@@ -1165,22 +1154,8 @@ mod test {
             assert_eq!(
                 x.data_memory,
                 vec![
-                    data(
-                        16,
-                        &["b"],
-                        Value::String {
-                            data: "b".into(),
-                            null_terminated
-                        }
-                    ),
-                    data(
-                        17 + u64::from(null_terminated),
-                        &[],
-                        Value::String {
-                            data: "0".into(),
-                            null_terminated
-                        }
-                    ),
+                    data(16, &["b"], str("b")),
+                    data(17 + u64::from(null_terminated), &[], str("0")),
                 ]
             );
         }
