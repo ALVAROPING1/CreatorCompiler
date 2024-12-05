@@ -947,6 +947,24 @@ mod test {
     }
 
     #[test]
+    fn instruction_fields_immediate_labels() {
+        let x = compile(".text\nmain: nop\na: imm a, a, a").unwrap();
+        let binary = "00010000000000000001000000001000";
+        assert_eq!(
+            x.label_table,
+            label_table([("main", 0, 6..11), ("a", 4, 16..18)])
+        );
+        assert_eq!(
+            x.instructions,
+            vec![
+                main_nop(12..15),
+                inst(4, &["a"], "imm 4 4 4", binary, 19..30),
+            ]
+        );
+        assert_eq!(x.data_memory, vec![]);
+    }
+
+    #[test]
     fn instruction_fields_offsets_aligned() {
         let x = compile(".text\nmain: off 7, -8").unwrap();
         let binary = "01110000000000000000000000001000";
@@ -956,12 +974,33 @@ mod test {
             vec![inst(0, &["main"], "off 7 -8", binary, 12..21)]
         );
         assert_eq!(x.data_memory, vec![]);
+    }
+
+    #[test]
+    fn instruction_fields_offsets_aligned_labels() {
         let x = compile(".text\nmain: off main, main").unwrap();
         let binary = "11000000000000000000000000001111";
         assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
         assert_eq!(
             x.instructions,
             vec![inst(0, &["main"], "off -4 -1", binary, 12..26)]
+        );
+        assert_eq!(x.data_memory, vec![]);
+
+        let x = compile(".text\na: off main, main\nnop\nmain: nop").unwrap();
+        let binary = "01000000000000000000000000000001";
+        let nop_binary = "11110000000000000000000001111111";
+        assert_eq!(
+            x.label_table,
+            label_table([("a", 0, 6..8), ("main", 8, 28..33)])
+        );
+        assert_eq!(
+            x.instructions,
+            vec![
+                inst(0, &["a"], "off 4 1", binary, 9..23),
+                inst(4, &[], "nop", nop_binary, 24..27),
+                inst(8, &["main"], "nop", nop_binary, 34..37),
+            ]
         );
         assert_eq!(x.data_memory, vec![]);
     }
