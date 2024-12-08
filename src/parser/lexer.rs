@@ -190,7 +190,7 @@ pub fn lexer() -> Parser!(char, Vec<Spanned<Token>>) {
         .labelled("literal");
 
     // Generic identifiers
-    let ident = filter(|c: &char| c.is_ascii_alphabetic())
+    let ident = filter(|c: &char| c.is_ascii_alphabetic() || *c == '_')
         .chain(filter(|c: &char| c.is_ascii_alphanumeric() || *c == '_' || *c == '.').repeated())
         .labelled("identifier");
 
@@ -358,6 +358,7 @@ mod test {
             "addi1",
             "addi2",
             "ident_with_underscores_and.dots.",
+            "_start_underscore",
             "a._123",
             "z....___1",
         ];
@@ -421,7 +422,7 @@ mod test {
 
     #[test]
     fn literal() {
-        for c in ".!?=:_;${}[]\\<>".chars() {
+        for c in ".!?=:;${}[]\\<>".chars() {
             assert_eq!(lex(&c.to_string()), Ok(vec![(Token::Literal(c), 0..1)]));
         }
     }
