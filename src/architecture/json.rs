@@ -5,7 +5,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use super::{utils, DataFormat, DirectiveAction};
-use super::{FloatType, IntegerType, StringType};
+use super::{AlignmentType, FloatType, IntegerType, StringType};
 use utils::{BaseN, Bool, NonEmptyRangeInclusiveU64, NonEmptyRangeInclusiveU8, Pair, StringOrT};
 
 /// Directive specification
@@ -33,6 +33,8 @@ pub enum DirectiveData {
     Int(IntegerType),
     /// Store floating point value
     Float(FloatType),
+    /// Align the next data value to a given size
+    Alignment(AlignmentType),
 }
 
 /// Store n * size null bytes in the data segment
@@ -58,8 +60,8 @@ impl<'a> TryFrom<Directive<'a>> for super::Directive<'a> {
                     DD::Int(x) => SDD::Int(size?, x),
                     DD::Float(x) => SDD::Float(x),
                     DD::String(x) => SDD::String(x),
+                    DD::Alignment(x) => SDD::Alignment(x),
                 }),
-                DirectiveAction::Alignment(x) => DirectiveAction::Alignment(x),
                 DirectiveAction::Segment(x) => DirectiveAction::Segment(x),
                 DirectiveAction::GlobalSymbol(x) => DirectiveAction::GlobalSymbol(x),
                 DirectiveAction::Nop(x) => DirectiveAction::Nop(x),

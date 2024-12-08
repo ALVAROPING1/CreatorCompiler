@@ -7,7 +7,7 @@ use once_cell::sync::Lazy;
 use regex::{NoExpand, Regex};
 
 use crate::architecture::{
-    Architecture, DirectiveAction, DirectiveAlignment, DirectiveData, DirectiveSegment, FieldType,
+    AlignmentType, Architecture, DirectiveAction, DirectiveData, DirectiveSegment, FieldType,
     FloatType, IntegerType, RegisterType, StringType,
 };
 use crate::parser::instruction::ParsedArgs;
@@ -391,16 +391,35 @@ fn compile_data(
     word_size: u64,
     data_type: DirectiveData,
     mut labels: Vec<Spanned<String>>,
-    args: Spanned<Vec<Spanned<DataToken>>>,
+    args: Spanned<Spanned<Vec<Spanned<DataToken>>>>,
 ) -> Result<(), CompileError> {
     for (label, span) in &labels {
         label_table.insert(label.to_owned(), Label::new(section.get(), span.clone()))?;
     }
+    let (args, statement_span) = args;
     match data_type {
+        DirectiveData::Alignment(align_type) => {
+            ArgumentNumber::new(1, false).check(&args)?;
+            let (value, span) = &args.0[0];
+            let value = value.to_expr(span)?.int(Expr::unallowed_ident)?;
+            let value = u32::try_from(value)
+                .map_err(|_| ErrorKind::UnallowedNegativeValue(value.into()).add_span(span))?;
+            let align = match align_type {
+                AlignmentType::Exponential => 2_u64.pow(value),
+                AlignmentType::Byte => value.into(),
+            };
+            let (start, size) = section.try_align(align).add_span(&statement_span)?;
+            if size != 0 {
+                memory.push(PendingData {
+                    address: start,
+                    labels: take_spanned_vec(&mut labels),
+                    value: PendingValue::Padding(size),
+                });
+            }
+        }
         DirectiveData::Space(size) => {
             ArgumentNumber::new(1, false).check(&args)?;
-            let (args, _) = args;
-            let (value, span) = &args[0];
+            let (value, span) = &args.0[0];
             let value = value.to_expr(span)?.int(Expr::unallowed_ident)?;
             let size = u64::try_from(value)
                 .map_err(|_| ErrorKind::UnallowedNegativeValue(value.into()).add_span(span))?
@@ -496,35 +515,8 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                     }
                     (DirectiveAction::GlobalSymbol(_), _) => todo!(),
                     (DirectiveAction::Nop(_), _) => {}
-                    (DirectiveAction::Alignment(align_type), Some((DirectiveSegment::Data, _))) => {
-                        ArgumentNumber::new(1, false).check(&directive.args)?;
-                        let (args, _) = directive.args;
-                        let (value, span) = &args[0];
-                        let value = value.to_expr(span)?.int(Expr::unallowed_ident)?;
-                        let value = u32::try_from(value).map_err(|_| {
-                            ErrorKind::UnallowedNegativeValue(value.into()).add_span(span)
-                        })?;
-                        let (align, span) = (
-                            match align_type {
-                                DirectiveAlignment::Exponential => 2_u64.pow(value),
-                                DirectiveAlignment::Byte => value.into(),
-                            },
-                            directive.name.1.start..directive.args.1.end,
-                        );
-                        let (start, size) = data_section.try_align(align).add_span(&span)?;
-                        for (label, span) in &node.labels {
-                            label_table
-                                .insert(label.to_owned(), Label::new(start, span.clone()))?;
-                        }
-                        if size != 0 {
-                            pending_data.push(PendingData {
-                                address: start,
-                                labels: node.labels.into_iter().map(|x| x.0).collect(),
-                                value: PendingValue::Padding(size),
-                            });
-                        }
-                    }
                     (DirectiveAction::Data(data_type), Some((DirectiveSegment::Data, _))) => {
+                        let span = directive.name.1.start..directive.args.1.end;
                         compile_data(
                             &mut label_table,
                             &mut data_section,
@@ -532,7 +524,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                             word_size.into(),
                             data_type,
                             node.labels,
-                            directive.args,
+                            (directive.args, span),
                         )?;
                     }
                     _ => {

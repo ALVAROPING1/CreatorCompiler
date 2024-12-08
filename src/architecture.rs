@@ -342,8 +342,6 @@ pub enum DirectiveAction<DirectiveData> {
     Segment(DirectiveSegment),
     /// Store symbols in an external symbols table
     GlobalSymbol(GlobalSymbol),
-    /// Align the next data value to a given size
-    Alignment(DirectiveAlignment),
     /// Add data to the data segment
     Data(DirectiveData),
 }
@@ -371,17 +369,6 @@ pub enum DirectiveSegment {
     Data,
 }
 
-/// Data alignment modes
-#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
-pub enum DirectiveAlignment {
-    /// Align next element to n bytes
-    #[serde(rename = "balign")]
-    Byte,
-    /// Align next element to 2^n bytes
-    #[serde(rename = "align")]
-    Exponential,
-}
-
 /// Data segment types
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DirectiveData {
@@ -393,6 +380,8 @@ pub enum DirectiveData {
     Int(u8, IntegerType),
     /// Store floating point value
     Float(FloatType),
+    /// Align the memory to a given size
+    Alignment(AlignmentType),
 }
 
 /// Types of strings allowed
@@ -423,6 +412,17 @@ pub enum FloatType {
     Float,
     /// 64 bit double
     Double,
+}
+
+/// Data alignment types
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
+pub enum AlignmentType {
+    /// Align data to n bytes
+    #[serde(rename = "balign")]
+    Byte,
+    /// Align data to 2^n bytes
+    #[serde(rename = "align")]
+    Exponential,
 }
 
 /// Memory layout of the architecture
