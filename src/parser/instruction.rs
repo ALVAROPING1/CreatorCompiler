@@ -7,23 +7,14 @@ use chumsky::{prelude::*, stream::Stream};
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-use super::{expression, lexer, ParseError, Spanned, Token};
+use super::{expression, expression::Expr, lexer, ParseError, Spanned, Token};
 use crate::architecture::{FieldType, InstructionField};
-
-/// Instruction argument value
-#[derive(Debug, Clone, PartialEq)]
-pub enum Argument {
-    /// Identifier
-    Identifier(String),
-    /// Expression that can be evaluated to a number
-    Number(expression::Expr),
-}
 
 /// Value of a parsed argument
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParsedArgument {
     /// Parsed argument value
-    pub value: Spanned<Argument>,
+    pub value: Spanned<Expr>,
     /// Index of the field corresponding to this value in the instruction fields definition
     pub field_idx: usize,
 }
@@ -94,10 +85,10 @@ impl<'a> Instruction<'a> {
                     let i = field(ident, false)?;
                     match fields[i].r#type {
                         FieldType::Co => {
-                            // This value should never be read, we only need it to point to the
+                            // NOTE: This value should never be read, we only need it to point to the
                             // opcode instruction field
                             vec![ParsedArgument {
-                                value: (Argument::Identifier(String::new()), 0..0),
+                                value: (Expr::Integer(0), 0..0),
                                 field_idx: i,
                             }]
                         }
@@ -120,15 +111,12 @@ impl<'a> Instruction<'a> {
                 Token::Identifier(ident) if FIELD.is_match(&ident) => {
                     let i = field(ident, true)?; // Validate the field pointed to
                     parser
-                        .chain(
-                            expression::parser()
-                                .map(Argument::Number)
-                                .or(select! {Token::Identifier(ident) => Argument::Identifier(ident)})
-                                .map_with_span(move |arg, span| ParsedArgument {
-                                    value: (arg, span),
-                                    field_idx: i
-                                }),
-                        )
+                        .chain(expression::parser().map_with_span(move |expr, span| {
+                            ParsedArgument {
+                                value: (expr, span),
+                                field_idx: i,
+                            }
+                        }))
                         .boxed()
                 }
                 // The current token isn't an argument placeholder => parse it literally, ignoring
@@ -183,7 +171,7 @@ impl<'a> std::fmt::Debug for Instruction<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::parser::{expression::BinaryOp, Expr};
+    use crate::parser::expression::BinaryOp;
 
     fn fields() -> [InstructionField<'static, ()>; 3] {
         let field = |co| InstructionField {
@@ -203,20 +191,20 @@ mod test {
         parser.parse(&ast).map_err(|e| eprintln!("{e:?}"))
     }
 
-    const fn arg(value: Spanned<Argument>, field_idx: usize) -> ParsedArgument {
+    const fn arg(value: Spanned<Expr>, field_idx: usize) -> ParsedArgument {
         ParsedArgument { value, field_idx }
     }
 
     const fn co_arg() -> ParsedArgument {
-        arg((Argument::Identifier(String::new()), 0..0), 0)
+        arg((Expr::Integer(0), 0..0), 0)
     }
 
-    fn ident(name: &str) -> Argument {
-        Argument::Identifier(name.into())
+    fn ident(name: Spanned<&str>) -> Spanned<Expr> {
+        (Expr::Identifier((name.0.into(), name.1.clone())), name.1)
     }
 
-    const fn number(x: u32) -> Argument {
-        Argument::Number(Expr::Integer(x))
+    const fn number(x: u32) -> Expr {
+        Expr::Integer(x)
     }
 
     #[test]
@@ -234,7 +222,7 @@ mod test {
         assert_eq!(parse(&parser, "$"), Err(()));
         assert_eq!(
             parse(&parser, "a"),
-            Ok(vec![co_arg(), arg((ident("a"), 0..1), 1)])
+            Ok(vec![co_arg(), arg(ident(("a", 0..1)), 1)])
         );
         assert_eq!(
             parse(&parser, "1"),
@@ -246,11 +234,28 @@ mod test {
                 co_arg(),
                 arg(
                     (
-                        Argument::Number(Expr::BinaryOp {
+                        Expr::BinaryOp {
                             op: (BinaryOp::Add, 2..3),
                             lhs: Box::new((Expr::Integer(1), 0..1)),
                             rhs: Box::new((Expr::Integer(1), 4..5))
-                        }),
+                        },
+                        0..5
+                    ),
+                    1
+                )
+            ])
+        );
+        assert_eq!(
+            parse(&parser, "c - a"),
+            Ok(vec![
+                co_arg(),
+                arg(
+                    (
+                        Expr::BinaryOp {
+                            op: (BinaryOp::Sub, 2..3),
+                            lhs: Box::new(ident(("c".into(), 0..1))),
+                            rhs: Box::new(ident(("a".into(), 4..5)))
+                        },
                         0..5
                     ),
                     1
@@ -270,7 +275,7 @@ mod test {
             parse(&parser, "a 1"),
             Ok(vec![
                 co_arg(),
-                arg((ident("a"), 0..1), 2),
+                arg(ident(("a", 0..1)), 2),
                 arg((number(1), 2..3), 1)
             ])
         );
@@ -278,7 +283,7 @@ mod test {
             parse(&parser, "b 2"),
             Ok(vec![
                 co_arg(),
-                arg((ident("b"), 0..1), 2),
+                arg(ident(("b", 0..1)), 2),
                 arg((number(2), 2..3), 1)
             ])
         );

@@ -4,8 +4,8 @@ use regex::{Captures, Regex};
 use crate::architecture::{Architecture, FloatType, Pseudoinstruction, RegisterType};
 use crate::parser::ParseError;
 
-use super::{Argument, ParsedArgs};
 use super::{ArgumentType, CompileError, ErrorKind, InstructionDefinition, LabelTable};
+use super::{Expr, ParsedArgs};
 use super::{Span, Spanned};
 
 /// Pseudoinstruction evaluation error
@@ -87,14 +87,14 @@ mod js {
     }
 }
 
-fn reg_name(arg: &Spanned<Argument>) -> Result<&str, CompileError> {
+fn reg_name(arg: &Spanned<Expr>) -> Result<&str, CompileError> {
     match &arg.0 {
-        Argument::Number(_) => Err(ErrorKind::IncorrectArgumentType {
+        Expr::Identifier((name, _)) => Ok(name),
+        _ => Err(ErrorKind::IncorrectArgumentType {
             expected: ArgumentType::RegisterName,
             found: ArgumentType::Expression,
         }
         .add_span(&arg.1)),
-        Argument::Identifier(name) => Ok(name),
     }
 }
 
@@ -120,6 +120,15 @@ pub fn expand<'b, 'a: 'b>(
     static NO_RET_OP: Lazy<Regex> = crate::regex!(r"no_ret_op\{([^}]*?)\};");
     static OP: Lazy<Regex> = crate::regex!(r"op\{([^}]*?)\}");
     static INSTRUCTIONS: Lazy<Regex> = crate::regex!(r"\{(.*?)\}");
+
+    let ident_eval = |label: &str| {
+        Ok(label_table
+            .get(label)
+            .ok_or_else(|| ErrorKind::UnknownLabel(label.to_owned()))?
+            .address()
+            .try_into()
+            .unwrap())
+    };
 
     let num = |x: &str| {
         x.parse()
@@ -165,7 +174,7 @@ pub fn expand<'b, 'a: 'b>(
     while let Some(x) = FIELD_VALUE.captures(&def) {
         let (_, [arg, start_bit, end_bit, ty]) = x.extract();
         let arg_num = num(arg) - 1;
-        let (value, value_span) = &args
+        let (value, _) = &args
             .get(arg_num)
             .ok_or_else(|| {
                 Error {
@@ -177,40 +186,17 @@ pub fn expand<'b, 'a: 'b>(
             })?
             .value;
         #[allow(clippy::cast_possible_truncation)]
-        let field = match value {
-            Argument::Number(expr) => match ty {
-                "int" => format!("{:032b}", expr.int()?),
-                "float" => format!("{:032b}", (expr.float()? as f32).to_bits()),
-                "double" => format!("{:064b}", expr.float()?.to_bits()),
-                ty => {
-                    return Err(Error {
-                        definition: def.clone(),
-                        span: capture_span(&x, 4),
-                        kind: Kind::UnknownFieldType(ty.to_owned()),
-                    }
-                    .compile_error(instruction, &span))
+        let field = match ty {
+            "int" => format!("{:032b}", value.int(ident_eval)?),
+            "float" => format!("{:032b}", (value.float()? as f32).to_bits()),
+            "double" => format!("{:064b}", value.float()?.to_bits()),
+            ty => {
+                return Err(Error {
+                    definition: def.clone(),
+                    span: capture_span(&x, 4),
+                    kind: Kind::UnknownFieldType(ty.to_owned()),
                 }
-            },
-            Argument::Identifier(label) => {
-                let val: u32 = label_table
-                    .get(label)
-                    .ok_or_else(|| ErrorKind::UnknownLabel(label.clone()).add_span(value_span))?
-                    .address()
-                    .try_into()
-                    .unwrap();
-                match ty {
-                    "int" => format!("{val:032b}"),
-                    "float" => format!("{:032b}", (f64::from(val) as f32).to_bits()),
-                    "double" => format!("{:064b}", f64::from(val).to_bits()),
-                    ty => {
-                        return Err(Error {
-                            definition: def.clone(),
-                            span: capture_span(&x, 4),
-                            kind: Kind::UnknownFieldType(ty.to_owned()),
-                        }
-                        .compile_error(instruction, &span))
-                    }
-                }
+                .compile_error(instruction, &span))
             }
         };
         let start_bit = num(start_bit);
@@ -243,7 +229,7 @@ pub fn expand<'b, 'a: 'b>(
     while let Some(x) = FIELD_SIZE.captures(&def) {
         let (_, [arg]) = x.extract();
         let arg_num = num(arg) - 1;
-        let (value, span) = &args
+        let (value, _) = &args
             .get(arg_num)
             .ok_or_else(|| {
                 Error {
@@ -255,21 +241,12 @@ pub fn expand<'b, 'a: 'b>(
             })?
             .value;
         #[allow(clippy::cast_possible_truncation)]
-        let size = match value {
-            Argument::Number(expr) => match expr.int() {
-                Ok(x) => 32 - x.leading_zeros(),
-                Err(err) => match err.kind {
-                    ErrorKind::UnallowedFloat => 32,
-                    _ => return Err(err),
-                },
+        let size = match value.int(ident_eval) {
+            Ok(x) => 32 - x.leading_zeros(),
+            Err(err) => match err.kind {
+                ErrorKind::UnallowedFloat => 32,
+                _ => return Err(err),
             },
-            Argument::Identifier(label) => {
-                let val = label_table
-                    .get(label)
-                    .ok_or_else(|| ErrorKind::UnknownLabel(label.clone()).add_span(span))?
-                    .address();
-                64 - val.leading_zeros()
-            }
         };
         def.replace_range(capture_span(&x, 0), &size.to_string());
     }
@@ -356,12 +333,12 @@ pub fn expand<'b, 'a: 'b>(
                 arg.value.1 = span.clone();
                 let value = &arg.value;
                 match &value.0 {
-                    Argument::Number(_) => continue,
-                    Argument::Identifier(ident) => {
+                    Expr::Identifier((ident, _)) => {
                         if let Some(pseudoinstruction_arg) = get_arg(ident) {
                             arg.value = pseudoinstruction_arg.value.clone();
                         }
                     }
+                    _ => continue,
                 }
             }
             Ok((def, args))

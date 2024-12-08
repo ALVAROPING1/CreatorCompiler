@@ -20,7 +20,6 @@ pub enum ArgumentType {
     String,
     Expression,
     RegisterName,
-    Label,
 }
 
 /// Unsupported operations for floating point numbers
@@ -65,6 +64,7 @@ pub enum Kind {
     },
     DivisionBy0,
     UnallowedFloat,
+    UnallowedLabel,
     UnallowedFloatOperation(OperationKind),
     UnallowedStatementType {
         section: Option<Spanned<DirectiveSegment>>,
@@ -127,6 +127,7 @@ impl Kind {
             Self::IncorrectArgumentType { .. } => 15,
             Self::DivisionBy0 => 16,
             Self::UnallowedFloat => 17,
+            Self::UnallowedLabel => 21,
             Self::UnallowedFloatOperation(..) => 18,
             Self::UnallowedStatementType { .. } => 19,
             Self::PseudoinstructionError { .. } => 20,
@@ -202,7 +203,7 @@ impl Kind {
                 format!("This argument has type `{found:?}`")
             }
             Self::DivisionBy0 => "This expression has value 0".into(),
-            Self::UnallowedFloat => "This value can't be used".into(),
+            Self::UnallowedFloat | Self::UnallowedLabel => "This value can't be used".into(),
             Self::UnallowedFloatOperation(..) => "This operation can't be performed".into(),
             Self::UnallowedStatementType { .. } => {
                 "This statement can't be used in the current section".into()
@@ -288,6 +289,9 @@ impl fmt::Display for Kind {
             Self::DivisionBy0 => write!(f, "Can't divide by 0"),
             Self::UnallowedFloat => {
                 write!(f, "Can't use floating point values in integer expressions")
+            }
+            Self::UnallowedLabel => {
+                write!(f, "Can't use labels in literal expressions")
             }
             Self::UnallowedFloatOperation(op) => write!(
                 f,
@@ -411,7 +415,7 @@ impl crate::RenderError for PseudoinstructionError {
 }
 
 /// Trait for promoting an error [`Kind`] wrapped in a [`Result`] to an [`Error`]
-pub(super) trait SpannedErr {
+pub(crate) trait SpannedErr {
     /// Type wrapped in the Ok variant
     type T;
 

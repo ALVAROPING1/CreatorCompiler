@@ -17,7 +17,7 @@ mod error;
 pub use error::Error as ParseError;
 
 pub mod instruction;
-pub use instruction::{Argument, Instruction};
+pub use instruction::Instruction;
 
 /// Generic parser type definition
 macro_rules! Parser {
@@ -33,8 +33,6 @@ pub enum Data {
     String(String),
     /// Numeric expression
     Number(Expr),
-    /// Label name
-    Label(String),
 }
 
 /// AST node for instructions
@@ -103,10 +101,7 @@ fn parser<'a>() -> Parser!(Token, Vec<ASTNode>, 'a) {
                 .ignore_then(
                     expression::parser()
                         .map(Data::Number)
-                        .or(select! {
-                            Token::String(s) => Data::String(s),
-                            Token::Identifier(s) => Data::Label(s),
-                        })
+                        .or(select! { Token::String(s) => Data::String(s) })
                         .map_with_span(|x, span| (x, span)),
                 )
                 .then_ignore(
@@ -252,7 +247,7 @@ mod test {
                 )],
             ),
             (
-                ".name \"a\", 1\n",
+                ".name \"a\", 1, b\n",
                 vec![directive(
                     vec![],
                     (".name", 0..5),
@@ -260,10 +255,11 @@ mod test {
                         vec![
                             (Data::String("a".into()), 6..9),
                             (Data::Number(Expr::Integer(1)), 11..12),
+                            (Data::Number(Expr::Identifier(("b".into(), 14..15))), 14..15),
                         ],
-                        6..12,
+                        6..15,
                     ),
-                    0..12,
+                    0..15,
                 )],
             ),
             (

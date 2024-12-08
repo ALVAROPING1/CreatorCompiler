@@ -6,7 +6,8 @@
 use chumsky::prelude::*;
 
 use super::{Parser, Span, Spanned, Token};
-use crate::compiler::{error::OperationKind, CompileError, ErrorKind};
+use crate::compiler::error::{OperationKind, SpannedErr};
+use crate::compiler::{CompileError, ErrorKind};
 
 /// Allowed unary operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,6 +39,8 @@ pub enum Expr {
     Float(Spanned<f64>),
     /// Character literal
     Character(char),
+    /// Identifier
+    Identifier(Spanned<String>),
     /// Unary operation on other expressions
     UnaryOp {
         op: Spanned<UnaryOp>,
@@ -54,25 +57,34 @@ pub enum Expr {
 impl Expr {
     /// Evaluates the expression as an integer
     ///
+    /// # Parameters
+    ///
+    /// * `ident_eval`: callback function to evaluate identifiers
+    ///
     /// # Errors
     ///
-    /// Returns a [`ErrorKind::UnallowedFloat`] if a float literal is used, and a
-    /// [`ErrorKind::DivisionBy0`] if a division by 0 is attempted
-    pub fn int(&self) -> Result<i32, CompileError> {
+    /// Returns a [`ErrorKind::UnallowedFloat`] if a float literal is used, a
+    /// [`ErrorKind::DivisionBy0`] if a division by 0 is attempted, or any [`ErrorKind`] returned by
+    /// the callback function
+    pub fn int(
+        &self,
+        ident_eval: impl Copy + Fn(&str) -> Result<i32, ErrorKind>,
+    ) -> Result<i32, CompileError> {
         #[allow(clippy::cast_possible_wrap)]
         Ok(match self {
             Self::Integer(value) => *value as i32,
             Self::Float((_, span)) => return Err(ErrorKind::UnallowedFloat.add_span(span)),
             Self::Character(c) => *c as i32,
+            Self::Identifier((ident, span)) => ident_eval(ident).add_span(span)?,
             Self::UnaryOp { op, operand } => match op.0 {
-                UnaryOp::Plus => operand.0.int()?,
-                UnaryOp::Minus => -operand.0.int()?,
-                UnaryOp::Complement => !operand.0.int()?,
+                UnaryOp::Plus => operand.0.int(ident_eval)?,
+                UnaryOp::Minus => -operand.0.int(ident_eval)?,
+                UnaryOp::Complement => !operand.0.int(ident_eval)?,
             },
             Self::BinaryOp { op, lhs, rhs } => {
-                let lhs = lhs.0.int()?;
+                let lhs = lhs.0.int(ident_eval)?;
                 let span = &rhs.1;
-                let rhs = rhs.0.int()?;
+                let rhs = rhs.0.int(ident_eval)?;
                 match op.0 {
                     BinaryOp::Add => lhs.overflowing_add(rhs).0,
                     BinaryOp::Sub => lhs.overflowing_sub(rhs).0,
@@ -101,6 +113,7 @@ impl Expr {
             Self::Integer(value) => f64::from(*value),
             Self::Float((value, _)) => *value,
             Self::Character(c) => f64::from(*c as u32),
+            Self::Identifier((_, span)) => return Self::unallowed_ident("").add_span(span),
             Self::UnaryOp { op, operand } => match op.0 {
                 UnaryOp::Plus => operand.0.float()?,
                 UnaryOp::Minus => -operand.0.float()?,
@@ -121,6 +134,15 @@ impl Expr {
                 }
             }
         })
+    }
+
+    /// Identifier evaluator utility function that doesn't allow any identifier in the expression
+    ///
+    /// # Errors
+    ///
+    /// Always errors with a [`ErrorKind::UnallowedLabel`]
+    pub const fn unallowed_ident<T>(_: &str) -> Result<T, ErrorKind> {
+        Err(ErrorKind::UnallowedLabel)
     }
 }
 
@@ -166,19 +188,20 @@ pub fn parser() -> Parser!(Token, Expr) {
     // Newline tokens
     let newline = || just(Token::Ctrl('\n')).repeated();
     // Literal values
-    let literal_num = select! { |span|
+    let literal = select! { |span|
         Token::Integer(x) => Expr::Integer(x),
         Token::Float(x) => Expr::Float((f64::from_bits(x), span)),
-        Token::Character(c) => Expr::Character(c)
+        Token::Character(c) => Expr::Character(c),
+        Token::Identifier(ident) => Expr::Identifier((ident, span)),
     };
     recursive(|expr| {
         // NOTE: newlines before atoms (literal numbers/parenthesized expressions) and operators
         // are allowed so that expressions may span multiple lines. Newlines aren't allowed after
         // them to prevent them from consuming new lines required to end statements
 
-        // atom: `atom -> \n* (literal_num | ( expression ))`
+        // atom: `atom -> \n* (literal | ( expression ))`
         let atom = newline().ignore_then(
-            literal_num
+            literal
                 .or(expr.delimited_by(
                     just(Token::Ctrl('(')),
                     newline().ignore_then(just(Token::Ctrl(')'))),
@@ -254,9 +277,17 @@ mod test {
     type ExprResult = (Result<i32, CompileError>, Result<f64, CompileError>);
 
     fn test(test_cases: &[(&str, Expr, ExprResult)]) {
+        let ident_eval = |ident: &str| {
+            if ident.len() == 1 {
+                Ok(i32::from(ident.as_bytes()[0] - b'a' + 5))
+            } else {
+                Err(ErrorKind::UnknownLabel(ident.to_owned()))
+            }
+        };
         for (src, expr, (res1, res2)) in test_cases {
             assert_eq!(parse(src), Ok(expr.clone()), "`{src}`");
-            assert_eq!(expr.int(), *res1, "`{src}` as int\n{expr:?}");
+            let int = expr.int(ident_eval);
+            assert_eq!(int, *res1, "`{src}` as int\n{expr:?}");
             assert_eq!(expr.float(), *res2, "`{src}` as float\n{expr:?}");
         }
     }
@@ -266,11 +297,34 @@ mod test {
     }
 
     #[test]
+    fn unallowed_ident() {
+        for i in &["a", "b", "test", "identifier"] {
+            assert_eq!(
+                Expr::unallowed_ident::<i32>(i),
+                Err(ErrorKind::UnallowedLabel)
+            );
+        }
+    }
+
+    #[test]
     fn literal() {
         test(&[
             ("16", Expr::Integer(16), (Ok(16), Ok(16.0))),
             ("\n\n16", Expr::Integer(16), (Ok(16), Ok(16.0))),
             ("'a'", Expr::Character('a'), (Ok(97), Ok(97.0))),
+            (
+                "a",
+                Expr::Identifier(("a".into(), 0..1)),
+                (Ok(5), Err(ErrorKind::UnallowedLabel.add_span(&(0..1)))),
+            ),
+            (
+                "test",
+                Expr::Identifier(("test".into(), 0..4)),
+                (
+                    Err(ErrorKind::UnknownLabel("test".into()).add_span(&(0..4))),
+                    Err(ErrorKind::UnallowedLabel.add_span(&(0..4))),
+                ),
+            ),
             (
                 "1.0",
                 Expr::Float((1.0, 0..3)),
@@ -282,6 +336,7 @@ mod test {
     const fn int(x: u32, s: Span) -> Spanned<Expr> {
         (Expr::Integer(x), s)
     }
+
     fn float(x: f64, s: Span) -> Spanned<Expr> {
         (Expr::Float((x, s.clone())), s)
     }
@@ -364,15 +419,26 @@ mod test {
 
     #[test]
     fn binary_sub() {
-        test(&[(
-            "4294967295 - 4294967295",
-            bin_op(
-                (BinaryOp::Sub, 11..12),
-                int(u32::MAX, 0..10),
-                int(u32::MAX, 13..23),
+        test(&[
+            (
+                "4294967295 - 4294967295",
+                bin_op(
+                    (BinaryOp::Sub, 11..12),
+                    int(u32::MAX, 0..10),
+                    int(u32::MAX, 13..23),
+                ),
+                (Ok(0), Ok(0.0)),
             ),
-            (Ok(0), Ok(0.0)),
-        )]);
+            (
+                "d - a",
+                bin_op(
+                    (BinaryOp::Sub, 2..3),
+                    (Expr::Identifier(("d".into(), 0..1)), 0..1),
+                    (Expr::Identifier(("a".into(), 4..5)), 4..5),
+                ),
+                (Ok(3), Err(ErrorKind::UnallowedLabel.add_span(&(0..1)))),
+            ),
+        ]);
     }
 
     #[test]

@@ -11,7 +11,7 @@ use crate::architecture::{
     FloatType, IntegerType, RegisterType, StringType,
 };
 use crate::parser::instruction::ParsedArgs;
-use crate::parser::{ASTNode, Argument, Data as DataToken, Expr, Statement, Token};
+use crate::parser::{ASTNode, Data as DataToken, Expr, Statement, Token};
 use crate::span::{Span, Spanned};
 
 mod label;
@@ -85,17 +85,14 @@ fn parse_instruction<'a>(
                     // Get the current field
                     let field = &inst.syntax.fields[arg.field_idx];
                     // Get the value
-                    let value = match (field.r#type, &arg.value.0) {
+                    let value = match field.r#type {
                         // If the field expects a number and the argument value is a number,
                         // evaluate the number
-                        (
-                            FieldType::Address
-                            | FieldType::ImmSigned
-                            | FieldType::ImmUnsigned
-                            | FieldType::OffsetBytes
-                            | FieldType::OffsetWords,
-                            Argument::Number(expr),
-                        ) => match expr.int() {
+                        FieldType::Address
+                        | FieldType::ImmSigned
+                        | FieldType::ImmUnsigned
+                        | FieldType::OffsetBytes
+                        | FieldType::OffsetWords => match arg.value.0.int(Expr::unallowed_ident) {
                             Ok(val) => val.into(),
                             // If there was any error, assume the argument fits. This should be
                             // properly handled later when the arguments are fully evaluated
@@ -229,19 +226,11 @@ pub struct Instruction {
     pub user: Span,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum ExprOrIdent {
-    /// Identifier
-    Identifier(String),
-    /// Expression that can be evaluated to a number
-    Number(Expr),
-}
-
 /// Value to add to the data segment pending argument evaluation
 #[derive(Debug, PartialEq, Clone)]
 pub enum PendingValue {
     /// Integer value
-    Integer(Spanned<ExprOrIdent>, u8, IntegerType),
+    Integer(Spanned<Expr>, u8, IntegerType),
     /// Reserved space initialized to 0
     Space(u64),
     /// Padding added to align elements
@@ -316,10 +305,6 @@ impl DataToken {
                 expected: ArgumentType::String,
                 found: ArgumentType::Expression,
             }),
-            Self::Label(_) => Err(ErrorKind::IncorrectArgumentType {
-                expected: ArgumentType::String,
-                found: ArgumentType::Label,
-            }),
         }
         .add_span(span)
     }
@@ -335,10 +320,6 @@ impl DataToken {
             Self::String(_) => Err(ErrorKind::IncorrectArgumentType {
                 expected: ArgumentType::Expression,
                 found: ArgumentType::String,
-            }),
-            Self::Label(_) => Err(ErrorKind::IncorrectArgumentType {
-                expected: ArgumentType::Expression,
-                found: ArgumentType::Label,
             }),
         }
         .add_span(span)
@@ -420,7 +401,7 @@ fn compile_data(
             ArgumentNumber::new(1, false).check(&args)?;
             let (args, _) = args;
             let (value, span) = &args[0];
-            let value = value.to_expr(span)?.int()?;
+            let value = value.to_expr(span)?.int(Expr::unallowed_ident)?;
             let size = u64::try_from(value)
                 .map_err(|_| ErrorKind::UnallowedNegativeValue(value.into()).add_span(span))?
                 * u64::from(size);
@@ -434,8 +415,7 @@ fn compile_data(
             ArgumentNumber::new(1, true).check(&args)?;
             for (value, span) in args.0 {
                 let value = match value {
-                    DataToken::Number(expr) => ExprOrIdent::Number(expr),
-                    DataToken::Label(label) => ExprOrIdent::Identifier(label),
+                    DataToken::Number(expr) => expr,
                     DataToken::String(_) => {
                         return Err(ErrorKind::IncorrectArgumentType {
                             expected: ArgumentType::Expression,
@@ -520,7 +500,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                         ArgumentNumber::new(1, false).check(&directive.args)?;
                         let (args, _) = directive.args;
                         let (value, span) = &args[0];
-                        let value = value.to_expr(span)?.int()?;
+                        let value = value.to_expr(span)?.int(Expr::unallowed_ident)?;
                         let value = u32::try_from(value).map_err(|_| {
                             ErrorKind::UnallowedNegativeValue(value.into()).add_span(span)
                         })?;
@@ -633,42 +613,37 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                     | FieldType::ImmUnsigned
                     | FieldType::OffsetBytes
                     | FieldType::OffsetWords) => {
-                        let value = match arg.value.0 {
-                            Argument::Number(expr) => expr.int()?.into(),
-                            Argument::Identifier(label) => {
-                                let value: i64 = label_table
-                                    .get(&label)
-                                    .ok_or_else(|| {
-                                        ErrorKind::UnknownLabel(label).add_span(&arg.value.1)
-                                    })?
-                                    .address()
-                                    .try_into()
-                                    .unwrap();
-                                let next_address = i64::try_from(inst.address).unwrap()
-                                    + i64::from(word_size) * i64::from(def.nwords);
-                                let offset = value - next_address;
-                                match val_type {
-                                    FieldType::OffsetWords => offset / i64::from(word_size),
-                                    FieldType::OffsetBytes => offset,
-                                    _ => value,
-                                }
+                        let ident_eval = |label: &str| {
+                            let value: i64 = label_table
+                                .get(label)
+                                .ok_or_else(|| ErrorKind::UnknownLabel(label.to_owned()))?
+                                .address()
+                                .try_into()
+                                .unwrap();
+                            let next_address = i64::try_from(inst.address).unwrap()
+                                + i64::from(word_size) * i64::from(def.nwords);
+                            let offset = value - next_address;
+                            Ok(match val_type {
+                                FieldType::OffsetWords => offset / i64::from(word_size),
+                                FieldType::OffsetBytes => offset,
+                                _ => value,
                             }
+                            .try_into()
+                            .unwrap())
                         };
+                        let value: i64 = arg.value.0.int(ident_eval)?.into();
                         (value, value.to_string())
                     }
                     val_type @ (FieldType::IntReg
                     | FieldType::CtrlReg
                     | FieldType::SingleFPReg
                     | FieldType::DoubleFPReg) => {
-                        let name = match arg.value.0 {
-                            Argument::Number(_) => {
-                                return Err(ErrorKind::IncorrectArgumentType {
-                                    expected: ArgumentType::RegisterName,
-                                    found: ArgumentType::Expression,
-                                }
-                                .add_span(&arg.value.1))
+                        let Expr::Identifier((name, _)) = arg.value.0 else {
+                            return Err(ErrorKind::IncorrectArgumentType {
+                                expected: ArgumentType::RegisterName,
+                                found: ArgumentType::Expression,
                             }
-                            Argument::Identifier(name) => name,
+                            .add_span(&arg.value.1));
                         };
                         let bank_type = match val_type {
                             FieldType::IntReg => RegisterType::Int,
@@ -740,17 +715,17 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                 labels: data.labels,
                 value: match data.value {
                     PendingValue::Integer((value, span), size, int_type) => {
-                        let value = match value {
-                            ExprOrIdent::Identifier(label) => label_table
-                                .get(&label)
-                                .ok_or_else(|| ErrorKind::UnknownLabel(label).add_span(&span))?
+                        let ident_eval = |label: &str| {
+                            Ok(label_table
+                                .get(label)
+                                .ok_or_else(|| ErrorKind::UnknownLabel(label.to_owned()))?
                                 .address()
                                 .try_into()
-                                .unwrap(),
-                            ExprOrIdent::Number(expr) => expr.int()?,
+                                .unwrap())
                         };
+                        let value = value.int(ident_eval)?.into();
                         Value::Integer(
-                            Integer::build(value.into(), (size * 8).into(), Some(int_type), None)
+                            Integer::build(value, (size * 8).into(), Some(int_type), None)
                                 .add_span(&span)?,
                         )
                     }
@@ -1088,6 +1063,30 @@ mod test {
                 data(16, &["a"], int_val(16, 8, IntegerType::Byte)),
                 data(17, &[], int_val(18, 8, IntegerType::Byte)),
                 data(18, &["b"], int_val(0, 8, IntegerType::Byte)),
+            ]
+        );
+    }
+
+    #[test]
+    fn calc_reserved_space() {
+        let code = ".data\nsize: .byte end-begin\nbegin: .zero 14\nend: .byte 0\n.text\nmain: nop";
+        let x = compile(code).unwrap();
+        assert_eq!(
+            x.label_table,
+            label_table([
+                ("main", 0, 63..68),
+                ("size", 16, 6..11),
+                ("begin", 17, 28..34),
+                ("end", 31, 44..48),
+            ])
+        );
+        assert_eq!(x.instructions, vec![main_nop(69..72)]);
+        assert_eq!(
+            x.data_memory,
+            vec![
+                data(16, &["size"], int_val(14, 8, IntegerType::Byte)),
+                data(17, &["begin"], Value::Space(14)),
+                data(31, &["end"], int_val(0, 8, IntegerType::Byte)),
             ]
         );
     }
