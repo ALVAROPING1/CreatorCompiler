@@ -55,17 +55,19 @@ impl ArchitectureJS {
     /// # Parameters
     ///
     /// * `src`: assembly code to compile
+    /// * `html_error`: whether to format error messages in HTML (`true`) or ANSI (`false`)
     ///
     /// # Errors
     ///
     /// Errors if the assembly code has a syntactical or semantical error
-    pub fn compile(&self, src: &str) -> Result<CompiledCodeJS, String> {
+    pub fn compile(&self, src: &str, html_error: bool) -> Result<CompiledCodeJS, String> {
         const FILENAME: &str = "assembly";
+        let format_err = |e: String| if html_error { to_html(&e) } else { e };
         // Parse the source to an AST
-        let ast = crate::parser::parse(src).map_err(|e| to_html(&e.render(FILENAME, src)))?;
+        let ast = crate::parser::parse(src).map_err(|e| format_err(e.render(FILENAME, src)))?;
         // Compile the AST
         let compiled = crate::compiler::compile(self.borrow_dependent(), ast)
-            .map_err(|e| to_html(&e.render(FILENAME, src)))?;
+            .map_err(|e| format_err(e.render(FILENAME, src)))?;
         // Wrap the instructions in a type that can be returned to `JS`
         let instructions = compiled
             .instructions
