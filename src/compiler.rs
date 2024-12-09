@@ -11,7 +11,9 @@ use crate::architecture::{
     FloatType, IntegerType, RegisterType, StringType,
 };
 use crate::parser::instruction::ParsedArgs;
-use crate::parser::{ASTNode, Data as DataToken, Expr, Statement, Token};
+use crate::parser::{
+    ASTNode, Data as DataToken, Expr, InstructionNode, Statement as StatementNode, Token,
+};
 use crate::span::{Span, Spanned};
 
 mod label;
@@ -346,6 +348,87 @@ fn take_spanned_vec<T>(src: &mut Vec<Spanned<T>>) -> Vec<T> {
     std::mem::take(src).into_iter().map(|x| x.0).collect()
 }
 
+/// Statement extracted from the AST
+#[derive(Debug, PartialEq, Clone)]
+struct Statement<T> {
+    /// Labels attached to the node
+    labels: Vec<Spanned<String>>,
+    /// Statement of the node
+    statement: Spanned<T>,
+}
+
+/// Data values to add to the data segment
+struct DataValue {
+    /// Expected type of the values
+    data_type: DirectiveData,
+    /// Values to be added to the data segment
+    values: Spanned<Vec<Spanned<DataToken>>>,
+}
+
+type Instructions = Vec<Statement<InstructionNode>>;
+type DataDirectives = Vec<Statement<DataValue>>;
+
+fn split_statements(
+    arch: &Architecture,
+    ast: Vec<ASTNode>,
+) -> Result<(Instructions, DataDirectives), CompileError> {
+    let mut current_section: Option<Spanned<DirectiveSegment>> = None;
+    let mut data_directives = Vec::new();
+    let mut instructions = Vec::new();
+
+    for node in ast {
+        match node.statement.0 {
+            StatementNode::Directive(directive) => {
+                let action = arch.find_directive(&directive.name.0).ok_or_else(|| {
+                    ErrorKind::UnknownDirective(directive.name.0).add_span(&directive.name.1)
+                })?;
+                match (action, &current_section) {
+                    (DirectiveAction::Segment(new_section), _) => {
+                        ArgumentNumber::new(0, false).check(&directive.args)?;
+                        current_section = Some((new_section, node.statement.1));
+                    }
+                    (DirectiveAction::GlobalSymbol(_), _) => todo!(),
+                    (DirectiveAction::Nop(_), _) => {}
+                    (DirectiveAction::Data(data_type), Some((DirectiveSegment::Data, _))) => {
+                        let span = node.statement.1;
+                        data_directives.push(Statement {
+                            labels: node.labels,
+                            statement: (
+                                DataValue {
+                                    data_type,
+                                    values: directive.args,
+                                },
+                                span,
+                            ),
+                        });
+                    }
+                    (DirectiveAction::Data(_), _) => {
+                        return Err(ErrorKind::UnallowedStatementType {
+                            section: current_section,
+                            found: DirectiveSegment::Data,
+                        }
+                        .add_span(&node.statement.1));
+                    }
+                }
+            }
+            StatementNode::Instruction(instruction) => {
+                if !matches!(current_section, Some((DirectiveSegment::Code, _))) {
+                    return Err(ErrorKind::UnallowedStatementType {
+                        section: current_section,
+                        found: DirectiveSegment::Code,
+                    }
+                    .add_span(&node.statement.1));
+                }
+                instructions.push(Statement {
+                    labels: node.labels,
+                    statement: (instruction, node.statement.1),
+                });
+            }
+        }
+    }
+    Ok((instructions, data_directives))
+}
+
 /// Amount of arguments expected by a directive
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ArgumentNumber {
@@ -384,189 +467,159 @@ impl ArgumentNumber {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn compile_data(
+    arch: &Architecture,
     label_table: &mut LabelTable,
-    section: &mut Section,
-    memory: &mut Vec<PendingData>,
-    word_size: u64,
-    data_type: DirectiveData,
-    mut labels: Vec<Spanned<String>>,
-    args: Spanned<Spanned<Vec<Spanned<DataToken>>>>,
-) -> Result<(), CompileError> {
-    for (label, span) in &labels {
-        label_table.insert(label.to_owned(), Label::new(section.get(), span.clone()))?;
-    }
-    let (args, statement_span) = args;
-    match data_type {
-        DirectiveData::Alignment(align_type) => {
-            ArgumentNumber::new(1, false).check(&args)?;
-            let (value, span) = &args.0[0];
-            let value = value.to_expr(span)?.int(Expr::unallowed_ident)?;
-            let value = u32::try_from(value)
-                .map_err(|_| ErrorKind::UnallowedNegativeValue(value.into()).add_span(span))?;
-            let align = match align_type {
-                AlignmentType::Exponential => 2_u64.pow(value),
-                AlignmentType::Byte => value.into(),
-            };
-            let (start, size) = section.try_align(align).add_span(&statement_span)?;
-            if size != 0 {
+    elements: Vec<Statement<DataValue>>,
+) -> Result<Vec<PendingData>, CompileError> {
+    let mut memory = Vec::with_capacity(elements.len());
+    let mut section = Section::new("Data", arch.data_section());
+    let word_size = u64::from(arch.word_size()) / 8;
+
+    for data_directive in elements {
+        let mut labels = data_directive.labels;
+        for (label, span) in &labels {
+            label_table.insert(label.to_owned(), Label::new(section.get(), span.clone()))?;
+        }
+        let (statement, statement_span) = data_directive.statement;
+        let args = statement.values;
+        match statement.data_type {
+            DirectiveData::Alignment(align_type) => {
+                ArgumentNumber::new(1, false).check(&args)?;
+                let (value, span) = &args.0[0];
+                let value = value.to_expr(span)?.int(Expr::unallowed_ident)?;
+                let value = u32::try_from(value)
+                    .map_err(|_| ErrorKind::UnallowedNegativeValue(value.into()).add_span(span))?;
+                let align = match align_type {
+                    AlignmentType::Exponential => 2_u64.pow(value),
+                    AlignmentType::Byte => value.into(),
+                };
+                let (start, size) = section.try_align(align).add_span(&statement_span)?;
+                if size != 0 {
+                    memory.push(PendingData {
+                        address: start,
+                        labels: take_spanned_vec(&mut labels),
+                        value: PendingValue::Padding(size),
+                    });
+                }
+            }
+            DirectiveData::Space(size) => {
+                ArgumentNumber::new(1, false).check(&args)?;
+                let (value, span) = &args.0[0];
+                let value = value.to_expr(span)?.int(Expr::unallowed_ident)?;
+                let size = u64::try_from(value)
+                    .map_err(|_| ErrorKind::UnallowedNegativeValue(value.into()).add_span(span))?
+                    * u64::from(size);
                 memory.push(PendingData {
-                    address: start,
+                    address: section.try_reserve(size).add_span(span)?,
                     labels: take_spanned_vec(&mut labels),
-                    value: PendingValue::Padding(size),
+                    value: PendingValue::Space(size),
                 });
             }
-        }
-        DirectiveData::Space(size) => {
-            ArgumentNumber::new(1, false).check(&args)?;
-            let (value, span) = &args.0[0];
-            let value = value.to_expr(span)?.int(Expr::unallowed_ident)?;
-            let size = u64::try_from(value)
-                .map_err(|_| ErrorKind::UnallowedNegativeValue(value.into()).add_span(span))?
-                * u64::from(size);
-            memory.push(PendingData {
-                address: section.try_reserve(size).add_span(span)?,
-                labels: take_spanned_vec(&mut labels),
-                value: PendingValue::Space(size),
-            });
-        }
-        DirectiveData::Int(size, int_type) => {
-            ArgumentNumber::new(1, true).check(&args)?;
-            for (value, span) in args.0 {
-                let value = match value {
-                    DataToken::Number(expr) => expr,
-                    DataToken::String(_) => {
-                        return Err(ErrorKind::IncorrectArgumentType {
-                            expected: ArgumentType::Expression,
-                            found: ArgumentType::String,
+            DirectiveData::Int(size, int_type) => {
+                ArgumentNumber::new(1, true).check(&args)?;
+                for (value, span) in args.0 {
+                    let value = match value {
+                        DataToken::Number(expr) => expr,
+                        DataToken::String(_) => {
+                            return Err(ErrorKind::IncorrectArgumentType {
+                                expected: ArgumentType::Expression,
+                                found: ArgumentType::String,
+                            }
+                            .add_span(&span))
                         }
-                        .add_span(&span))
-                    }
-                };
-                memory.push(PendingData {
-                    address: section
-                        .try_reserve_aligned(size.into(), word_size)
-                        .add_span(&span)?,
-                    labels: take_spanned_vec(&mut labels),
-                    value: PendingValue::Integer((value, span), size, int_type),
-                });
+                    };
+                    memory.push(PendingData {
+                        address: section
+                            .try_reserve_aligned(size.into(), word_size)
+                            .add_span(&span)?,
+                        labels: take_spanned_vec(&mut labels),
+                        value: PendingValue::Integer((value, span), size, int_type),
+                    });
+                }
             }
-        }
-        DirectiveData::Float(float_type) => {
-            ArgumentNumber::new(1, true).check(&args)?;
-            for (value, span) in args.0 {
-                let value = value.to_expr(&span)?.float()?;
-                #[allow(clippy::cast_possible_truncation)]
-                let (value, size) = match float_type {
-                    FloatType::Float => (PendingValue::Float(value as f32), 4),
-                    FloatType::Double => (PendingValue::Double(value), 8),
-                };
-                memory.push(PendingData {
-                    address: section
-                        .try_reserve_aligned(size, word_size)
-                        .add_span(&span)?,
-                    labels: take_spanned_vec(&mut labels),
-                    value,
-                });
+            DirectiveData::Float(float_type) => {
+                ArgumentNumber::new(1, true).check(&args)?;
+                for (value, span) in args.0 {
+                    let value = value.to_expr(&span)?.float()?;
+                    #[allow(clippy::cast_possible_truncation)]
+                    let (value, size) = match float_type {
+                        FloatType::Float => (PendingValue::Float(value as f32), 4),
+                        FloatType::Double => (PendingValue::Double(value), 8),
+                    };
+                    memory.push(PendingData {
+                        address: section
+                            .try_reserve_aligned(size, word_size)
+                            .add_span(&span)?,
+                        labels: take_spanned_vec(&mut labels),
+                        value,
+                    });
+                }
             }
-        }
-        DirectiveData::String(str_type) => {
-            ArgumentNumber::new(1, true).check(&args)?;
-            for (value, span) in args.0 {
-                let data = value.into_string(&span)?;
-                let null_terminated = str_type == StringType::AsciiNullEnd;
-                memory.push(PendingData {
-                    address: section
-                        .try_reserve(data.len() as u64 + u64::from(null_terminated))
-                        .add_span(&span)?,
-                    labels: take_spanned_vec(&mut labels),
-                    value: PendingValue::String {
-                        data,
-                        null_terminated,
-                    },
-                });
+            DirectiveData::String(str_type) => {
+                ArgumentNumber::new(1, true).check(&args)?;
+                for (value, span) in args.0 {
+                    let data = value.into_string(&span)?;
+                    let null_terminated = str_type == StringType::AsciiNullEnd;
+                    memory.push(PendingData {
+                        address: section
+                            .try_reserve(data.len() as u64 + u64::from(null_terminated))
+                            .add_span(&span)?,
+                        labels: take_spanned_vec(&mut labels),
+                        value: PendingValue::String {
+                            data,
+                            null_terminated,
+                        },
+                    });
+                }
             }
         }
     }
-    Ok(())
+    Ok(memory)
+}
+
+fn compile_instructions<'a>(
+    arch: &'a Architecture,
+    label_table: &mut LabelTable,
+    instructions: Vec<Statement<InstructionNode>>,
+) -> Result<Vec<PendingInstruction<'a>>, CompileError> {
+    let mut code_section = Section::new("Instructions", arch.code_section());
+    let mut pending_instructions = Vec::new();
+
+    for mut instruction in instructions {
+        let (name, span) = instruction.statement.0.name;
+        let parsed_instruction =
+            parse_instruction(arch, (name, span.clone()), &instruction.statement.0.args)?;
+        for (label, span) in &instruction.labels {
+            label_table.insert(label.clone(), Label::new(code_section.get(), span.clone()))?;
+        }
+        let first_idx = pending_instructions.len();
+        process_instruction(
+            arch,
+            &mut code_section,
+            label_table,
+            &mut pending_instructions,
+            parsed_instruction,
+            instruction.statement.1,
+        )?;
+        if let Some(inst) = pending_instructions.get_mut(first_idx) {
+            inst.labels = take_spanned_vec(&mut instruction.labels);
+        }
+    }
+    Ok(pending_instructions)
 }
 
 #[allow(clippy::too_many_lines)]
 pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, CompileError> {
     let mut label_table = LabelTable::default();
-    let mut code_section = Section::new("Instructions", arch.code_section());
-    let mut data_section = Section::new("Data", arch.data_section());
     let word_size = arch.word_size() / 8;
-    let mut pending_instructions = Vec::new();
-    let mut pending_data = Vec::new();
-    let mut instruction_eof = 0;
-    let mut current_section: Option<Spanned<DirectiveSegment>> = None;
 
-    for node in ast {
-        match node.statement.0 {
-            Statement::Directive(directive) => {
-                let action = arch.find_directive(&directive.name.0).ok_or_else(|| {
-                    ErrorKind::UnknownDirective(directive.name.0).add_span(&directive.name.1)
-                })?;
-                match (action, &current_section) {
-                    (DirectiveAction::Segment(new_section), _) => {
-                        ArgumentNumber::new(0, false).check(&directive.args)?;
-                        current_section = Some((new_section, node.statement.1));
-                    }
-                    (DirectiveAction::GlobalSymbol(_), _) => todo!(),
-                    (DirectiveAction::Nop(_), _) => {}
-                    (DirectiveAction::Data(data_type), Some((DirectiveSegment::Data, _))) => {
-                        let span = directive.name.1.start..directive.args.1.end;
-                        compile_data(
-                            &mut label_table,
-                            &mut data_section,
-                            &mut pending_data,
-                            word_size.into(),
-                            data_type,
-                            node.labels,
-                            (directive.args, span),
-                        )?;
-                    }
-                    _ => {
-                        return Err(ErrorKind::UnallowedStatementType {
-                            section: current_section,
-                            found: DirectiveSegment::Data,
-                        }
-                        .add_span(&node.statement.1));
-                    }
-                }
-            }
-            Statement::Instruction(instruction) => {
-                if !matches!(current_section, Some((DirectiveSegment::Code, _))) {
-                    return Err(ErrorKind::UnallowedStatementType {
-                        section: current_section,
-                        found: DirectiveSegment::Code,
-                    }
-                    .add_span(&node.statement.1));
-                }
-                let (name, span) = instruction.name;
-                let instruction = parse_instruction(arch, (name, span.clone()), &instruction.args)?;
-                for (label, span) in &node.labels {
-                    label_table
-                        .insert(label.clone(), Label::new(code_section.get(), span.clone()))?;
-                }
-                let span = node.statement.1;
-                instruction_eof = span.end;
-                let first_idx = pending_instructions.len();
-                process_instruction(
-                    arch,
-                    &mut code_section,
-                    &mut label_table,
-                    &mut pending_instructions,
-                    instruction,
-                    span,
-                )?;
-                if let Some(inst) = pending_instructions.get_mut(first_idx) {
-                    inst.labels = node.labels.into_iter().map(|x| x.0).collect();
-                }
-            }
-        }
-    }
+    let (instructions, data_directives) = split_statements(arch, ast)?;
+
+    let instruction_eof = instructions.last().map_or(0, |inst| inst.statement.1.end);
+    let pending_data = compile_data(arch, &mut label_table, data_directives)?;
+    let pending_instructions = compile_instructions(arch, &mut label_table, instructions)?;
 
     match label_table.get(arch.main_label()) {
         None => {
@@ -797,6 +850,8 @@ mod test {
         inst(0, &["main"], "nop", binary, span)
     }
 
+    static NOP_BINARY: &str = "11110000000000000000000001111111";
+
     fn data(address: u64, labels: &[&str], value: Value) -> Data {
         Data {
             address,
@@ -919,20 +974,26 @@ mod test {
 
     #[test]
     fn instruction_fields_immediate_labels() {
-        let x = compile(".text\nmain: nop\na: imm a, a, a").unwrap();
-        let binary = "00010000000000000001000000001000";
+        let x = compile(".text\nmain: nop\na: imm a, c, b\nb: nop\n.data\nc: .zero 1").unwrap();
+        let binary = "00010000000000000010000000100000";
         assert_eq!(
             x.label_table,
-            label_table([("main", 0, 6..11), ("a", 4, 16..18)])
+            label_table([
+                ("main", 0, 6..11),
+                ("a", 4, 16..18),
+                ("b", 8, 31..33),
+                ("c", 16, 44..46)
+            ])
         );
         assert_eq!(
             x.instructions,
             vec![
                 main_nop(12..15),
-                inst(4, &["a"], "imm 4 4 4", binary, 19..30),
+                inst(4, &["a"], "imm 4 16 8", binary, 19..30),
+                inst(8, &["b"], "nop", NOP_BINARY, 34..37),
             ]
         );
-        assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.data_memory, vec![data(16, &["c"], Value::Space(1))]);
     }
 
     #[test]
@@ -960,7 +1021,6 @@ mod test {
 
         let x = compile(".text\na: off main, main\nnop\nmain: nop").unwrap();
         let binary = "01000000000000000000000000000001";
-        let nop_binary = "11110000000000000000000001111111";
         assert_eq!(
             x.label_table,
             label_table([("a", 0, 6..8), ("main", 8, 28..33)])
@@ -969,8 +1029,8 @@ mod test {
             x.instructions,
             vec![
                 inst(0, &["a"], "off 4 1", binary, 9..23),
-                inst(4, &[], "nop", nop_binary, 24..27),
-                inst(8, &["main"], "nop", nop_binary, 34..37),
+                inst(4, &[], "nop", NOP_BINARY, 24..27),
+                inst(8, &["main"], "nop", NOP_BINARY, 34..37),
             ]
         );
         assert_eq!(x.data_memory, vec![]);
@@ -986,6 +1046,24 @@ mod test {
             vec![inst(0, &["main"], "off 6 7", binary, 12..20)]
         );
         assert_eq!(x.data_memory, vec![]);
+    }
+
+    #[test]
+    fn instruction_fields_offsets_unaligned_labels() {
+        let x = compile(".text\nmain: off 1, a\n.data\n.zero 1\na: .zero 1").unwrap();
+        let binary = "00010000000000000000000000000011";
+        assert_eq!(x.label_table, label_table([("main", 0, 6..11), ("a", 17, 35..37)]));
+        assert_eq!(
+            x.instructions,
+            vec![inst(0, &["main"], "off 1 3", binary, 12..20)]
+        );
+        assert_eq!(
+            x.data_memory,
+            vec![
+                data(16, &[], Value::Space(1)),
+                data(17, &["a"], Value::Space(1))
+            ]
+        );
     }
 
     #[test]

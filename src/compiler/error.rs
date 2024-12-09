@@ -216,7 +216,7 @@ impl Kind {
     fn context(&self) -> Vec<(&Span, &'static str)> {
         match self {
             Self::DuplicateLabel(_, span) => {
-                vec![(span, "Label previously defined here")]
+                vec![(span, "Label also defined here")]
             }
             Self::UnallowedStatementType {
                 section: Some(section),
