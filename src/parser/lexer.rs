@@ -13,6 +13,8 @@ pub enum Token {
     /// Integer literal
     Integer(u32),
     /// Floating point literal
+    // NOTE: this contains an `f64`, but has to be stored as an `u64` to be able to derive `Hash`.
+    // The `Hash` trait is required by token types used for parsing by `chumsky`
     Float(u64),
     /// String literal
     String(String),
