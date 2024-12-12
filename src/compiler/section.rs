@@ -20,16 +20,19 @@
 
 //! Module containing the definition of the memory sections
 
+use num_bigint::BigUint;
+use num_traits::Zero as _;
+
 use super::ErrorKind;
-use crate::architecture::NonEmptyRangeInclusiveU64;
+use crate::architecture::NonEmptyRangeInclusive;
 
 /// Memory section manager
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Section {
     /// Address of the start of the section
-    address: u64,
+    address: BigUint,
     /// Address of the end of the section
-    end: u64,
+    end: BigUint,
     /// Name of the section
     name: &'static str,
 }
@@ -41,17 +44,17 @@ impl Section {
     ///
     /// * `name`: name of the memory section
     /// * `bounds`: start/end addresses of the section
-    pub const fn new(name: &'static str, bounds: &NonEmptyRangeInclusiveU64) -> Self {
+    pub fn new(name: &'static str, bounds: &NonEmptyRangeInclusive<BigUint>) -> Self {
         Self {
             name,
-            address: bounds.start(),
+            address: bounds.start().clone(),
             end: bounds.end(),
         }
     }
 
     /// Gets the first available address
-    pub const fn get(&self) -> u64 {
-        self.address
+    pub const fn get(&self) -> &BigUint {
+        &self.address
     }
 
     /// Reserves space for `size` addresses and returns the address of the beginning of the
@@ -65,10 +68,10 @@ impl Section {
     ///
     /// Returns a [`ErrorKind::MemorySectionFull`] if the there is not enough space in the section
     /// left for the requested allocation
-    pub fn try_reserve(&mut self, size: u64) -> Result<u64, ErrorKind> {
-        let res = self.address;
+    pub fn try_reserve(&mut self, size: &BigUint) -> Result<BigUint, ErrorKind> {
+        let res = self.address.clone();
         self.address += size;
-        if self.address - 1 > self.end {
+        if self.address > &self.end + 1u8 {
             Err(ErrorKind::MemorySectionFull(self.name))
         } else {
             Ok(res)
@@ -87,13 +90,13 @@ impl Section {
     ///
     /// Returns a [`ErrorKind::MemorySectionFull`] if the there is not enough space in the section
     /// left for the requested alignment
-    pub fn try_align(&mut self, align_size: u64) -> Result<(u64, u64), ErrorKind> {
-        let offset = self.address % align_size;
-        if offset == 0 {
-            return Ok((self.address, 0));
+    pub fn try_align(&mut self, align_size: &BigUint) -> Result<(BigUint, BigUint), ErrorKind> {
+        let offset = &self.address % align_size;
+        if offset.is_zero() {
+            return Ok((self.address.clone(), BigUint::ZERO));
         };
         let size = align_size - offset;
-        let start = self.try_reserve(size)?;
+        let start = self.try_reserve(&size)?;
         Ok((start, size))
     }
 
@@ -110,11 +113,15 @@ impl Section {
     /// Returns a [`ErrorKind::MemorySectionFull`] if the there is not enough space in the section
     /// left for the requested allocation, or a [`ErrorKind::DataUnaligned`] if the region isn't
     /// aligned
-    pub fn try_reserve_aligned(&mut self, size: u64, word_size: u64) -> Result<u64, ErrorKind> {
-        if self.address % size != 0 && self.address % word_size != 0 {
+    pub fn try_reserve_aligned(
+        &mut self,
+        size: &BigUint,
+        word_size: usize,
+    ) -> Result<BigUint, ErrorKind> {
+        if !(&self.address % size).is_zero() && !(&self.address % word_size).is_zero() {
             return Err(ErrorKind::DataUnaligned {
-                address: self.address,
-                alignment: size,
+                address: self.address.clone(),
+                alignment: size.clone(),
                 word_size,
             });
         }
@@ -124,34 +131,37 @@ impl Section {
 
 #[cfg(test)]
 mod test {
-    use super::{ErrorKind, NonEmptyRangeInclusiveU64, Section};
+    use super::*;
 
-    fn range(start: u64, end: u64) -> NonEmptyRangeInclusiveU64 {
-        NonEmptyRangeInclusiveU64::build(start, end).expect("This shouldn't fail")
+    fn range(start: u64, end: u64) -> NonEmptyRangeInclusive<BigUint> {
+        NonEmptyRangeInclusive::<BigUint>::build(start.into(), end.into())
+            .expect("This shouldn't fail")
     }
 
     #[test]
     fn reserve1() {
+        let one = 1u8.into();
         let mut section = Section::new("test", &range(0, 3));
-        assert_eq!(section.try_reserve(1), Ok(0));
-        assert_eq!(section.try_reserve(1), Ok(1));
-        assert_eq!(section.try_reserve(1), Ok(2));
-        assert_eq!(section.try_reserve(1), Ok(3));
+        assert_eq!(section.try_reserve(&one), Ok(BigUint::ZERO));
+        assert_eq!(section.try_reserve(&one), Ok(1u8.into()));
+        assert_eq!(section.try_reserve(&one), Ok(2u8.into()));
+        assert_eq!(section.try_reserve(&one), Ok(3u8.into()));
         assert_eq!(
-            section.try_reserve(1),
+            section.try_reserve(&1u8.into()),
             Err(ErrorKind::MemorySectionFull("test"))
         );
     }
 
     #[test]
     fn reserve4() {
-        for i in 1..=4 {
+        let four = 4u8.into();
+        for i in 1u8..=4 {
             let mut section = Section::new("test2", &range(0, 11));
-            assert_eq!(section.try_reserve(i), Ok(0));
-            assert_eq!(section.try_reserve(4), Ok(i));
-            assert_eq!(section.try_reserve(4), Ok(i + 4));
+            assert_eq!(section.try_reserve(&i.into()), Ok(BigUint::ZERO));
+            assert_eq!(section.try_reserve(&four), Ok(i.into()));
+            assert_eq!(section.try_reserve(&four), Ok((i + 4).into()));
             assert_eq!(
-                section.try_reserve(4),
+                section.try_reserve(&four),
                 Err(ErrorKind::MemorySectionFull("test2"))
             );
         }
@@ -159,13 +169,14 @@ mod test {
 
     #[test]
     fn reserve6() {
-        for i in 1..=6 {
+        let six = 6u8.into();
+        for i in 1u8..=6 {
             let mut section = Section::new("test3", &range(0, 17));
-            assert_eq!(section.try_reserve(i), Ok(0));
-            assert_eq!(section.try_reserve(6), Ok(i));
-            assert_eq!(section.try_reserve(6), Ok(i + 6));
+            assert_eq!(section.try_reserve(&i.into()), Ok(BigUint::ZERO));
+            assert_eq!(section.try_reserve(&six), Ok(i.into()));
+            assert_eq!(section.try_reserve(&six), Ok((i + 6).into()));
             assert_eq!(
-                section.try_reserve(6),
+                section.try_reserve(&six),
                 Err(ErrorKind::MemorySectionFull("test3"))
             );
         }
@@ -173,31 +184,36 @@ mod test {
 
     #[test]
     fn already_aligned() {
+        let four = 4u8.into();
         let mut section = Section::new("test4", &range(0, 11));
-        assert_eq!(section.try_align(4), Ok((0, 0)));
-        assert_eq!(section.try_reserve(4), Ok(0));
-        assert_eq!(section.get(), 4);
-        assert_eq!(section.try_align(4), Ok((4, 0)));
-        assert_eq!(section.get(), 4);
+        assert_eq!(section.try_align(&four), Ok((BigUint::ZERO, BigUint::ZERO)));
+        assert_eq!(section.try_reserve(&four), Ok(BigUint::ZERO));
+        assert_eq!(section.get(), &four);
+        assert_eq!(section.try_align(&four), Ok((four.clone(), BigUint::ZERO)));
+        assert_eq!(section.get(), &four);
     }
 
     #[test]
     fn align_memory_limit() {
-        for i in 1..4 {
+        for i in 1u8..4 {
             let mut section = Section::new("test5", &range(0, 3));
-            assert_eq!(section.try_reserve(i), Ok(0));
-            assert_eq!(section.try_align(4), Ok((i, 4 - i)));
+            assert_eq!(section.try_reserve(&i.into()), Ok(BigUint::ZERO));
+            assert_eq!(
+                section.try_align(&4u8.into()),
+                Ok((i.into(), (4 - i).into()))
+            );
         }
     }
 
     #[test]
     fn align_fail() {
-        for i in 1..2 {
+        let four = 4u8.into();
+        for i in 1u8..2 {
             let mut section = Section::new("test6", &range(0, 2));
-            assert_eq!(section.try_align(4), Ok((0, 0)));
-            assert_eq!(section.try_reserve(i), Ok(0));
+            assert_eq!(section.try_align(&four), Ok((BigUint::ZERO, BigUint::ZERO)));
+            assert_eq!(section.try_reserve(&i.into()), Ok(BigUint::ZERO));
             assert_eq!(
-                section.try_align(4),
+                section.try_align(&four),
                 Err(ErrorKind::MemorySectionFull("test6"))
             );
         }
@@ -205,45 +221,50 @@ mod test {
 
     #[test]
     fn align4() {
-        for i in 1..4 {
+        let four = 4u8.into();
+        for i in 1u8..4 {
             let mut section = Section::new("test7", &range(0, 11));
-            assert_eq!(section.try_reserve(i), Ok(0));
-            assert_eq!(section.try_align(4), Ok((i, 4 - i)));
-            assert_eq!(section.get(), 4);
-            assert_eq!(section.try_align(4), Ok((4, 0)));
+            assert_eq!(section.try_reserve(&i.into()), Ok(BigUint::ZERO));
+            assert_eq!(section.try_align(&four), Ok((i.into(), (4 - i).into())));
+            assert_eq!(section.get(), &four);
+            assert_eq!(section.try_align(&four), Ok((four.clone(), BigUint::ZERO)));
         }
     }
 
     #[test]
     fn align6() {
-        for i in 1..6 {
+        let six = 6u8.into();
+        for i in 1u8..6 {
             let mut section = Section::new("test8", &range(0, 17));
-            assert_eq!(section.try_reserve(i), Ok(0));
-            assert_eq!(section.try_align(6), Ok((i, 6 - i)));
-            assert_eq!(section.get(), 6);
-            assert_eq!(section.try_align(6), Ok((6, 0)));
+            assert_eq!(section.try_reserve(&i.into()), Ok(BigUint::ZERO));
+            assert_eq!(section.try_align(&six), Ok((i.into(), (6 - i).into())));
+            assert_eq!(section.get(), &six);
+            assert_eq!(section.try_align(&six), Ok((six.clone(), BigUint::ZERO)));
         }
     }
 
     #[test]
     fn try_reserve_aligned_ok() {
         let mut section = Section::new("test9", &range(0, 17));
-        assert_eq!(section.try_reserve_aligned(2, 4), Ok(0));
-        assert_eq!(section.try_reserve_aligned(2, 4), Ok(2));
-        assert_eq!(section.try_reserve_aligned(8, 4), Ok(4));
-        assert_eq!(section.try_reserve_aligned(3, 4), Ok(12));
-        assert_eq!(section.try_reserve_aligned(3, 4), Ok(15));
+        assert_eq!(section.try_reserve_aligned(&2u8.into(), 4), Ok(0u8.into()));
+        assert_eq!(section.try_reserve_aligned(&2u8.into(), 4), Ok(2u8.into()));
+        assert_eq!(section.try_reserve_aligned(&8u8.into(), 4), Ok(4u8.into()));
+        assert_eq!(section.try_reserve_aligned(&3u8.into(), 4), Ok(12u8.into()));
+        assert_eq!(section.try_reserve_aligned(&3u8.into(), 4), Ok(15u8.into()));
     }
 
     #[test]
     fn try_reserve_aligned_fail() {
         let mut section = Section::new("test10", &range(0, 17));
-        assert_eq!(section.try_reserve_aligned(1, 3), Ok(0));
         assert_eq!(
-            section.try_reserve_aligned(2, 3),
+            section.try_reserve_aligned(&1u8.into(), 3),
+            Ok(BigUint::ZERO)
+        );
+        assert_eq!(
+            section.try_reserve_aligned(&2u8.into(), 3),
             Err(ErrorKind::DataUnaligned {
-                address: 1,
-                alignment: 2,
+                address: 1u8.into(),
+                alignment: 2u8.into(),
                 word_size: 3
             })
         );

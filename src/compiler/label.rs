@@ -20,6 +20,7 @@
 
 //! Module containing the definition of assembly labels and their symbol table
 
+use num_bigint::BigUint;
 use std::collections::{hash_map::Entry, HashMap};
 
 use super::{CompileError, ErrorKind};
@@ -29,7 +30,7 @@ use crate::span::Span;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Label {
     /// Address to which the label points
-    address: u64,
+    address: BigUint,
     /// Location of the definition of the label in the assembly
     definition: Span,
 }
@@ -41,7 +42,7 @@ impl Label {
     ///
     /// * `address`: memory address the label points at
     /// * `definition`: [`Span`] where the label was defined
-    pub const fn new(address: u64, definition: Span) -> Self {
+    pub const fn new(address: BigUint, definition: Span) -> Self {
         Self {
             address,
             definition,
@@ -49,8 +50,8 @@ impl Label {
     }
 
     /// Gets the address this label is pointing in
-    pub const fn address(&self) -> u64 {
-        self.address
+    pub const fn address(&self) -> &BigUint {
+        &self.address
     }
 
     /// Gets the [`Span`] where the label was defined
@@ -106,19 +107,19 @@ mod test {
     fn insert() {
         let mut table = Table::default();
         assert_eq!(
-            table.insert("test".to_string(), Label::new(12, 0..2)),
+            table.insert("test".to_string(), Label::new(12u8.into(), 0..2)),
             Ok(())
         );
         assert_eq!(
-            table.insert("test2".to_string(), Label::new(0, 6..10)),
+            table.insert("test2".to_string(), Label::new(0u8.into(), 6..10)),
             Ok(())
         );
         assert_eq!(
-            table.insert("test".to_string(), Label::new(4, 13..17)),
+            table.insert("test".to_string(), Label::new(4u8.into(), 13..17)),
             Err(ErrorKind::DuplicateLabel("test".to_string(), 0..2).add_span(&(13..17)))
         );
         assert_eq!(
-            table.insert("test2".to_string(), Label::new(128, 20..22)),
+            table.insert("test2".to_string(), Label::new(128u8.into(), 20..22)),
             Err(ErrorKind::DuplicateLabel("test2".to_string(), 6..10).add_span(&(20..22)))
         );
     }
@@ -127,15 +128,15 @@ mod test {
     fn get() {
         let mut table = Table::default();
         assert_eq!(
-            table.insert("test".to_string(), Label::new(12, 2..4)),
+            table.insert("test".to_string(), Label::new(12u8.into(), 2..4)),
             Ok(())
         );
         assert_eq!(
-            table.insert("test2".to_string(), Label::new(0, 5..10)),
+            table.insert("test2".to_string(), Label::new(0u8.into(), 5..10)),
             Ok(())
         );
-        assert_eq!(table.get("test"), Some(&Label::new(12, 2..4)));
-        assert_eq!(table.get("test2"), Some(&Label::new(0, 5..10)));
+        assert_eq!(table.get("test"), Some(&Label::new(12u8.into(), 2..4)));
+        assert_eq!(table.get("test2"), Some(&Label::new(0u8.into(), 5..10)));
         assert_eq!(table.get("none"), None);
     }
 }

@@ -23,9 +23,10 @@
 //! The main type is [`Error`]
 
 use ariadne::{Color, Fmt, Label, Report, ReportKind, Source};
+use num_bigint::{BigInt, BigUint};
 
 use std::fmt;
-use std::ops::Range;
+use std::ops::RangeInclusive;
 use std::{fmt::Write as _, io::Write as _};
 
 use crate::architecture::{DirectiveSegment, FloatType, RegisterType};
@@ -66,14 +67,14 @@ pub enum Kind {
     DuplicateLabel(String, Span),
     MissingMainLabel(String),
     MainOutsideCode(String),
-    IntegerTooBig(i64, Range<i64>),
+    IntegerTooBig(BigInt, RangeInclusive<BigInt>),
     MemorySectionFull(&'static str),
     DataUnaligned {
-        address: u64,
-        alignment: u64,
-        word_size: u64,
+        address: BigUint,
+        alignment: BigUint,
+        word_size: usize,
     },
-    UnallowedNegativeValue(i64),
+    UnallowedNegativeValue(BigInt),
     IncorrectDirectiveArgumentNumber {
         expected: ArgumentNumber,
         found: usize,
@@ -158,7 +159,7 @@ impl Kind {
     fn note(&self) -> Option<String> {
         Some(match self {
             Self::IntegerTooBig(_, bounds) => {
-                format!("Allowed range is [{}, {}]", bounds.start, bounds.end - 1)
+                format!("Allowed range is [{}, {}]", bounds.start(), bounds.end())
             }
             Self::IncorrectInstructionSyntax(errs) => {
                 let mut res = "Allowed formats:".to_string();

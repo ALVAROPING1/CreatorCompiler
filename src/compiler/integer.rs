@@ -20,14 +20,16 @@
 
 //! Module containing the definition of integers with specific sizes
 
+use num_bigint::{BigInt, BigUint};
+
 use super::ErrorKind;
 use crate::architecture::IntegerType;
 
 /// Sized integer
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Integer {
     /// Numeric value
-    value: u64,
+    value: BigUint,
     /// Size of the integer in bits
     size: usize,
     /// Type of the integer
@@ -49,35 +51,45 @@ impl Integer {
     ///
     /// Returns a [`ErrorKind::IntegerTooBig`] if the value doesn't fit in the specified size
     pub fn build(
-        value: i64,
+        value: BigInt,
         size: usize,
         r#type: Option<IntegerType>,
         signed: Option<bool>,
     ) -> Result<Self, ErrorKind> {
-        let pow = |n: usize| 1 << n;
-        // TODO: improve handling of >=64 bit ints
-        if size < 64 - 1 {
-            // Check that the given value fits in the specified size
-            let bounds = signed.map_or_else(
-                || -pow(size - 1)..pow(size),
-                |signed| {
-                    if signed {
-                        let max = pow(size - 1);
-                        -max..max
-                    } else {
-                        0..pow(size)
-                    }
-                },
-            );
-            if !bounds.contains(&value) {
-                return Err(ErrorKind::IntegerTooBig(value, bounds));
-            };
-        }
+        let pow = |n: usize| -> BigInt { BigInt::from(1) << n };
+        // Check that the given value fits in the specified size
+        let bounds = signed.map_or_else(
+            || -pow(size - 1)..pow(size),
+            |signed| {
+                if signed {
+                    let max = pow(size - 1);
+                    -max.clone()..max
+                } else {
+                    BigInt::ZERO..pow(size)
+                }
+            },
+        );
+        if !bounds.contains(&value) {
+            #[allow(clippy::range_minus_one)] // We need an inclusive range due to the error type
+            return Err(ErrorKind::IntegerTooBig(
+                value,
+                bounds.start..=bounds.end - 1,
+            ));
+        };
+        // Reinterpret the value as unsigned, so that we can manipulate the bits more easily
+        let value = value.to_biguint().unwrap_or_else(|| {
+            let mut bytes = value.to_signed_bytes_le();
+            if bytes.len() * 8 < size {
+                let diff = size.div_ceil(8) - bytes.len();
+                bytes.extend(std::iter::repeat_n(0xFF, diff));
+            }
+            BigUint::from_bytes_le(&bytes)
+        });
         // Mask for bits outside of the specified size
-        let mask = if size < 64 { (1 << size) - 1 } else { u64::MAX };
+        let mask = (BigUint::from(1u8) << size) - 1u8;
         #[allow(clippy::cast_sign_loss)]
         Ok(Self {
-            value: value as u64 & mask,
+            value: value & mask,
             size,
             r#type,
         })
@@ -85,8 +97,8 @@ impl Integer {
 
     /// Gets the value of the integer
     #[must_use]
-    pub const fn value(&self) -> u64 {
-        self.value
+    pub const fn value(&self) -> &BigUint {
+        &self.value
     }
 
     /// Gets the type of the integer
@@ -120,11 +132,11 @@ mod test {
     #[test]
     fn bits_signed() {
         for (x, x_str) in [(-8, "1000"), (-5, "1011"), (4, "0100"), (7, "0111")] {
-            let val = Integer::build(x, 4, None, Some(true));
+            let val = Integer::build(x.into(), 4, None, Some(true));
             assert_eq!(
                 val,
                 Ok(Integer {
-                    value: x as u64 & 0xF,
+                    value: (x as u32 & 0b1111).into(),
                     size: 4,
                     r#type: None,
                 })
@@ -133,15 +145,15 @@ mod test {
         }
         for x in [8, -9] {
             assert_eq!(
-                Integer::build(x, 4, None, Some(true)),
-                Err(ErrorKind::IntegerTooBig(x, -8..8))
+                Integer::build(x.into(), 4, None, Some(true)),
+                Err(ErrorKind::IntegerTooBig(x.into(), (-8).into()..=7.into()))
             );
         }
         for x in [i64::MAX, i64::MIN] {
             assert_eq!(
-                Integer::build(x, 64, None, Some(true)),
+                Integer::build(x.into(), 64, None, Some(true)),
                 Ok(Integer {
-                    value: x as u64,
+                    value: (x as u64).into(),
                     size: 64,
                     r#type: None,
                 })
@@ -153,11 +165,11 @@ mod test {
     fn bits_unsigned() {
         #[allow(clippy::cast_sign_loss)]
         for (x, x_str) in [(0, "0000"), (4, "0100"), (15, "1111")] {
-            let val = Integer::build(x, 4, None, Some(false));
+            let val = Integer::build(x.into(), 4, None, Some(false));
             assert_eq!(
                 val,
                 Ok(Integer {
-                    value: x as u64 & 0xF,
+                    value: (x as u32 & 0b1111).into(),
                     size: 4,
                     r#type: None,
                 })
@@ -166,15 +178,15 @@ mod test {
         }
         for x in [-1, 16] {
             assert_eq!(
-                Integer::build(x, 4, None, Some(false)),
-                Err(ErrorKind::IntegerTooBig(x, 0..16))
+                Integer::build(x.into(), 4, None, Some(false)),
+                Err(ErrorKind::IntegerTooBig(x.into(), 0.into()..=15.into()))
             );
         }
         for x in [0, i64::MAX] {
             assert_eq!(
-                Integer::build(x, 64, None, Some(false)),
+                Integer::build(x.into(), 64, None, Some(false)),
                 Ok(Integer {
-                    value: x as u64,
+                    value: (x as u64).into(),
                     size: 64,
                     r#type: None,
                 })
@@ -186,11 +198,11 @@ mod test {
     fn byte() {
         #[allow(clippy::cast_sign_loss)]
         for (x, x_str) in [(0, "0"), (4, "4"), (15, "F"), (-8, "8"), (-5, "B")] {
-            let val = Integer::build(x, 4, Some(IntegerType::Byte), None);
+            let val = Integer::build(x.into(), 4, Some(IntegerType::Byte), None);
             assert_eq!(
                 val,
                 Ok(Integer {
-                    value: x as u64 & 0xF,
+                    value: (x as u32 & 0b1111).into(),
                     size: 4,
                     r#type: Some(IntegerType::Byte),
                 })
@@ -199,8 +211,8 @@ mod test {
         }
         for x in [-9, 16] {
             assert_eq!(
-                Integer::build(x, 4, Some(IntegerType::Byte), None),
-                Err(ErrorKind::IntegerTooBig(x, -8..16))
+                Integer::build(x.into(), 4, Some(IntegerType::Byte), None),
+                Err(ErrorKind::IntegerTooBig(x.into(), (-8).into()..=15.into()))
             );
         }
     }

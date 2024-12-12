@@ -108,7 +108,7 @@ impl<'a> Instruction<'a> {
                             // NOTE: This value should never be read, we only need it to point to the
                             // opcode instruction field
                             vec![ParsedArgument {
-                                value: (Expr::Integer(0), 0..0),
+                                value: (Expr::Integer(0u8.into()), 0..0),
                                 field_idx: i,
                             }]
                         }
@@ -215,16 +215,16 @@ mod test {
         ParsedArgument { value, field_idx }
     }
 
-    const fn co_arg() -> ParsedArgument {
-        arg((Expr::Integer(0), 0..0), 0)
+    fn co_arg() -> ParsedArgument {
+        arg((Expr::Integer(0u8.into()), 0..0), 0)
     }
 
     fn ident(name: Spanned<&str>) -> Spanned<Expr> {
         (Expr::Identifier((name.0.into(), name.1.clone())), name.1)
     }
 
-    const fn number(x: u32) -> Expr {
-        Expr::Integer(x)
+    fn number(x: u32) -> Expr {
+        Expr::Integer(x.into())
     }
 
     #[test]
@@ -256,8 +256,8 @@ mod test {
                     (
                         Expr::BinaryOp {
                             op: (BinaryOp::Add, 2..3),
-                            lhs: Box::new((Expr::Integer(1), 0..1)),
-                            rhs: Box::new((Expr::Integer(1), 4..5))
+                            lhs: Box::new((Expr::Integer(1u8.into()), 0..1)),
+                            rhs: Box::new((Expr::Integer(1u8.into()), 4..5))
                         },
                         0..5
                     ),

@@ -23,7 +23,9 @@
 //! The main entry point for creating the parser is the [`lexer()`] function
 
 use chumsky::prelude::*;
-use std::{fmt, num::IntErrorKind, str::FromStr};
+use num_bigint::BigUint;
+use num_traits::Num as _;
+use std::fmt;
 
 use super::{Parser, Spanned};
 
@@ -31,7 +33,7 @@ use super::{Parser, Spanned};
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Token {
     /// Integer literal
-    Integer(u32),
+    Integer(BigUint),
     /// Floating point literal
     // NOTE: this contains an `f64`, but has to be stored as an `u64` to be able to derive `Hash`.
     // The `Hash` trait is required by token types used for parsing by `chumsky`
@@ -72,31 +74,18 @@ impl fmt::Display for Token {
 /// Creates a lexer for integer literals
 #[must_use]
 fn int_lexer() -> Parser!(char, Token) {
-    let try_to_int = |res: Result<u32, <u32 as FromStr>::Err>, span| {
-        res.map_err(|err| {
-            Simple::custom(
-                span,
-                match err.kind() {
-                    IntErrorKind::PosOverflow => "integer literal too big",
-                    _ => unreachable!("We already parsed the string as an integer, and don't allow negative literals")
-                },
-            )
-        })
-    };
+    static EXPECT_MSG: &str = "The parsed string should always correspond with a valid number";
 
     // Decimal: integer not followed by a decimal part/exponent
     let decimal = text::int(10)
         // Disambiguate integer literals from the integer part of a floating point literal
         .then_ignore(none_of(".eE").rewind().to(()).or(end()))
         .from_str()
-        .try_map(try_to_int);
+        .map(|x| x.expect(EXPECT_MSG));
 
     // Generic base N literals
-    let base_n = |n| {
-        text::digits(n)
-            .map(move |x: String| u32::from_str_radix(&x, n))
-            .try_map(try_to_int)
-    };
+    let base_n =
+        |n| text::digits(n).map(move |x: String| BigUint::from_str_radix(&x, n).expect(EXPECT_MSG));
     let hex = one_of("xX").ignore_then(base_n(16));
     let bin = one_of("bB").ignore_then(base_n(2));
     let octal = base_n(8);
@@ -281,7 +270,8 @@ mod test {
             ("0", 0),
             ("1", 1),
             ("1234", 1234),
-            ("4294967295", u32::MAX),
+            (&u32::MAX.to_string(), u64::from(u32::MAX)),
+            (&u64::MAX.to_string(), u64::MAX),
             // octal
             ("00", 0),
             ("01", 1),
@@ -300,9 +290,9 @@ mod test {
             ("0B10", 2),
         ];
         for (s, v) in test_cases {
+            let v = v.into();
             assert_eq!(lex(s), Ok(vec![(Token::Integer(v), 0..s.len())]), "`{s}`");
         }
-        assert_eq!(lex(&(u64::from(u32::MAX) + 1).to_string()), Err(()));
     }
 
     #[test]
@@ -487,7 +477,7 @@ mod test {
         let src = "a 1 .z +- test:  ]\t='x'\"string\"";
         let tokens = vec![
             (Token::Identifier("a".into()), 0..1),
-            (Token::Integer(1), 2..3),
+            (Token::Integer(1u8.into()), 2..3),
             (Token::Directive(".z".into()), 4..6),
             (Token::Operator('+'), 7..8),
             (Token::Operator('-'), 8..9),

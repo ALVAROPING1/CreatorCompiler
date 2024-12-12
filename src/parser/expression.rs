@@ -24,6 +24,8 @@
 //! of methods being defined in the methods of the [`Expr`] type
 
 use chumsky::prelude::*;
+use num_bigint::{BigInt, BigUint};
+use num_traits::cast::ToPrimitive;
 
 use super::{Parser, Span, Spanned, Token};
 use crate::compiler::error::{OperationKind, SpannedErr};
@@ -54,7 +56,7 @@ pub enum BinaryOp {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     /// Integer literal
-    Integer(u32),
+    Integer(BigUint),
     /// Float literal
     Float(Spanned<f64>),
     /// Character literal
@@ -88,13 +90,13 @@ impl Expr {
     /// the callback function
     pub fn int(
         &self,
-        ident_eval: impl Copy + Fn(&str) -> Result<i32, ErrorKind>,
-    ) -> Result<i32, CompileError> {
+        ident_eval: impl Copy + Fn(&str) -> Result<BigInt, ErrorKind>,
+    ) -> Result<BigInt, CompileError> {
         #[allow(clippy::cast_possible_wrap)]
         Ok(match self {
-            Self::Integer(value) => *value as i32,
+            Self::Integer(value) => value.clone().into(),
             Self::Float((_, span)) => return Err(ErrorKind::UnallowedFloat.add_span(span)),
-            Self::Character(c) => *c as i32,
+            Self::Character(c) => (*c as u32).into(),
             Self::Identifier((ident, span)) => ident_eval(ident).add_span(span)?,
             Self::UnaryOp { op, operand } => match op.0 {
                 UnaryOp::Plus => operand.0.int(ident_eval)?,
@@ -106,11 +108,11 @@ impl Expr {
                 let span = &rhs.1;
                 let rhs = rhs.0.int(ident_eval)?;
                 match op.0 {
-                    BinaryOp::Add => lhs.overflowing_add(rhs).0,
-                    BinaryOp::Sub => lhs.overflowing_sub(rhs).0,
-                    BinaryOp::Mul => lhs.overflowing_mul(rhs).0,
+                    BinaryOp::Add => lhs + rhs,
+                    BinaryOp::Sub => lhs - rhs,
+                    BinaryOp::Mul => lhs * rhs,
                     BinaryOp::Div => lhs
-                        .checked_div(rhs)
+                        .checked_div(&rhs)
                         .ok_or_else(|| ErrorKind::DivisionBy0.add_span(span))?,
                     BinaryOp::Rem => lhs % rhs,
                     BinaryOp::BitwiseOR => lhs | rhs,
@@ -130,7 +132,9 @@ impl Expr {
     pub fn float(&self) -> Result<f64, CompileError> {
         let err = |op, s| ErrorKind::UnallowedFloatOperation(op).add_span(s);
         Ok(match self {
-            Self::Integer(value) => f64::from(*value),
+            Self::Integer(value) => value
+                .to_f64()
+                .expect("Converting a bigint to f64 can't fail"),
             Self::Float((value, _)) => *value,
             Self::Character(c) => f64::from(*c as u32),
             Self::Identifier((_, span)) => return Self::unallowed_ident("").add_span(span),
@@ -288,18 +292,18 @@ pub fn parser() -> Parser!(Token, Expr) {
 
 #[cfg(test)]
 mod test {
-    use super::{BinaryOp, CompileError, ErrorKind, Expr, OperationKind, Span, Spanned, UnaryOp};
+    use super::*;
 
     fn parse(code: &str) -> Result<Expr, ()> {
         super::super::parse_with(super::parser(), code).map_err(|_| ())
     }
 
-    type ExprResult = (Result<i32, CompileError>, Result<f64, CompileError>);
+    type ExprResult = (Result<i64, CompileError>, Result<f64, CompileError>);
 
     fn test(test_cases: &[(&str, Expr, ExprResult)]) {
         let ident_eval = |ident: &str| {
             if ident.len() == 1 {
-                Ok(i32::from(ident.as_bytes()[0] - b'a' + 5))
+                Ok(BigInt::from(ident.as_bytes()[0] - b'a' + 5))
             } else {
                 Err(ErrorKind::UnknownLabel(ident.to_owned()))
             }
@@ -307,7 +311,8 @@ mod test {
         for (src, expr, (res1, res2)) in test_cases {
             assert_eq!(parse(src), Ok(expr.clone()), "`{src}`");
             let int = expr.int(ident_eval);
-            assert_eq!(int, *res1, "`{src}` as int\n{expr:?}");
+            let res1 = res1.clone().map(BigInt::from);
+            assert_eq!(int, res1, "`{src}` as int\n{expr:?}");
             assert_eq!(expr.float(), *res2, "`{src}` as float\n{expr:?}");
         }
     }
@@ -329,8 +334,8 @@ mod test {
     #[test]
     fn literal() {
         test(&[
-            ("16", Expr::Integer(16), (Ok(16), Ok(16.0))),
-            ("\n\n16", Expr::Integer(16), (Ok(16), Ok(16.0))),
+            ("16", Expr::Integer(16u8.into()), (Ok(16), Ok(16.0))),
+            ("\n\n16", Expr::Integer(16u8.into()), (Ok(16), Ok(16.0))),
             ("'a'", Expr::Character('a'), (Ok(97), Ok(97.0))),
             (
                 "a",
@@ -353,8 +358,8 @@ mod test {
         ]);
     }
 
-    const fn int(x: u32, s: Span) -> Spanned<Expr> {
-        (Expr::Integer(x), s)
+    fn int(x: u32, s: Span) -> Spanned<Expr> {
+        (Expr::Integer(x.into()), s)
     }
 
     fn float(x: f64, s: Span) -> Spanned<Expr> {
@@ -422,7 +427,7 @@ mod test {
                     int(i32::MAX as u32, 0..10),
                     int(1, 13..14),
                 ),
-                (Ok(i32::MIN), Ok(f64::from(i32::MAX) + 1.0)),
+                (Ok(2_147_483_648), Ok(f64::from(i32::MAX) + 1.0)),
             ),
             (
                 "2.5 + 7",
@@ -481,7 +486,10 @@ mod test {
                     int(i32::MAX as u32, 0..10),
                     int(1 << 31, 13..23),
                 ),
-                (Ok(i32::MIN), Ok(4_611_686_016_279_904_256.0)),
+                (
+                    Ok(2_147_483_647 * 2_147_483_648),
+                    Ok(4_611_686_016_279_904_256.0),
+                ),
             ),
         ]);
     }

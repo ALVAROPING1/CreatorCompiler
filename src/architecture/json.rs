@@ -21,12 +21,13 @@
 //! Module containing conversion methods between the format used by the architecture JSON
 //! specification and our internal representation
 
+use num_bigint::BigUint;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use super::{utils, DataFormat, DirectiveAction};
 use super::{AlignmentType, FloatType, IntegerType, StringType};
-use utils::{BaseN, Bool, NonEmptyRangeInclusiveU64, NonEmptyRangeInclusiveU8, Pair, StringOrT};
+use utils::{BaseN, Bool, NonEmptyRangeInclusive, Pair, StringOrT};
 
 /// Directive specification
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
@@ -37,8 +38,8 @@ pub struct Directive<'a> {
     pub action: DirectiveAction<DirectiveData>,
     /// Size in bytes of values associated with this directive
     #[serde(deserialize_with = "utils::optional_from_str")]
-    #[schemars(with = "Option<StringOrT<u8>>")]
-    pub size: Option<u8>,
+    #[schemars(with = "Option<StringOrT<usize>>")]
+    pub size: Option<usize>,
 }
 
 /// Data segment types
@@ -104,17 +105,18 @@ pub struct BitRange {
 #[serde(untagged)]
 pub enum BitPosition {
     // Field uses a single, contiguous bit range
-    Single(u8),
+    Single(usize),
     // Field uses multiple, discontiguous bit ranges
-    Multiple(Vec<u8>),
+    Multiple(Vec<usize>),
 }
 
 impl TryFrom<BitRange> for super::BitRange {
     type Error = &'static str;
 
     fn try_from(value: BitRange) -> Result<Self, Self::Error> {
-        let range =
-            |(msb, lsb)| NonEmptyRangeInclusiveU8::build(lsb, msb).ok_or("invalid empty range");
+        let range = |(msb, lsb)| {
+            NonEmptyRangeInclusive::<usize>::build(lsb, msb).ok_or("invalid empty range")
+        };
         Self::build(match (value.startbit, value.stopbit) {
             (BitPosition::Single(msb), BitPosition::Single(lsb)) => vec![range((msb, lsb))?],
             (BitPosition::Multiple(msb), BitPosition::Multiple(lsb)) => {
@@ -178,8 +180,8 @@ pub enum Config<'a> {
     /// Word size
     Bits(
         #[serde(deserialize_with = "utils::from_str")]
-        #[schemars(with = "utils::StringOrT<u8>")]
-        u8,
+        #[schemars(with = "utils::StringOrT<usize>")]
+        usize,
     ),
     /// Description of the architecture
     Description(&'a str),
@@ -255,11 +257,11 @@ pub enum MemoryLayoutKeys {
 
 impl TryFrom<[Pair<MemoryLayoutKeys, BaseN<16>>; 6]> for super::MemoryLayout {
     type Error = &'static str;
-    fn try_from(value: [Pair<MemoryLayoutKeys, BaseN<16>>; 6]) -> Result<Self, Self::Error> {
+    fn try_from(mut value: [Pair<MemoryLayoutKeys, BaseN<16>>; 6]) -> Result<Self, Self::Error> {
         macro_rules! unwrap_field {
             ($i:expr, $name:ident) => {
                 match value[$i].name {
-                    MemoryLayoutKeys::$name => value[$i].value.0,
+                    MemoryLayoutKeys::$name => std::mem::take(&mut value[$i].value.0),
                     _ => key_error!($i, $name),
                 }
             };
@@ -280,12 +282,12 @@ impl TryFrom<[Pair<MemoryLayoutKeys, BaseN<16>>; 6]> for super::MemoryLayout {
         let text = (unwrap_field!(0, TextStart), unwrap_field!(1, TextEnd));
         let data = (unwrap_field!(2, DataStart), unwrap_field!(3, DataEnd));
         let stack = (unwrap_field!(4, StackStart), unwrap_field!(5, StackEnd));
-        let text =
-            NonEmptyRangeInclusiveU64::build(text.0, text.1).ok_or("section `text` is empty")?;
-        let data =
-            NonEmptyRangeInclusiveU64::build(data.0, data.1).ok_or("section `data` is empty")?;
-        let stack =
-            NonEmptyRangeInclusiveU64::build(stack.0, stack.1).ok_or("section `stack` is empty")?;
+        let text = NonEmptyRangeInclusive::<BigUint>::build(text.0, text.1)
+            .ok_or("section `text` is empty")?;
+        let data = NonEmptyRangeInclusive::<BigUint>::build(data.0, data.1)
+            .ok_or("section `data` is empty")?;
+        let stack = NonEmptyRangeInclusive::<BigUint>::build(stack.0, stack.1)
+            .ok_or("section `stack` is empty")?;
         check_overlap!(text, data);
         check_overlap!(text, stack);
         check_overlap!(data, stack);

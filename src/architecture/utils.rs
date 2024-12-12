@@ -20,15 +20,44 @@
 
 //! Module containing general utilities for deserialization of different types of values
 
+use num_bigint::BigUint;
+use num_traits::{Num as _, One as _};
 use schemars::JsonSchema;
-use serde::{Deserialize, Deserializer};
+use serde::{de::Error, Deserialize, Deserializer};
 
 use core::{fmt::Display, str::FromStr};
 
-pub type Integer = i64;
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub struct Integer(pub BigUint);
+
+impl JsonSchema for Integer {
+    fn is_referenceable() -> bool {
+        false
+    }
+    fn schema_name() -> String {
+        "Integer".to_owned()
+    }
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed("Integer")
+    }
+    fn json_schema(_: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        schemars::schema::SchemaObject {
+            instance_type: Some(schemars::schema::InstanceType::Integer.into()),
+            ..Default::default()
+        }
+        .into()
+    }
+}
+
+impl FromStr for Integer {
+    type Err = <BigUint as FromStr>::Err;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(s.parse()?))
+    }
+}
 
 /// Numeric value
-#[derive(Deserialize, JsonSchema, Debug, PartialEq, Clone, Copy, PartialOrd)]
+#[derive(JsonSchema, Debug, PartialEq, Clone, PartialOrd)]
 #[serde(untagged)]
 pub enum Number {
     Int(Integer),
@@ -36,8 +65,8 @@ pub enum Number {
 }
 
 /// Integer stored as a string in base N
-#[derive(Debug, PartialEq, Eq, Clone, Copy, PartialOrd, Ord, JsonSchema)]
-pub struct BaseN<const N: u8>(#[schemars(with = "String")] pub u64);
+#[derive(Debug, PartialEq, Eq, Clone, PartialOrd, Ord, JsonSchema)]
+pub struct BaseN<const N: u8>(#[schemars(with = "String")] pub BigUint);
 
 /// A key-value pair
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
@@ -54,12 +83,31 @@ pub enum StringOrT<'a, T> {
     T(T),
 }
 
+impl<'de> Deserialize<'de> for Integer {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = serde_json::Number::deserialize(deserializer)?;
+        Ok(Self(s.as_str().parse().map_err(Error::custom)?))
+    }
+}
+
+impl<'de> Deserialize<'de> for Number {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = serde_json::Number::deserialize(deserializer)?;
+        let s = s.as_str();
+        Ok(if s.contains(|c| ".eE".contains(c)) {
+            Self::Float(s.parse().map_err(Error::custom)?)
+        } else {
+            Self::Int(Integer(s.parse().map_err(Error::custom)?))
+        })
+    }
+}
+
 impl<'de, const N: u8> Deserialize<'de> for BaseN<N> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let s: &str = Deserialize::deserialize(deserializer)?;
-        u64::from_str_radix(s.trim_start_matches("0x"), N.into())
+        BigUint::from_str_radix(s.trim_start_matches("0x"), N.into())
             .map(Self)
-            .map_err(serde::de::Error::custom)
+            .map_err(Error::custom)
     }
 }
 
@@ -72,7 +120,7 @@ where
 {
     match Deserialize::deserialize(deserializer)? {
         StringOrT::T(i) => Ok(i),
-        StringOrT::String(s) => s.parse::<T>().map_err(serde::de::Error::custom),
+        StringOrT::String(s) => s.parse::<T>().map_err(Error::custom),
     }
 }
 
@@ -111,62 +159,61 @@ impl From<Bool> for bool {
 
 /// Inclusive range guaranteed to be non-empty
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub struct NonEmptyRangeInclusive<Idx, NonZeroIdx> {
+pub struct NonEmptyRangeInclusive<Idx> {
     /// Start of the range
     start: Idx,
     /// Size of the range
-    size: NonZeroIdx,
+    size: Idx,
 }
 
 macro_rules! impl_NonEmptyRangeInclusive {
-    ($(($ty:ty, $name:ident)),+) => {
+    ($($ty:ty),+) => {
         $(
-            impl NonEmptyRangeInclusive<$ty, std::num::NonZero<$ty>> {
+            impl NonEmptyRangeInclusive<$ty> {
                 /// Creates a new [`NonEmptyRangeInclusive`]
                 ///
                 /// # Parameters
                 ///
                 /// * `start`: starting value of the range (inclusive)
                 /// * `end`: ending value of the range (inclusive)
+                #[must_use]
                 pub fn build(start: $ty, end: $ty) -> Option<Self> {
-                    let size = end.checked_sub(start)? + 1;
-                    Some(Self { start, size: std::num::NonZero::new(size)? })
+                    if start > end {
+                        return None;
+                    }
+                    let size = end - (&start) + <$ty>::one();
+                    Some(Self { start, size })
                 }
 
                 /// Get the starting value of the range
-                pub const fn start(&self) -> $ty {
-                    self.start
+                #[must_use]
+                pub const fn start(&self) -> &$ty {
+                    &self.start
                 }
 
                 /// Get the size of the range
-                pub const fn size(&self) -> std::num::NonZero<$ty> {
-                    self.size
+                #[must_use]
+                pub const fn size(&self) -> &$ty {
+                    &self.size
                 }
 
                 /// Get the ending value of the range
-                pub const fn end(&self) -> $ty {
-                    self.start + self.size.get() - 1
+                #[must_use]
+                pub fn end(&self) -> $ty {
+                    &self.start + &self.size - <$ty>::one()
                 }
 
                 /// Check if a value is contained in this range
-                pub const fn contains(&self, x: $ty) -> bool {
-                    if let Some(x) = x.checked_sub(self.start) {
-                        x < self.size.get()
-                    } else {
-                        false
-                    }
+                #[must_use]
+                pub fn contains(&self, x: &$ty) -> bool {
+                    *x >= self.start && x - (&self.start) < self.size
                 }
             }
-
-            pub type $name = NonEmptyRangeInclusive<$ty, std::num::NonZero<$ty>>;
         )+
     };
 }
 
-impl_NonEmptyRangeInclusive!(
-    (u64, NonEmptyRangeInclusiveU64),
-    (u8, NonEmptyRangeInclusiveU8)
-);
+impl_NonEmptyRangeInclusive!(BigUint, usize);
 
 /// Derive implementation of [`JsonSchema`] from the implementation of a different type
 macro_rules! schema_from {

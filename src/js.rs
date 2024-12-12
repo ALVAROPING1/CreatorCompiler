@@ -21,6 +21,7 @@
 //! Module containing the definition of wrappers for the compiler and generattion of `JS` bindings
 //! for interoperability
 
+use num_traits::cast::ToPrimitive;
 use self_cell::self_cell;
 use wasm_bindgen::prelude::*;
 
@@ -165,7 +166,10 @@ impl DataJS {
     /// Address of the data element
     #[must_use]
     pub fn address(&self) -> u64 {
-        self.0.address
+        self.0
+            .address
+            .to_u64()
+            .expect("Addresses shouldn't exceed 64 bits")
     }
 
     /// Labels pointing to this data element
@@ -256,7 +260,9 @@ impl DataJS {
             Value::Double(_) => 8,
             Value::String { data, .. } => u64::try_from(data.len())
                 .expect("we should never have strings bigger than 2^64 bytes"),
-            Value::Space(x) | Value::Padding(x) => *x,
+            Value::Space(x) | Value::Padding(x) => x
+                .to_u64()
+                .expect("Padding/Space sizes shouldn't exceed 64 bits"),
         }
     }
 }

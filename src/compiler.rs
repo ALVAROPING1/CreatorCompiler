@@ -23,6 +23,7 @@
 //! The entry point for compiler code is the [`compile()`] function. Users are expected to parse
 //! the code first to an AST with [`crate::parser::parse()`]
 
+use num_bigint::{BigInt, BigUint};
 use once_cell::sync::Lazy;
 use regex::{NoExpand, Regex};
 
@@ -59,7 +60,6 @@ pub use pseudoinstruction::{Error as PseudoinstructionError, Kind as Pseudoinstr
 *  - Refactor code
 *  - Remove uses of unwrap, propagating errors accordingly
 *  - Combine `crate::parser::Error` with `crate::compiler::Error`
-*  - Rework argument number types
 **/
 
 // Regex for replacement templates in the translation spec of instructions
@@ -115,7 +115,7 @@ fn parse_instruction<'a>(
                         | FieldType::ImmUnsigned
                         | FieldType::OffsetBytes
                         | FieldType::OffsetWords => match arg.value.0.int(Expr::unallowed_ident) {
-                            Ok(val) => val.into(),
+                            Ok(val) => val,
                             // If there was any error, assume the argument fits. This should be
                             // properly handled later when the arguments are fully evaluated
                             Err(_) => return true,
@@ -174,7 +174,7 @@ fn parse_instruction<'a>(
 #[derive(Debug, Clone)]
 pub struct PendingInstruction<'arch> {
     /// Address of the instruction
-    address: u64,
+    address: BigUint,
     /// Labels pointing to this instruction
     labels: Vec<String>,
     /// Span of the instruction in the assembly code
@@ -196,9 +196,9 @@ fn process_instruction<'arch>(
     match instruction.0 {
         // Base case: we have a real instruction => push it to the parsed instructions normally
         InstructionDefinition::Real(definition) => {
-            let word_size = arch.word_size() / 8;
+            let word_size = BigUint::from(arch.word_size().div_ceil(8));
             let address = section
-                .try_reserve(u64::from(word_size) * u64::from(definition.nwords))
+                .try_reserve(&(word_size * definition.nwords))
                 .add_span(&span)?;
             pending_instructions.push(PendingInstruction {
                 labels: Vec::new(),
@@ -237,7 +237,7 @@ fn process_instruction<'arch>(
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Instruction {
     /// Address of the instruction
-    pub address: u64,
+    pub address: BigUint,
     /// Labels pointing to this instruction
     pub labels: Vec<String>,
     /// Translated instruction to a simplified syntax
@@ -252,11 +252,11 @@ pub struct Instruction {
 #[derive(Debug, PartialEq, Clone)]
 pub enum PendingValue {
     /// Integer value
-    Integer(Spanned<Expr>, u8, IntegerType),
+    Integer(Spanned<Expr>, usize, IntegerType),
     /// Reserved space initialized to 0
-    Space(u64),
+    Space(BigUint),
     /// Padding added to align elements
-    Padding(u64),
+    Padding(BigUint),
     /// Single precision floating point value
     Float(f32),
     /// Double precision floating point value
@@ -276,9 +276,9 @@ pub enum Value {
     /// Integer value
     Integer(Integer),
     /// Reserved space initialized to 0
-    Space(u64),
+    Space(BigUint),
     /// Padding added to align elements
-    Padding(u64),
+    Padding(BigUint),
     /// Single precision floating point value
     Float(f32),
     /// Double precision floating point value
@@ -296,7 +296,7 @@ pub enum Value {
 #[derive(Debug, PartialEq, Clone)]
 pub struct PendingData {
     /// Address of the element
-    pub address: u64,
+    pub address: BigUint,
     /// Labels pointing to this data element
     pub labels: Vec<String>,
     /// Value of the data element
@@ -307,7 +307,7 @@ pub struct PendingData {
 #[derive(Debug, PartialEq, Clone)]
 pub struct Data {
     /// Address of the element
-    pub address: u64,
+    pub address: BigUint,
     /// Labels pointing to this data element
     pub labels: Vec<String>,
     /// Value of the data element
@@ -495,12 +495,15 @@ fn compile_data(
 ) -> Result<Vec<PendingData>, CompileError> {
     let mut memory = Vec::with_capacity(elements.len());
     let mut section = Section::new("Data", arch.data_section());
-    let word_size = u64::from(arch.word_size()) / 8;
+    let word_size_bytes = arch.word_size().div_ceil(8);
 
     for data_directive in elements {
         let mut labels = data_directive.labels;
         for (label, span) in &labels {
-            label_table.insert(label.to_owned(), Label::new(section.get(), span.clone()))?;
+            label_table.insert(
+                label.to_owned(),
+                Label::new(section.get().clone(), span.clone()),
+            )?;
         }
         let (statement, statement_span) = data_directive.statement;
         let args = statement.values;
@@ -509,14 +512,24 @@ fn compile_data(
                 ArgumentNumber::new(1, false).check(&args)?;
                 let (value, span) = &args.0[0];
                 let value = value.to_expr(span)?.int(Expr::unallowed_ident)?;
-                let value = u32::try_from(value)
-                    .map_err(|_| ErrorKind::UnallowedNegativeValue(value.into()).add_span(span))?;
+                let value = BigUint::try_from(value).map_err(|e| {
+                    ErrorKind::UnallowedNegativeValue(e.into_original()).add_span(span)
+                })?;
                 let align = match align_type {
-                    AlignmentType::Exponential => 2_u64.pow(value),
-                    AlignmentType::Byte => value.into(),
+                    AlignmentType::Exponential => {
+                        let value = u128::try_from(value).map_err(|e| {
+                            ErrorKind::IntegerTooBig(
+                                e.into_original().into(),
+                                0.into()..=u128::MAX.into(),
+                            )
+                            .add_span(span)
+                        })?;
+                        BigUint::from(1u8) << value
+                    }
+                    AlignmentType::Byte => value,
                 };
-                let (start, size) = section.try_align(align).add_span(&statement_span)?;
-                if size != 0 {
+                let (start, size) = section.try_align(&align).add_span(&statement_span)?;
+                if size != BigUint::ZERO {
                     memory.push(PendingData {
                         address: start,
                         labels: take_spanned_vec(&mut labels),
@@ -528,11 +541,11 @@ fn compile_data(
                 ArgumentNumber::new(1, false).check(&args)?;
                 let (value, span) = &args.0[0];
                 let value = value.to_expr(span)?.int(Expr::unallowed_ident)?;
-                let size = u64::try_from(value)
-                    .map_err(|_| ErrorKind::UnallowedNegativeValue(value.into()).add_span(span))?
-                    * u64::from(size);
+                let size = BigUint::try_from(value).map_err(|e| {
+                    ErrorKind::UnallowedNegativeValue(e.into_original()).add_span(span)
+                })? * size;
                 memory.push(PendingData {
-                    address: section.try_reserve(size).add_span(span)?,
+                    address: section.try_reserve(&size).add_span(span)?,
                     labels: take_spanned_vec(&mut labels),
                     value: PendingValue::Space(size),
                 });
@@ -552,7 +565,7 @@ fn compile_data(
                     };
                     memory.push(PendingData {
                         address: section
-                            .try_reserve_aligned(size.into(), word_size)
+                            .try_reserve_aligned(&size.into(), word_size_bytes)
                             .add_span(&span)?,
                         labels: take_spanned_vec(&mut labels),
                         value: PendingValue::Integer((value, span), size, int_type),
@@ -565,12 +578,12 @@ fn compile_data(
                     let value = value.to_expr(&span)?.float()?;
                     #[allow(clippy::cast_possible_truncation)]
                     let (value, size) = match float_type {
-                        FloatType::Float => (PendingValue::Float(value as f32), 4),
+                        FloatType::Float => (PendingValue::Float(value as f32), 4u8),
                         FloatType::Double => (PendingValue::Double(value), 8),
                     };
                     memory.push(PendingData {
                         address: section
-                            .try_reserve_aligned(size, word_size)
+                            .try_reserve_aligned(&size.into(), word_size_bytes)
                             .add_span(&span)?,
                         labels: take_spanned_vec(&mut labels),
                         value,
@@ -584,7 +597,7 @@ fn compile_data(
                     let null_terminated = str_type == StringType::AsciiNullEnd;
                     memory.push(PendingData {
                         address: section
-                            .try_reserve(data.len() as u64 + u64::from(null_terminated))
+                            .try_reserve(&(BigUint::from(data.len()) + u8::from(null_terminated)))
                             .add_span(&span)?,
                         labels: take_spanned_vec(&mut labels),
                         value: PendingValue::String {
@@ -612,7 +625,10 @@ fn compile_instructions<'a>(
         let parsed_instruction =
             parse_instruction(arch, (name, span.clone()), &instruction.statement.0.args)?;
         for (label, span) in &instruction.labels {
-            label_table.insert(label.clone(), Label::new(code_section.get(), span.clone()))?;
+            label_table.insert(
+                label.clone(),
+                Label::new(code_section.get().clone(), span.clone()),
+            )?;
         }
         let first_idx = pending_instructions.len();
         process_instruction(
@@ -633,7 +649,8 @@ fn compile_instructions<'a>(
 #[allow(clippy::too_many_lines)]
 pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, CompileError> {
     let mut label_table = LabelTable::default();
-    let word_size = arch.word_size() / 8;
+    let word_size_bits = arch.word_size();
+    let word_size_bytes = arch.word_size().div_ceil(8);
 
     let (instructions, data_directives) = split_statements(arch, ast)?;
 
@@ -661,43 +678,42 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
         .into_iter()
         .map(|inst| {
             let def = inst.definition;
-            let mut binary_instruction =
-                BitField::new(usize::from(word_size) * usize::from(def.nwords) * 8);
+            let mut binary_instruction = BitField::new(word_size_bits * def.nwords);
             let mut translated_instruction = def.syntax.output_syntax.to_string();
             for arg in inst.args {
                 let field = &def.syntax.fields[arg.field_idx];
                 #[allow(clippy::cast_sign_loss)]
-                let (value, value_str) = match field.r#type {
+                let (value, value_str) = match &field.r#type {
                     FieldType::Cop { .. } => {
                         unreachable!("This field type shouldn't be used for instruction arguments")
                     }
-                    #[allow(clippy::cast_possible_wrap)]
-                    FieldType::Co => (def.co.0 as i64, def.name.to_string()),
+                    FieldType::Co => (def.co.0.clone().into(), def.name.to_string()),
                     val_type @ (FieldType::Address
                     | FieldType::ImmSigned
                     | FieldType::ImmUnsigned
                     | FieldType::OffsetBytes
                     | FieldType::OffsetWords) => {
                         let ident_eval = |label: &str| {
-                            let value: i64 = label_table
+                            let value: BigInt = label_table
                                 .get(label)
                                 .ok_or_else(|| ErrorKind::UnknownLabel(label.to_owned()))?
                                 .address()
-                                .try_into()
-                                .unwrap();
-                            let next_address = i64::try_from(inst.address).unwrap()
-                                + i64::from(word_size) * i64::from(def.nwords);
-                            let offset = value - next_address;
+                                .clone()
+                                .into();
+                            let offset = |x| {
+                                let next_address = inst.address.clone()
+                                    + BigUint::from(word_size_bytes) * def.nwords;
+                                x - BigInt::from(next_address)
+                            };
                             Ok(match val_type {
-                                FieldType::OffsetWords => offset / i64::from(word_size),
-                                FieldType::OffsetBytes => offset,
+                                FieldType::OffsetWords => offset(value) / word_size_bytes,
+                                FieldType::OffsetBytes => offset(value),
                                 _ => value,
-                            }
-                            .try_into()
-                            .unwrap())
+                            })
                         };
-                        let value: i64 = arg.value.0.int(ident_eval)?.into();
-                        (value, value.to_string())
+                        let value = arg.value.0.int(ident_eval)?;
+                        let value_str = value.to_string();
+                        (value, value_str)
                     }
                     val_type @ (FieldType::IntReg
                     | FieldType::CtrlReg
@@ -730,7 +746,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                                 }
                                 .add_span(&arg.value.1)
                             })?;
-                        (i64::try_from(i).unwrap(), name)
+                        (i.into(), name)
                     }
                 };
                 binary_instruction
@@ -753,13 +769,13 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                     .to_string();
             }
             let fields = def.syntax.fields.iter();
-            for (range, value) in fields.filter_map(|field| match field.r#type {
+            for (range, value) in fields.filter_map(|field| match &field.r#type {
                 FieldType::Cop { value } => Some((&field.range, value)),
                 _ => None,
             }) {
                 #[allow(clippy::cast_possible_wrap)]
                 binary_instruction
-                    .replace(range, value.0 as i64, false)
+                    .replace(range, value.0.clone().into(), false)
                     .unwrap();
             }
             Ok(Instruction {
@@ -785,12 +801,12 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                                 .get(label)
                                 .ok_or_else(|| ErrorKind::UnknownLabel(label.to_owned()))?
                                 .address()
-                                .try_into()
-                                .unwrap())
+                                .clone()
+                                .into())
                         };
-                        let value = value.int(ident_eval)?.into();
+                        let value = value.int(ident_eval)?;
                         Value::Integer(
-                            Integer::build(value, (size * 8).into(), Some(int_type), None)
+                            Integer::build(value, size * 8, Some(int_type), None)
                                 .add_span(&span)?,
                         )
                     }
@@ -821,7 +837,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::architecture::{Architecture, BitRange, IntegerType, NonEmptyRangeInclusiveU8};
+    use crate::architecture::{Architecture, BitRange, IntegerType, NonEmptyRangeInclusive};
 
     fn compile(src: &str) -> Result<CompiledCode, CompileError> {
         let arch = Architecture::from_json(include_str!("../tests/architecture.json")).unwrap();
@@ -832,7 +848,7 @@ mod test {
     fn label_table(labels: impl IntoIterator<Item = (&'static str, u64, Span)>) -> LabelTable {
         let mut tbl = LabelTable::default();
         for v in labels {
-            tbl.insert(v.0.into(), super::Label::new(v.1, v.2)).unwrap();
+            tbl.insert(v.0.into(), Label::new(v.1.into(), v.2)).unwrap();
         }
         tbl
     }
@@ -841,12 +857,14 @@ mod test {
         let mut field = BitField::new(bits.len());
         for (i, c) in bits.chars().enumerate() {
             if c == '1' {
-                let i = u8::try_from(bits.len() - i - 1).unwrap();
+                let i = bits.len() - i - 1;
                 field
                     .replace(
-                        &BitRange::build(vec![NonEmptyRangeInclusiveU8::build(i, i).unwrap()])
-                            .unwrap(),
-                        1,
+                        &BitRange::build(vec![
+                            NonEmptyRangeInclusive::<usize>::build(i, i).unwrap()
+                        ])
+                        .unwrap(),
+                        1.into(),
                         false,
                     )
                     .unwrap();
@@ -857,7 +875,7 @@ mod test {
 
     fn inst(address: u64, labels: &[&str], loaded: &str, binary: &str, user: Span) -> Instruction {
         Instruction {
-            address,
+            address: address.into(),
             labels: labels.iter().map(|&x| x.to_owned()).collect(),
             loaded: loaded.into(),
             binary: bitfield(binary),
@@ -874,14 +892,14 @@ mod test {
 
     fn data(address: u64, labels: &[&str], value: Value) -> Data {
         Data {
-            address,
+            address: address.into(),
             value,
             labels: labels.iter().map(|&x| x.to_owned()).collect(),
         }
     }
 
     fn int_val(x: i64, size: usize, ty: IntegerType) -> Value {
-        Value::Integer(Integer::build(x, size, Some(ty), None).unwrap())
+        Value::Integer(Integer::build(x.into(), size, Some(ty), None).unwrap())
     }
 
     #[test]
@@ -1013,7 +1031,10 @@ mod test {
                 inst(8, &["b"], "nop", NOP_BINARY, 34..37),
             ]
         );
-        assert_eq!(x.data_memory, vec![data(16, &["c"], Value::Space(1))]);
+        assert_eq!(
+            x.data_memory,
+            vec![data(16, &["c"], Value::Space(1u8.into()))]
+        );
     }
 
     #[test]
@@ -1072,7 +1093,10 @@ mod test {
     fn instruction_fields_offsets_unaligned_labels() {
         let x = compile(".text\nmain: off 1, a\n.data\n.zero 1\na: .zero 1").unwrap();
         let binary = "00010000000000000000000000000011";
-        assert_eq!(x.label_table, label_table([("main", 0, 6..11), ("a", 17, 35..37)]));
+        assert_eq!(
+            x.label_table,
+            label_table([("main", 0, 6..11), ("a", 17, 35..37)])
+        );
         assert_eq!(
             x.instructions,
             vec![inst(0, &["main"], "off 1 3", binary, 12..20)]
@@ -1080,8 +1104,8 @@ mod test {
         assert_eq!(
             x.data_memory,
             vec![
-                data(16, &[], Value::Space(1)),
-                data(17, &["a"], Value::Space(1))
+                data(16, &[], Value::Space(1u8.into())),
+                data(17, &["a"], Value::Space(1u8.into()))
             ]
         );
     }
@@ -1094,8 +1118,8 @@ mod test {
         assert_eq!(
             x.data_memory,
             vec![
-                data(16, &[], Value::Space(3)),
-                data(19, &[], Value::Space(1)),
+                data(16, &[], Value::Space(3u8.into())),
+                data(19, &[], Value::Space(1u8.into())),
             ]
         );
     }
@@ -1175,7 +1199,7 @@ mod test {
             x.data_memory,
             vec![
                 data(16, &["size"], int_val(14, 8, IntegerType::Byte)),
-                data(17, &["begin"], Value::Space(14)),
+                data(17, &["begin"], Value::Space(14u8.into())),
                 data(31, &["end"], int_val(0, 8, IntegerType::Byte)),
             ]
         );
@@ -1266,9 +1290,9 @@ mod test {
             assert_eq!(
                 x.data_memory,
                 vec![
-                    data(16, &[], Value::Space(1)),
-                    data(17, &["a", "b"], Value::Padding(alignment)),
-                    data(17 + alignment, &[], Value::Space(1))
+                    data(16, &[], Value::Space(1u8.into())),
+                    data(17, &["a", "b"], Value::Padding(alignment.into())),
+                    data(17 + alignment, &[], Value::Space(1u8.into()))
                 ]
             );
         }
@@ -1290,9 +1314,9 @@ mod test {
             assert_eq!(
                 x.data_memory,
                 vec![
-                    data(16, &[], Value::Space(1)),
-                    data(17, &["a"], Value::Padding(alignment)),
-                    data(17 + alignment, &[], Value::Space(1))
+                    data(16, &[], Value::Space(1u8.into())),
+                    data(17, &["a"], Value::Padding(alignment.into())),
+                    data(17 + alignment, &[], Value::Space(1u8.into()))
                 ]
             );
         }
@@ -1308,8 +1332,8 @@ mod test {
             assert_eq!(
                 x.data_memory,
                 vec![
-                    data(16, &[], Value::Space(1)),
-                    data(17, &[], Value::Padding(alignment)),
+                    data(16, &[], Value::Space(1u8.into())),
+                    data(17, &[], Value::Padding(alignment.into())),
                 ]
             );
         }
@@ -1330,8 +1354,8 @@ mod test {
             assert_eq!(
                 x.data_memory,
                 vec![
-                    data(16, &[], Value::Space(4)),
-                    data(20, &[], Value::Space(1))
+                    data(16, &[], Value::Space(4u8.into())),
+                    data(20, &[], Value::Space(1u8.into()))
                 ]
             );
         }
@@ -1349,9 +1373,9 @@ mod test {
         assert_eq!(
             x.data_memory,
             vec![
-                data(16, &[], Value::Space(4)),
-                data(20, &["a"], Value::Padding(4)),
-                data(24, &[], Value::Space(1))
+                data(16, &[], Value::Space(4u8.into())),
+                data(20, &["a"], Value::Padding(4u8.into())),
+                data(24, &[], Value::Space(1u8.into()))
             ]
         );
     }
@@ -1510,7 +1534,7 @@ mod test {
         for directive in ["zero  ", "align ", "balign"] {
             assert_eq!(
                 compile(&format!(".data\n.{directive} -1\n.text\nmain: nop")),
-                Err(ErrorKind::UnallowedNegativeValue(-1).add_span(&(14..16))),
+                Err(ErrorKind::UnallowedNegativeValue((-1).into()).add_span(&(14..16))),
                 "{directive}"
             );
         }
@@ -1568,7 +1592,7 @@ mod test {
     #[test]
     fn data_unaligned() {
         for (directive, size) in [
-            ("half  ", 2),
+            ("half  ", 2u8),
             ("word  ", 4),
             ("dword ", 8),
             ("float ", 4),
@@ -1577,9 +1601,9 @@ mod test {
             assert_eq!(
                 compile(&format!(".data\n.byte 0\n.{directive} 1\n.text\nmain: nop")),
                 Err(ErrorKind::DataUnaligned {
-                    address: 17,
+                    address: 17u8.into(),
+                    alignment: size.into(),
                     word_size: 4,
-                    alignment: size,
                 }
                 .add_span(&(22..23))),
                 "{directive}",
@@ -1589,39 +1613,41 @@ mod test {
 
     #[test]
     fn int_args_size() {
+        let range = |x: std::ops::Range<i32>| x.start.into()..=(x.end - 1).into();
+
         // Data directives
         assert_eq!(
             compile(".data\n.byte 256\n.text\nmain: nop"),
-            Err(ErrorKind::IntegerTooBig(256, -128..256).add_span(&(12..15))),
+            Err(ErrorKind::IntegerTooBig(256.into(), range(-128..256)).add_span(&(12..15))),
         );
         assert_eq!(
             compile(".data\n.byte -129\n.text\nmain: nop"),
-            Err(ErrorKind::IntegerTooBig(-129, -128..256).add_span(&(12..16))),
+            Err(ErrorKind::IntegerTooBig((-129).into(), range(-128..256)).add_span(&(12..16))),
         );
         assert_eq!(
             compile(".data\n.half 65536\n.text\nmain: nop"),
-            Err(ErrorKind::IntegerTooBig(65536, -32768..65536).add_span(&(12..17))),
+            Err(ErrorKind::IntegerTooBig(65536.into(), range(-32768..65536)).add_span(&(12..17))),
         );
         // Instruction arguments
         assert_eq!(
             compile(".text\nmain: imm 8, 0, 0"),
-            Err(ErrorKind::IntegerTooBig(8, -8..8).add_span(&(16..17))),
+            Err(ErrorKind::IntegerTooBig(8.into(), range(-8..8)).add_span(&(16..17))),
         );
         assert_eq!(
             compile(".text\nmain: imm -9, 0, 0"),
-            Err(ErrorKind::IntegerTooBig(-9, -8..8).add_span(&(16..18))),
+            Err(ErrorKind::IntegerTooBig((-9).into(), range(-8..8)).add_span(&(16..18))),
         );
         assert_eq!(
             compile(".text\nmain: imm 0, 256, 0"),
-            Err(ErrorKind::IntegerTooBig(256, 0..256).add_span(&(19..22))),
+            Err(ErrorKind::IntegerTooBig(256.into(), range(0..256)).add_span(&(19..22))),
         );
         assert_eq!(
             compile(".text\nmain: imm 0, -1, 0"),
-            Err(ErrorKind::IntegerTooBig(-1, 0..256).add_span(&(19..21))),
+            Err(ErrorKind::IntegerTooBig((-1).into(), range(0..256)).add_span(&(19..21))),
         );
         assert_eq!(
             compile(".text\nmain: imm 0, 0, 20"),
-            Err(ErrorKind::IntegerTooBig(20, 0..16).add_span(&(22..24))),
+            Err(ErrorKind::IntegerTooBig(20.into(), range(0..16)).add_span(&(22..24))),
         );
     }
 

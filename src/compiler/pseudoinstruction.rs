@@ -18,6 +18,7 @@
  * along with CREATOR.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+use num_bigint::BigUint;
 use once_cell::sync::Lazy;
 use regex::{Captures, Regex};
 
@@ -129,7 +130,7 @@ fn capture_span(captures: &Captures, i: usize) -> Span {
 pub fn expand<'b, 'a: 'b>(
     arch: &'a Architecture,
     label_table: &LabelTable,
-    address: u64,
+    address: &BigUint,
     instruction: Spanned<&'b Pseudoinstruction>,
     args: &ParsedArgs,
 ) -> Result<Vec<(InstructionDefinition<'a>, ParsedArgs)>, CompileError> {
@@ -146,8 +147,8 @@ pub fn expand<'b, 'a: 'b>(
             .get(label)
             .ok_or_else(|| ErrorKind::UnknownLabel(label.to_owned()))?
             .address()
-            .try_into()
-            .unwrap())
+            .clone()
+            .into())
     };
 
     let num = |x: &str| {
@@ -262,7 +263,7 @@ pub fn expand<'b, 'a: 'b>(
             .value;
         #[allow(clippy::cast_possible_truncation)]
         let size = match value.int(ident_eval) {
-            Ok(x) => 32 - x.leading_zeros(),
+            Ok(x) => x.bits() + 1,
             Err(err) => match err.kind {
                 ErrorKind::UnallowedFloat => 32,
                 _ => return Err(err),

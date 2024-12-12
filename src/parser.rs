@@ -274,7 +274,7 @@ mod test {
                     (
                         vec![
                             (Data::String("a".into()), 6..9),
-                            (Data::Number(Expr::Integer(1)), 11..12),
+                            (Data::Number(Expr::Integer(1u8.into())), 11..12),
                             (Data::Number(Expr::Identifier(("b".into(), 14..15))), 14..15),
                         ],
                         6..15,
@@ -332,7 +332,7 @@ mod test {
                         vec![
                             (Token::Identifier("a".into()), 5..6),
                             (Token::Ctrl(','), 6..7),
-                            (Token::Integer(1), 8..9),
+                            (Token::Integer(1u8.into()), 8..9),
                         ],
                         5..9,
                     ),
@@ -392,7 +392,7 @@ mod test {
                     directive(
                         vec![("a", 0..2)],
                         (".dir", 3..7),
-                        (vec![(Data::Number(Expr::Integer(1)), 8..9)], 8..9),
+                        (vec![(Data::Number(Expr::Integer(1u8.into())), 8..9)], 8..9),
                         3..9,
                     ),
                     instruction(

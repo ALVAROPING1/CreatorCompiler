@@ -22,12 +22,13 @@
 //!
 //! The entry point for the specification is the [`Architecture`] struct
 
+use num_bigint::BigUint;
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
 
 mod utils;
+pub use utils::NonEmptyRangeInclusive;
 use utils::{BaseN, Integer, Number, Pair};
-pub use utils::{NonEmptyRangeInclusiveU64, NonEmptyRangeInclusiveU8};
 
 mod json;
 
@@ -61,7 +62,7 @@ pub struct Config<'a> {
     /// Name of the architecture
     name: &'a str,
     /// Word size in bits
-    word_size: u8,
+    word_size: usize,
     /// Description of the architecture
     description: &'a str,
     /// Storage format of the architecture (big/little endian)
@@ -143,8 +144,8 @@ pub struct Register<'a> {
     name: Vec<&'a str>,
     /// Size
     #[serde(deserialize_with = "utils::from_str")]
-    #[schemars(with = "utils::StringOrT<u8>")]
-    nbits: u8,
+    #[schemars(with = "utils::StringOrT<Integer>")]
+    nbits: Integer,
     /// Current value of the register
     value: Number,
     /// Default value of the register
@@ -196,7 +197,7 @@ pub struct Instruction<'a> {
     /// Binary op code
     pub co: BaseN<2>,
     /// Size of the instruction
-    pub nwords: u8,
+    pub nwords: usize,
     /// Execution time of the instruction
     clk_cycles: Option<Integer>,
     /// Code to execute for the instruction
@@ -263,7 +264,7 @@ pub enum InstructionProperties {
 }
 
 /// Instruction field specification
-#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
 pub struct InstructionField<'a, BitRange> {
     /// Name of the field
     pub name: &'a str,
@@ -278,11 +279,11 @@ pub struct InstructionField<'a, BitRange> {
 /// Range of bits of a field in a binary instruction
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 #[serde(try_from = "json::BitRange")]
-pub struct BitRange(Vec<NonEmptyRangeInclusiveU8>);
+pub struct BitRange(Vec<NonEmptyRangeInclusive<usize>>);
 utils::schema_from!(BitRange, json::BitRange);
 
 /// Allowed instruction field types
-#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
 pub enum FieldType {
@@ -393,11 +394,11 @@ pub enum DirectiveSegment {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DirectiveData {
     /// Store n * size null bytes in the data segment
-    Space(u8),
+    Space(usize),
     /// Store string
     String(StringType),
     /// Store integer
-    Int(u8, IntegerType),
+    Int(usize, IntegerType),
     /// Store floating point value
     Float(FloatType),
     /// Align the memory to a given size
@@ -450,11 +451,11 @@ pub enum AlignmentType {
 #[serde(try_from = "[Pair<json::MemoryLayoutKeys, BaseN<16>>; 6]")]
 pub struct MemoryLayout {
     /// Addresses reserved for the text segment
-    text: NonEmptyRangeInclusiveU64,
+    text: NonEmptyRangeInclusive<BigUint>,
     /// Addresses reserved for the data segment
-    data: NonEmptyRangeInclusiveU64,
+    data: NonEmptyRangeInclusive<BigUint>,
     /// Addresses reserved for the stack segment
-    stack: NonEmptyRangeInclusiveU64,
+    stack: NonEmptyRangeInclusive<BigUint>,
 }
 utils::schema_from!(MemoryLayout, [Pair<json::MemoryLayoutKeys, BaseN<16>>; 6]);
 
@@ -514,7 +515,7 @@ impl<'a> Architecture<'a> {
 
     /// Gets the word size of the architecture
     #[must_use]
-    pub const fn word_size(&self) -> u8 {
+    pub const fn word_size(&self) -> usize {
         self.arch_conf.word_size
     }
 
@@ -526,13 +527,13 @@ impl<'a> Architecture<'a> {
 
     /// Gets the code section's start/end addresses
     #[must_use]
-    pub const fn code_section(&self) -> &NonEmptyRangeInclusiveU64 {
+    pub const fn code_section(&self) -> &NonEmptyRangeInclusive<BigUint> {
         &self.memory_layout.text
     }
 
     /// Gets the data section's start/end addresses
     #[must_use]
-    pub const fn data_section(&self) -> &NonEmptyRangeInclusiveU64 {
+    pub const fn data_section(&self) -> &NonEmptyRangeInclusive<BigUint> {
         &self.memory_layout.data
     }
 
@@ -607,21 +608,19 @@ impl BitRange {
         // We need a closure because there are multiple methods for different types
         #[allow(clippy::redundant_closure_for_method_calls)]
         self.iter()
-            .map(|x| x.size())
-            .reduce(|acc, val| acc.saturating_add(val.into()))
+            .map(|x| *x.size())
+            .reduce(|acc, val| acc.saturating_add(val))
             .expect("There should always be at least 1 field")
-            .get()
-            .into()
     }
 
     /// Gets an iterator of the ranges of bits specified
-    pub fn iter(&self) -> impl Iterator<Item = &NonEmptyRangeInclusiveU8> {
+    pub fn iter(&self) -> impl Iterator<Item = &NonEmptyRangeInclusive<usize>> {
         self.0.iter()
     }
 
     /// Creates a new [`BitRange`]
     #[must_use]
-    pub fn build(ranges: Vec<NonEmptyRangeInclusiveU8>) -> Option<Self> {
+    pub fn build(ranges: Vec<NonEmptyRangeInclusive<usize>>) -> Option<Self> {
         if ranges.is_empty() {
             return None;
         }
