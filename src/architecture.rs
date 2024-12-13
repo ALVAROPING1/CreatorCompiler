@@ -60,7 +60,7 @@ pub struct Architecture<'a> {
 pub struct Config<'a> {
     /// Name of the architecture
     name: &'a str,
-    /// Word size
+    /// Word size in bits
     word_size: u8,
     /// Description of the architecture
     description: &'a str,
