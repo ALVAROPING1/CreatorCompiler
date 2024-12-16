@@ -5,14 +5,21 @@ to have better performance, more helpful error messages, and a more correct outp
 
 ## Running locally (CLI)
 
-The compiler currently supports 4 modes of execution:
+The compiler can be built from source using `cargo build --release`, which will
+place the binary in `./target/release/creator-compiler`. The `--release` flag can
+be omitted to generate debug binaries. Additionally, `cargo run --release -- [<ARGS>]`
+can be used as a shortcut to build and run the binary. Running the application
+without arguments provides a short description of the application and subcommands,
+and using `creator-compiler help <command>` provides a description and usage
+instructions for each command.
 
-- Print architecture specification schema: `cargo run --release -- 0 > schema.json`
-- Validate architecture specification: `cargo run --release -- 1 architecture.json`
-- Parse assembly input: `cargo run --release -- 2 architecture.json assembly.s`
-- Compile assembly input: `cargo run --release -- 3 architecture.json assembly.s`
+The compiler currently supports 3 modes of execution:
 
-The `--release` flag can be omitted to generate debug binaries
+- Print architecture specification schema to `stdout`: `creator-compiler schema`
+- Validate architecture specification file: `creator-compiler validate <architecture.json>`
+- Compile assembly input and print the result to `stdout`:
+  `creator-compiler compile <architecture.json> <assembly.s>`
+  - The `-v`/`--verbose` flag can be used to also print the parsed AST
 
 ## Running in a browser
 

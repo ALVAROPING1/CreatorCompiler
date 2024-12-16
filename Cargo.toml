@@ -3,6 +3,9 @@ name = "creator-compiler"
 version = "0.1.0"
 edition = "2021"
 license = "LGPL-2.1-or-later"
+description = "A reimplementation of Creator (https://creatorsim.github.io/)'s compiler"
+categories = ["command-line-utilities", "compilers"]
+keywords = ["compiler", "assembly", "assembler", "Creator"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -12,8 +15,12 @@ crate-type = [
     "rlib",   # required for static rust libraries
 ]
 
+[[bin]]
+name = "creator-compiler"
+required-features = ["cli"]
+
 [features]
-default = ["js"]
+default = ["js", "cli"]
 # Enable JS interoperability support
 js = [
     "console_error_panic_hook",
@@ -22,7 +29,10 @@ js = [
     "ansi-to-html",
     "pseudoinstructions",
 ]
+# Enable pseudoinstruction evaluation. Requires execution in WebAssembly
 pseudoinstructions = ["js-sys"]
+# Enable CLI interface
+cli = ["clap"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -32,6 +42,9 @@ ariadne = { version = "0.5.0" }
 chumsky = "0.9.3"
 regex = "1.10.6"
 once_cell = "1.19.0"
+
+# CLI interface
+clap = { version = "4.5.9", optional = true, features = ["derive"] }
 
 # JS interoperation dependencies
 wasm-bindgen = { version = "0.2.84", optional = true }
