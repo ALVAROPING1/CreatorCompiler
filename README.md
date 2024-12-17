@@ -21,19 +21,20 @@ The compiler currently supports 3 modes of execution:
   `creator-compiler compile <architecture.json> <assembly.s>`
   - The `-v`/`--verbose` flag can be used to also print the parsed AST
 
-## Running in a browser
+## JS Bindings
 
-Running in a browser is supported through `wasm`. In order to do so, the code must
-first be compiled into `wasm` package with `wasm-pack build --target web`. The flag
-`--dev` can be added to generate a debug module with a shorter compile time by
-omitting optimizations
+JS bindings are supported through `wasm`. In order to use them, the code must first
+be compiled into a `wasm` package with [`wasm-pack`](https://rustwasm.github.io/wasm-pack/installer/).
+This can be done using `wasm-pack build --target [web|nodejs]`, where the target
+depends on if the code is being compiled for `NodeJS` or a browser. The flag `--dev`
+can be added to generate a debug module with a shorter compile time by omitting optimizations.
 
 After the package has been built, it can be loaded into a web page by requiring the
 generated `.js` file as a module. The `js_example/` directory contains a working
 example of how to use the generated package. The `index.html` file can't be directly
 opened in a browser due to [CORS](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS)
 limitations. Python can be used to start a development server with
-`python3 -m http.server 8080` which allows to load the page at `localhost:8080/js_example`
+`python3 -m http.server 8080` which allows to load the page at `localhost:8080/js_example`.
 
 ## Running tests
 
