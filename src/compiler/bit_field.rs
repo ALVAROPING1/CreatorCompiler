@@ -72,7 +72,7 @@ impl BitField {
     ) -> Result<(), ErrorKind> {
         let field_size = range.size();
         let data = Integer::build(data, field_size, None, Some(signed))?.to_string();
-        let mut data = &data[data.len() - field_size..];
+        let mut data = &data[..];
         for segment in range.iter() {
             let size = *segment.size();
             self.replace_range(*segment.start(), &data[..size]);
