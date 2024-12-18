@@ -264,7 +264,7 @@ pub fn expand<'b, 'a: 'b>(
         #[allow(clippy::cast_possible_truncation)]
         let size = match value.int(ident_eval) {
             Ok(x) => x.bits() + 1,
-            Err(err) => match err.kind {
+            Err(err) => match *err.kind {
                 ErrorKind::UnallowedFloat => 32,
                 _ => return Err(err),
             },

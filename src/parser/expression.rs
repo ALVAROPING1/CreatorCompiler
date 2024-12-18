@@ -317,7 +317,7 @@ mod test {
         }
     }
 
-    const fn float_op(op: OperationKind, s: Span) -> CompileError {
+    fn float_op(op: OperationKind, s: Span) -> CompileError {
         ErrorKind::UnallowedFloatOperation(op).add_span(&s)
     }
 

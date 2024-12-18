@@ -1678,14 +1678,16 @@ mod test {
     #[test]
     fn incorrect_instruction_syntax() {
         let assert = |err, syntaxes: &[&str], expected_span| match err {
-            Err(CompileError {
-                span,
-                kind: ErrorKind::IncorrectInstructionSyntax(s),
-            }) => {
-                assert_eq!(span, expected_span);
-                assert_eq!(s.into_iter().map(|x| x.0).collect::<Vec<_>>(), syntaxes);
-            }
-            x => panic!("Incorrect result, expected ErrorKind::IncorrectInstructionSyntax: {x:?}"),
+            Err(CompileError { span, kind }) => match *kind {
+                ErrorKind::IncorrectInstructionSyntax(s) => {
+                    assert_eq!(span, expected_span);
+                    assert_eq!(s.into_iter().map(|x| x.0).collect::<Vec<_>>(), syntaxes);
+                }
+                x => panic!(
+                    "Incorrect result, expected ErrorKind::IncorrectInstructionSyntax: {x:?}"
+                ),
+            },
+            x => panic!("Incorrect result, expected Err variant: {x:?}"),
         };
         assert(compile(".text\nmain: nop 1"), &["nop"], 16..17);
         assert(

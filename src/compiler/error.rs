@@ -103,7 +103,7 @@ pub struct Error {
     /// Location in the assembly that produced the error
     pub span: Span,
     /// Type of the error
-    pub kind: Kind,
+    pub kind: Box<Kind>,
 }
 
 macro_rules! plural {
@@ -123,9 +123,12 @@ impl Kind {
     ///
     /// * `span`: location in the assembly code that caused the error
     #[must_use]
-    pub const fn add_span(self, span: &Span) -> Error {
+    pub fn add_span(self, span: &Span) -> Error {
         let span = span.start..span.end;
-        Error { span, kind: self }
+        Error {
+            span,
+            kind: Box::new(self),
+        }
     }
 
     /// Gets the numeric error code of this error
@@ -366,7 +369,7 @@ impl crate::RenderError for Error {
             .write((filename, Source::from(src)), &mut buffer)
             .expect("Writing to an in-memory vector shouldn't fail");
 
-        match self.kind {
+        match *self.kind {
             Kind::IncorrectInstructionSyntax(errs) => {
                 for (syntax, err) in errs {
                     writeln!(
