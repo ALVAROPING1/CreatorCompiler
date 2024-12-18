@@ -79,8 +79,9 @@ impl Integer {
         // Reinterpret the value as unsigned, so that we can manipulate the bits more easily
         let value = value.to_biguint().unwrap_or_else(|| {
             let mut bytes = value.to_signed_bytes_le();
-            if bytes.len() * 8 < size {
-                let diff = size.div_ceil(8) - bytes.len();
+            let size = size.div_ceil(8);
+            if bytes.len() < size {
+                let diff = size - bytes.len();
                 bytes.extend(std::iter::repeat_n(0xFF, diff));
             }
             BigUint::from_bytes_le(&bytes)

@@ -678,7 +678,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
         .into_iter()
         .map(|inst| {
             let def = inst.definition;
-            let mut binary_instruction = BitField::new(word_size_bits * def.nwords);
+            let mut binary_instruction = BitField::new(word_size_bits.saturating_mul(def.nwords));
             let mut translated_instruction = def.syntax.output_syntax.to_string();
             for arg in inst.args {
                 let field = &def.syntax.fields[arg.field_idx];
@@ -806,7 +806,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                         };
                         let value = value.int(ident_eval)?;
                         Value::Integer(
-                            Integer::build(value, size * 8, Some(int_type), None)
+                            Integer::build(value, size.saturating_mul(8), Some(int_type), None)
                                 .add_span(&span)?,
                         )
                     }
