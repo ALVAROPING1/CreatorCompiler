@@ -719,12 +719,16 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                     | FieldType::CtrlReg
                     | FieldType::SingleFPReg
                     | FieldType::DoubleFPReg) => {
-                        let Expr::Identifier((name, _)) = arg.value.0 else {
-                            return Err(ErrorKind::IncorrectArgumentType {
-                                expected: ArgumentType::RegisterName,
-                                found: ArgumentType::Expression,
+                        let name = match arg.value.0 {
+                            Expr::Identifier((name, _)) => name,
+                            Expr::Integer(x) => x.to_string(),
+                            _ => {
+                                return Err(ErrorKind::IncorrectArgumentType {
+                                    expected: ArgumentType::RegisterName,
+                                    found: ArgumentType::Expression,
+                                }
+                                .add_span(&arg.value.1))
                             }
-                            .add_span(&arg.value.1));
                         };
                         let bank_type = match val_type {
                             FieldType::IntReg => RegisterType::Int,
@@ -986,6 +990,14 @@ mod test {
         assert_eq!(
             x.instructions,
             vec![inst(0, &["main"], "reg ctrl1 two ft1 ft2", binary, 12..36)]
+        );
+        assert_eq!(x.data_memory, vec![]);
+        // Number aliases
+        let x = compile(".text\nmain: reg ctrl1, 2, ft1, ft2").unwrap();
+        assert_eq!(x.label_table, tbl);
+        assert_eq!(
+            x.instructions,
+            vec![inst(0, &["main"], "reg ctrl1 2 ft1 ft2", binary, 12..34)]
         );
         assert_eq!(x.data_memory, vec![]);
         // Linked floating point registers
@@ -1450,6 +1462,14 @@ mod test {
             }
             .add_span(&(16..18))),
         );
+        assert_eq!(
+            compile(".text\nmain: reg 2, x0, ft1, ft2"),
+            Err(ErrorKind::UnknownRegister {
+                name: "2".into(),
+                bank: RegisterType::Ctrl,
+            }
+            .add_span(&(16..17))),
+        );
         // Register names should be case sensitive
         assert_eq!(
             compile(".text\nmain: reg pc, x0, ft1, ft2"),
@@ -1565,12 +1585,12 @@ mod test {
             Err(ErrorKind::UnallowedFloat.add_span(&(22..25))),
         );
         assert_eq!(
-            compile(".text\nmain: reg PC, 0, ft1, ft2"),
+            compile(".text\nmain: reg PC, 0+2, ft1, ft2"),
             Err(ErrorKind::IncorrectArgumentType {
                 expected: ArgumentType::RegisterName,
                 found: ArgumentType::Expression,
             }
-            .add_span(&(20..21))),
+            .add_span(&(20..23))),
         );
     }
 
