@@ -781,7 +781,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                 #[allow(clippy::cast_possible_wrap)]
                 binary_instruction
                     .replace(range, value.0.clone().into(), false)
-                    .unwrap();
+                    .add_span(&inst.span)?;
             }
             Ok(Instruction {
                 labels: inst.labels,
