@@ -25,10 +25,11 @@
 use num_bigint::BigUint;
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
+use serde_json::Number;
 
 mod utils;
 pub use utils::NonEmptyRangeInclusive;
-use utils::{BaseN, Integer, Number, Pair};
+use utils::{BaseN, Integer, Pair};
 
 mod json;
 

@@ -56,14 +56,6 @@ impl FromStr for Integer {
     }
 }
 
-/// Numeric value
-#[derive(JsonSchema, Debug, PartialEq, Clone, PartialOrd)]
-#[serde(untagged)]
-pub enum Number {
-    Int(Integer),
-    Float(f64),
-}
-
 /// Integer stored as a string in base N
 #[derive(Debug, PartialEq, Eq, Clone, PartialOrd, Ord, JsonSchema)]
 pub struct BaseN<const N: u8>(#[schemars(with = "String")] pub BigUint);
@@ -87,18 +79,6 @@ impl<'de> Deserialize<'de> for Integer {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let s = serde_json::Number::deserialize(deserializer)?;
         Ok(Self(s.as_str().parse().map_err(Error::custom)?))
-    }
-}
-
-impl<'de> Deserialize<'de> for Number {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let s = serde_json::Number::deserialize(deserializer)?;
-        let s = s.as_str();
-        Ok(if s.contains(|c| ".eE".contains(c)) {
-            Self::Float(s.parse().map_err(Error::custom)?)
-        } else {
-            Self::Int(Integer(s.parse().map_err(Error::custom)?))
-        })
     }
 }
 
