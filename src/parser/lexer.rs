@@ -301,7 +301,7 @@ mod test {
         let test_cases = [
             "0.0", "1.0", "0.1", "100.0", "100.01", "100e1", "100E1", "0.5e1", "0.5e1", "0.5e+1",
             "0.5e-1", "0.5e0", "0.5e+0", "0.5e-0", "1e300", "1e400", "1e-30", "inf", "INF", "Inf",
-            "nan", "NAN", "NaN",
+            "infinity", "Infinity", "INFINITY", "nan", "NAN", "NaN",
         ];
         for s in test_cases {
             assert_eq!(lex(s), Ok(vec![(float_tok(s), 0..s.len())]), "`{s}`");
