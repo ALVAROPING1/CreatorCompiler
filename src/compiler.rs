@@ -73,9 +73,10 @@ enum InstructionDefinition<'arch> {
 /// Parse the arguments of an instruction according to any of its definitions. If the arguments
 /// match the syntax of multiple definitions, one of them is selected according to the following
 /// criteria:
-/// - If there are multiple definitions in which the arguments fit, the first one is used. For
+///
+/// * If there are multiple definitions in which the arguments fit, the first one is used. For
 ///   arguments whose size can't be known, it's assumed that they will fit
-/// - If there are no definitions in which the arguments fit, the last one that parsed correctly is
+/// * If there are no definitions in which the arguments fit, the last one that parsed correctly is
 ///   used
 ///
 /// # Parameters
