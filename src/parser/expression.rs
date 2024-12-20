@@ -295,7 +295,7 @@ mod test {
     use super::*;
 
     fn parse(code: &str) -> Result<Expr, ()> {
-        super::super::parse_with(super::parser(), code).map_err(|_| ())
+        super::super::parse_with(super::parser(), "#", code).map_err(|_| ())
     }
 
     type ExprResult = (Result<i64, CompileError>, Result<f64, CompileError>);

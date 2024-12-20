@@ -31,6 +31,10 @@
     {
       "name": "Sensitive Register Name",
       "value": "1"
+    },
+    {
+      "name": "CommentPrefix",
+      "value": "#"
     }
   ],
   "components": [

@@ -200,6 +200,8 @@ pub enum Config<'a> {
     /// TODO: what does this represent? is this used currently?
     #[serde(rename = "Sensitive Register Name")]
     SensitiveRegisterName(Bool),
+    /// String to use as line comment prefix
+    CommentPrefix(&'a str),
 }
 
 macro_rules! key_error {
@@ -214,9 +216,9 @@ macro_rules! key_error {
     };
 }
 
-impl<'a> TryFrom<[Config<'a>; 8]> for super::Config<'a> {
+impl<'a> TryFrom<[Config<'a>; 9]> for super::Config<'a> {
     type Error = &'static str;
-    fn try_from(value: [Config<'a>; 8]) -> Result<Self, Self::Error> {
+    fn try_from(value: [Config<'a>; 9]) -> Result<Self, Self::Error> {
         macro_rules! unwrap_field {
             ($i:expr, $name:ident) => {
                 match value[$i] {
@@ -234,6 +236,7 @@ impl<'a> TryFrom<[Config<'a>; 8]> for super::Config<'a> {
             main_function: unwrap_field!(5, MainFunction),
             passing_convention: unwrap_field!(6, PassingConvention),
             sensitive_register_name: unwrap_field!(7, SensitiveRegisterName),
+            comment_prefix: unwrap_field!(8, CommentPrefix),
         })
     }
 }

@@ -89,7 +89,10 @@ impl<'a> Instruction<'a> {
         };
 
         // Lexes the syntax definition with the same lexer as the code
-        let mut tokens = lexer::lexer()
+        // NOTE: we use a null character as the comment prefix because we don't know what prefix
+        // the architecture specifies here. Null characters can't appear in the input, so this
+        // disallows line comments
+        let mut tokens = lexer::lexer("\0")
             .parse(fmt)
             .map_err(|_| "incorrect signature definition")?
             .into_iter()
@@ -175,7 +178,10 @@ impl<'a> Instruction<'a> {
     /// Errors if there is an error lexing the code
     pub fn lex(code: &str) -> Result<(&str, Vec<Spanned<Token>>), ParseError> {
         let (name, args) = code.trim().split_once(' ').unwrap_or((code, ""));
-        let tokens = super::lexer::lexer().parse(args)?;
+        // NOTE: we use a null character as the comment prefix because we don't know what prefix
+        // the architecture specifies here. Null characters can't appear in the input, so this
+        // disallows line comments
+        let tokens = super::lexer::lexer("\0").parse(args)?;
         Ok((name, tokens))
     }
 }
@@ -207,7 +213,10 @@ mod test {
     }
 
     fn parse(parser: &Instruction, src: &str) -> Result<ParsedArgs, ()> {
-        let ast = (lexer::lexer().parse(src).unwrap(), 0..src.chars().count());
+        let ast = (
+            lexer::lexer("#").parse(src).unwrap(),
+            0..src.chars().count(),
+        );
         parser.parse(&ast).map_err(|e| eprintln!("{e:?}"))
     }
 

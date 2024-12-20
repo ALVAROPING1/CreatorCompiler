@@ -846,7 +846,7 @@ mod test {
 
     fn compile(src: &str) -> Result<CompiledCode, CompileError> {
         let arch = Architecture::from_json(include_str!("../tests/architecture.json")).unwrap();
-        let ast = crate::parser::parse(src).unwrap();
+        let ast = crate::parser::parse(arch.comment_prefix(), src).unwrap();
         super::compile(&arch, ast)
     }
 

@@ -172,8 +172,12 @@ fn str_lexer() -> (Parser!(char, Token), Parser!(char, Token)) {
 }
 
 /// Creates a lexer for the input
+///
+/// # Parameters
+///
+/// * `comment_prefix`: string to use as line comment prefix
 #[must_use]
-pub fn lexer() -> Parser!(char, Vec<Spanned<Token>>) {
+pub fn lexer(comment_prefix: &str) -> Parser!(char, Vec<Spanned<Token>>, '_) {
     let newline = text::newline().to('\n');
 
     // Integer literals
@@ -234,7 +238,9 @@ pub fn lexer() -> Parser!(char, Vec<Spanned<Token>>) {
     .labelled("token");
 
     // Comments
-    let line_comment = just("#").then(newline.not().repeated()).ignored();
+    let line_comment = just(comment_prefix)
+        .then(newline.not().repeated())
+        .ignored();
     let multiline_comment = just("/*").then(take_until(just("*/"))).ignored();
     let comment = line_comment
         .or(multiline_comment)
@@ -259,7 +265,7 @@ pub fn lexer() -> Parser!(char, Vec<Spanned<Token>>) {
 mod test {
     use super::{lexer, Parser as _, Spanned, Token};
     fn lex(code: &str) -> Result<Vec<Spanned<Token>>, ()> {
-        lexer().parse(code).map_err(|e| eprintln!("{e:?}"))
+        lexer("#").parse(code).map_err(|e| eprintln!("{e:?}"))
     }
 
     #[test]
@@ -470,6 +476,13 @@ mod test {
                 (Token::Identifier("test".into()), 9..13)
             ])
         );
+        for (s, v) in [("test // asd", 0..4), ("test //asd", 0..4)] {
+            assert_eq!(
+                lexer("//").parse(s).map_err(|e| eprintln!("{e:?}")),
+                Ok(vec![(Token::Identifier(s[v.clone()].into()), v)]),
+                "`{s}`"
+            );
+        }
     }
 
     #[test]

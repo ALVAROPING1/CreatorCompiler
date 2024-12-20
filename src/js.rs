@@ -84,11 +84,13 @@ impl ArchitectureJS {
     pub fn compile(&self, src: &str, html_error: bool) -> Result<CompiledCodeJS, String> {
         const FILENAME: &str = "assembly";
         let format_err = |e: String| if html_error { to_html(&e) } else { e };
+        let arch = self.borrow_dependent();
         // Parse the source to an AST
-        let ast = crate::parser::parse(src).map_err(|e| format_err(e.render(FILENAME, src)))?;
-        // Compile the AST
-        let compiled = crate::compiler::compile(self.borrow_dependent(), ast)
+        let ast = crate::parser::parse(arch.comment_prefix(), src)
             .map_err(|e| format_err(e.render(FILENAME, src)))?;
+        // Compile the AST
+        let compiled =
+            crate::compiler::compile(arch, ast).map_err(|e| format_err(e.render(FILENAME, src)))?;
         // Wrap the instructions in a type that can be returned to `JS`
         let instructions = compiled
             .instructions

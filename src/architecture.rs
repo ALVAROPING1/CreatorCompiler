@@ -58,7 +58,7 @@ pub struct Architecture<'a> {
 
 /// Architecture metadata attributes
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
-#[serde(try_from = "[json::Config<'a>; 8]")]
+#[serde(try_from = "[json::Config<'a>; 9]")]
 pub struct Config<'a> {
     /// Name of the architecture
     name: &'a str,
@@ -76,8 +76,10 @@ pub struct Config<'a> {
     passing_convention: bool,
     /// TODO: what does this represent? is this used currently?
     sensitive_register_name: bool,
+    /// String to use as line comment prefix
+    comment_prefix: &'a str,
 }
-utils::schema_from!(Config<'a>, [json::Config<'a>; 8]);
+utils::schema_from!(Config<'a>, [json::Config<'a>; 9]);
 
 /// Endianness of data in the architecture
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
@@ -524,6 +526,12 @@ impl<'a> Architecture<'a> {
     #[must_use]
     pub const fn main_label(&self) -> &str {
         self.arch_conf.main_function
+    }
+
+    /// Gets the string to use as the line comment prefix
+    #[must_use]
+    pub const fn comment_prefix(&self) -> &str {
+        self.arch_conf.comment_prefix
     }
 
     /// Gets the code section's start/end addresses

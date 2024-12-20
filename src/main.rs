@@ -116,7 +116,7 @@ fn run() -> Result<(), Error> {
             // Parse the architecture
             let arch = build_architecture(&arch)?;
             // Parse the assembly code
-            let ast = parser::parse(&src).map_err(|e| Error::Compilation(e.render(&code, &src)))?;
+            let ast = parser::parse(arch.comment_prefix(), &src).map_err(|e| Error::Compilation(e.render(&code, &src)))?;
             // Print AST if asked
             if verbose {
                 println!("\n\x1B[1;32m============================== AST ==============================\x1B[0m\n");

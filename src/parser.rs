@@ -168,14 +168,19 @@ fn parser<'a>() -> Parser!(Token, Vec<ASTNode>, 'a) {
 /// # Parameters
 ///
 /// * `parser`: parser to use with the tokenized input
+/// * `comment_prefix`: string to use as line comment prefix
 /// * `src`: code to tokenize and parse
 ///
 /// # Errors
 ///
 /// Errors if the input either has an invalid token or it's syntactically invalid according to the
 /// given parser
-fn parse_with<T>(parser: Parser!(Token, T), src: &str) -> Result<T, ParseError> {
-    let tokens = lexer::lexer().parse(src)?; // Tokenize the input
+fn parse_with<T>(
+    parser: Parser!(Token, T),
+    comment_prefix: &str,
+    src: &str,
+) -> Result<T, ParseError> {
+    let tokens = lexer::lexer(comment_prefix).parse(src)?; // Tokenize the input
     let len = src.chars().count(); // Count the amount of chars in the input to calculate the end span
     #[allow(clippy::range_plus_one)] // Chumsky requires an inclusive range to avoid type errors
     let stream = Stream::from_iter(len..len + 1, tokens.into_iter());
@@ -186,13 +191,14 @@ fn parse_with<T>(parser: Parser!(Token, T), src: &str) -> Result<T, ParseError> 
 ///
 /// # Parameters
 ///
+/// * `comment_prefix`: string to use as line comment prefix
 /// * `src`: code to parse
 ///
 /// # Errors
 ///
 /// Errors if the input is syntactically invalid
-pub fn parse(src: &str) -> Result<Vec<ASTNode>, ParseError> {
-    parse_with(parser(), src)
+pub fn parse(comment_prefix: &str, src: &str) -> Result<Vec<ASTNode>, ParseError> {
+    parse_with(parser(), comment_prefix, src)
 }
 
 #[cfg(test)]
@@ -202,7 +208,7 @@ mod test {
 
     fn test(test_cases: Vec<(&str, Vec<ASTNode>)>) {
         for (src, ast) in test_cases {
-            assert_eq!(super::parse(src), Ok(ast), "`{src}`");
+            assert_eq!(super::parse("#", src), Ok(ast), "`{src}`");
         }
     }
 
@@ -408,8 +414,8 @@ mod test {
 
     #[test]
     fn empty() {
-        assert_eq!(super::parse(""), Ok(vec![]));
-        assert_eq!(super::parse("\n"), Ok(vec![]));
-        assert_eq!(super::parse("\n\n"), Ok(vec![]));
+        assert_eq!(super::parse("#", ""), Ok(vec![]));
+        assert_eq!(super::parse("#", "\n"), Ok(vec![]));
+        assert_eq!(super::parse("#", "\n\n"), Ok(vec![]));
     }
 }
