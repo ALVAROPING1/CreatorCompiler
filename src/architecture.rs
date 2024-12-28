@@ -90,7 +90,7 @@ pub enum DataFormat {
 }
 
 /// Register bank
-#[derive(Deserialize, JsonSchema, Debug, PartialEq, Clone)]
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
 pub struct Component<'a> {
     /// Name of the register bank
     name: &'a str,
@@ -140,7 +140,7 @@ pub enum PrecisionType {
 }
 
 /// Register specification
-#[derive(Deserialize, JsonSchema, Debug, PartialEq, Clone)]
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
 pub struct Register<'a> {
     /// List of aliases
     #[serde(borrow)]
