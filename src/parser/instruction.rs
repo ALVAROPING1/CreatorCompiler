@@ -282,8 +282,8 @@ mod test {
                     (
                         Expr::BinaryOp {
                             op: (BinaryOp::Sub, 2..3),
-                            lhs: Box::new(ident(("c".into(), 0..1))),
-                            rhs: Box::new(ident(("a".into(), 4..5)))
+                            lhs: Box::new(ident(("c", 0..1))),
+                            rhs: Box::new(ident(("a", 4..5)))
                         },
                         0..5
                     ),
