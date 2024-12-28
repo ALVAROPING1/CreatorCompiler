@@ -62,9 +62,6 @@ pub use pseudoinstruction::{Error as PseudoinstructionError, Kind as Pseudoinstr
 *  - Combine `crate::parser::Error` with `crate::compiler::Error`
 **/
 
-// Regex for replacement templates in the translation spec of instructions
-static RE: Lazy<Regex> = crate::regex!(r"[fF][0-9]+");
-
 enum InstructionDefinition<'arch> {
     Real(&'arch crate::architecture::Instruction<'arch>),
     Pseudo(&'arch crate::architecture::Pseudoinstruction<'arch>),
@@ -678,9 +675,13 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
     let instructions = pending_instructions
         .into_iter()
         .map(|inst| {
+            // Regex for replacement templates in the translation spec of instructions
+            static RE: Lazy<Regex> = crate::regex!(r"[fF]([0-9]+)");
+            static FIELD: Lazy<Regex> = crate::regex!("\0([0-9]+)");
             let def = inst.definition;
             let mut binary_instruction = BitField::new(word_size_bits.saturating_mul(def.nwords));
-            let mut translated_instruction = def.syntax.output_syntax.to_string();
+            let mut translated_instruction =
+                RE.replace_all(def.syntax.output_syntax, "\0$1").to_string();
             for arg in inst.args {
                 let field = &def.syntax.fields[arg.field_idx];
                 #[allow(clippy::cast_sign_loss)]
@@ -764,12 +765,7 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
                         ),
                     )
                     .add_span(&arg.value.1)?;
-                // FIXME: if a register is defined in the architecture with a name that uses the
-                // same pattern we replace here, and it is used in the code, further replacements
-                // will replace the name of the register, leading to an incorrect output. We have
-                // no way to delimit replaced arguments that can't be messed up by a user, so this
-                // method of translation is doomed to fail
-                translated_instruction = RE
+                translated_instruction = FIELD
                     .replace(&translated_instruction, NoExpand(&value_str))
                     .to_string();
             }
@@ -986,11 +982,12 @@ mod test {
         );
         assert_eq!(x.data_memory, vec![]);
         // Aliases
-        let x = compile(".text\nmain: reg ctrl1, two, ft1, ft2").unwrap();
+        let x = compile(".text\nmain: reg ctrl1, two, F1, Field2").unwrap();
         assert_eq!(x.label_table, tbl);
+        let instruction = "reg ctrl1 two F1 Field2";
         assert_eq!(
             x.instructions,
-            vec![inst(0, &["main"], "reg ctrl1 two ft1 ft2", binary, 12..36)]
+            vec![inst(0, &["main"], instruction, binary, 12..38)]
         );
         assert_eq!(x.data_memory, vec![]);
         // Number aliases
