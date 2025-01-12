@@ -472,8 +472,6 @@ mod test {
 
     #[test]
     fn empty() {
-        assert_eq!(super::parse("#", ""), Ok(vec![]));
-        assert_eq!(super::parse("#", "\n"), Ok(vec![]));
-        assert_eq!(super::parse("#", "\n\n"), Ok(vec![]));
+        test(vec![("", vec![]), ("\n", vec![]), ("\n\n", vec![])]);
     }
 }
