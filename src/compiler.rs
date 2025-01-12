@@ -58,7 +58,6 @@ pub use pseudoinstruction::{Error as PseudoinstructionError, Kind as Pseudoinstr
 
 /* TODO:
 *  - Refactor code
-*  - Remove uses of unwrap, propagating errors accordingly
 *  - Combine `crate::parser::Error` with `crate::compiler::Error`
 **/
 
