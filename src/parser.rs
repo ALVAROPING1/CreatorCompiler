@@ -116,21 +116,13 @@ fn parser<'a>() -> Parser!(Token, Vec<ASTNode>, 'a) {
             // amount of newlines following it if they are followed by a comma (indicating that more
             // expressions will follow, otherwise a single newline is required as the statement end)
             newline()
-                .not()
                 .rewind()
-                .ignore_then(
-                    expression::parser()
-                        .map(Data::Number)
-                        .or(select! { Token::String(s) => Data::String(s) })
-                        .map_with_span(|x, span| (x, span)),
-                )
-                .then_ignore(
-                    newline()
-                        .repeated()
-                        .then(just(Token::Ctrl(',')).rewind())
-                        .or_not(),
-                )
-                .separated_by(just(Token::Ctrl(',')))
+                .to(Vec::new())
+                .or(expression::parser()
+                    .map(Data::Number)
+                    .or(select! { Token::String(s) => Data::String(s) })
+                    .map_with_span(|x, span| (x, span))
+                    .separated_by(just(Token::Ctrl(',')).padded_by(newline().repeated())))
                 .map_with_span(|x, span| (x, span))
                 .labelled("parameters"),
         )
@@ -304,6 +296,72 @@ mod test {
                     (".name", 6..11),
                     (vec![], 11..12),
                     6..11,
+                )],
+            ),
+        ]);
+    }
+
+    #[test]
+    fn directives_newlines() {
+        test(vec![
+            (
+                ".name 1,\n 2\n",
+                vec![directive(
+                    vec![],
+                    (".name", 0..5),
+                    (
+                        vec![
+                            (Data::Number(Expr::Integer(1u8.into())), 6..7),
+                            (Data::Number(Expr::Integer(2u8.into())), 10..11),
+                        ],
+                        6..11,
+                    ),
+                    0..11,
+                )],
+            ),
+            (
+                ".name 1\n, 2\n",
+                vec![directive(
+                    vec![],
+                    (".name", 0..5),
+                    (
+                        vec![
+                            (Data::Number(Expr::Integer(1u8.into())), 6..7),
+                            (Data::Number(Expr::Integer(2u8.into())), 10..11),
+                        ],
+                        6..11,
+                    ),
+                    0..11,
+                )],
+            ),
+            (
+                ".name 1\n,\n 2\n",
+                vec![directive(
+                    vec![],
+                    (".name", 0..5),
+                    (
+                        vec![
+                            (Data::Number(Expr::Integer(1u8.into())), 6..7),
+                            (Data::Number(Expr::Integer(2u8.into())), 11..12),
+                        ],
+                        6..12,
+                    ),
+                    0..12,
+                )],
+            ),
+            (
+                ".name 1\n\n,\n\n\n 2\n",
+                vec![directive(
+                    vec![],
+                    (".name", 0..5),
+                    (
+                        vec![
+                            (Data::Number(Expr::Integer(1u8.into())), 6..7),
+                            (Data::Number(Expr::Integer(2u8.into())), 14..15),
+                        ],
+                        6..15,
+                    ),
+                    0..15,
                 )],
             ),
         ]);
