@@ -6,7 +6,13 @@
   </head>
   <body>
     <noscript>This page contains webassembly and javascript content, please enable javascript in your browser.</noscript>
-    <script src="./bootstrap.js"></script>
+    <script>
+      // A dependency graph that contains any wasm must all be imported
+      // asynchronously. This `bootstrap.js` file does the single async import, so
+      // that no one else needs to worry about it again.
+      import("./web.js")
+        .catch(e => console.error("Error importing `index.js`:", e));
+    </script>
     <style>
     html {margin: 25px;}
     :root {

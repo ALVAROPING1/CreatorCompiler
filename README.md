@@ -36,12 +36,17 @@ depends on if the code is being compiled for `NodeJS` or a browser. The flag `--
 can be added to generate a debug module with a shorter compile time by omitting optimizations.
 Alternatively, the provided build script (`./build.sh`) can be used to build both targets.
 
-After the package has been built, it can be loaded into a web page by requiring the
-generated `.js` file as a module. The `js_example/` directory contains a working
-example of how to use the generated package. The `index.html` file can't be directly
-opened in a browser due to [CORS](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS)
-limitations. Python can be used to start a development server with
-`python3 -m http.server 8080` which allows to load the page at `localhost:8080/js_example`.
+After the package has been built, it can be loaded by requiring the generated `.js`
+file as a module. The `js_example/` directory contains a working example of how to
+use the generated package, both for the web and Node.js:
+
+- `index.html`: entry point for the web example. Can't be directly opened in a browser
+  due to [CORS](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS) limitations.
+  Python can be used to start a development server with `python3 -m http.server 8080`
+  which allows to load the page at `localhost:8080/js_example`.
+- `web.js`: main module for the web example, shows how to load the package in the web
+- `node.js`: main module for the Node.js example, shows how to load the package in Node.js
+- `compiler.mjs`: module responsible for interaction with the package, shows how to use the provided API
 
 ## Running tests
 
