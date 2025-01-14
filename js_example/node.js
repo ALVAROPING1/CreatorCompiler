@@ -8,7 +8,7 @@ import("./compiler.mjs").then(compiler => {
     const src = fs.readFileSync(process.argv[2], "utf8")
 
     try {
-        const compiled = compiler.compile(arch, src);
+        const compiled = compiler.compile(wasm, arch, src);
         console.log(compiled.msg);
         console.log(compiled.instructions);
         console.log(compiled.data);

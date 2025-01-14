@@ -18,11 +18,26 @@ export function load(wasm, json_arch) {
 }
 
 /**
+ * @param {import("../pkg/web/creator_compiler.d.ts")} wasm
+ * @param {import("../pkg/web/creator_compiler.d.ts").DataCategoryJS} category
+ * @returns {string}
+ **/
+function data_category(wasm, category) {
+    switch (category) {
+        case wasm.DataCategoryJS.Number: return "Number";
+        case wasm.DataCategoryJS.String: return "String";
+        case wasm.DataCategoryJS.Space: return "Space";
+        case wasm.DataCategoryJS.Padding: return "Padding";
+    }
+}
+
+/**
+ * @param {import("../pkg/web/creator_compiler.d.ts")} wasm
  * @param {import("../pkg/web/creator_compiler.d.ts").ArchitectureJS} arch
  * @param {string} code
  * @returns {CompilationResult}
  **/
-export function compile(arch, code) {
+export function compile(wasm, arch, code) {
     const compiled = arch.compile(code, typeof document != "undefined");
     const result = {
         instructions: compiled.instructions.map(x => ({
@@ -32,7 +47,17 @@ export function compile(arch, code) {
             binary: x.binary,
             user: x.user
         })),
-        data: compiled.data,
+        data: compiled.data.map(data => {
+            return {
+                labels: data.labels(),
+                addr: data.address(),
+                size: data.size(),
+                type: data.type(),
+                value: data.value(false),
+                value_human: data.value(true),
+                category: data_category(wasm, data.data_category()),
+            }
+        }),
         msg: `Code compiled successfully\n` + compiled.toString(),
     };
     return result;

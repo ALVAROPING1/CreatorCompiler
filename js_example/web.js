@@ -14,7 +14,7 @@ const out = document.getElementById("result");
 
 document.getElementById("compile_btn").onclick = function() {
   try {
-    const compiled = compiler.compile(arch, src.value);
+    const compiled = compiler.compile(wasm, arch, src.value);
     window["instructions"] = compiled.instructions
     window["data"] = compiled.data
     console.log(compiled.instructions)
