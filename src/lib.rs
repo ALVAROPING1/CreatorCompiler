@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 /*
  * Copyright 2018-2024 Felix Garcia Carballeira, Alejandro Calderon Mateos, Diego Camarmas Alonso,
  * Álvaro Guerrero Espinosa
