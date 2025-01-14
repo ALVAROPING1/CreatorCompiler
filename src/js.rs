@@ -189,7 +189,7 @@ impl DataJS {
     ///
     /// # Parameters
     ///
-    /// * `human`: whether to return the value as a human-readable representation or in bynary
+    /// * `human`: whether to return the value as a human-readable representation or in hexadecimal
     #[must_use]
     pub fn value(&self, human: bool) -> String {
         use crate::compiler::Value;
