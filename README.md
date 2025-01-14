@@ -3,7 +3,13 @@
 Reimplementation of the compiler used by [Creator](https://creatorsim.github.io/)
 to have better performance, more helpful error messages, and a more correct output.
 
-## Running locally (CLI)
+## Building
+
+### Requirements
+
+The only requirement is the rust toolchain, which can be installed through [`rustup`](https://rustup.rs/).
+
+### Running locally (CLI)
 
 The compiler can be built from source using `cargo build --release`, which will
 place the binary in `./target/release/creator-compiler`. The `--release` flag can
@@ -21,7 +27,7 @@ The compiler currently supports 3 modes of execution:
   `creator-compiler compile <architecture.json> <assembly.s>`
   - The `-v`/`--verbose` flag can be used to also print the parsed AST
 
-## JS Bindings
+### JS Bindings
 
 JS bindings are supported through `wasm`. In order to use them, the code must first
 be compiled into a `wasm` package with [`wasm-pack`](https://rustwasm.github.io/wasm-pack/installer/).
