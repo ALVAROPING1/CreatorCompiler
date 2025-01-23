@@ -268,7 +268,7 @@ pub fn parser() -> Parser!(Token, Expr) {
         );
 
         // Bitwise expressions have the third highest precedence
-        // bitwise expression: `bitwise -> product ([*/%] product)*`
+        // bitwise expression: `bitwise -> product ([|&^] product)*`
         let bitwise = binary_parser(
             product,
             select! {
