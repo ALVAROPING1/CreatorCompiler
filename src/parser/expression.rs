@@ -131,9 +131,7 @@ impl Expr {
     pub fn float(&self) -> Result<f64, CompileError> {
         let err = |op, s| ErrorKind::UnallowedFloatOperation(op).add_span(s);
         Ok(match self {
-            Self::Integer(value) => value
-                .to_f64()
-                .expect("Converting a bigint to f64 can't fail"),
+            Self::Integer(value) => biguint_to_f64(value),
             Self::Float((value, _)) => *value,
             Self::Character(c) => f64::from(*c as u32),
             Self::Identifier((_, span)) => return Self::unallowed_ident("").add_span(span),
@@ -167,6 +165,11 @@ impl Expr {
     pub const fn unallowed_ident<T>(_: &str) -> Result<T, ErrorKind> {
         Err(ErrorKind::UnallowedLabel)
     }
+}
+
+/// Converts a [`BigUint`] to a [`f64`]
+fn biguint_to_f64(x: &BigUint) -> f64 {
+    x.to_f64().expect("Converting a bigint to f64 can't fail")
 }
 
 /// Creates a new parser for a sequence of binary expressions
