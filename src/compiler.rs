@@ -1727,7 +1727,7 @@ mod test {
         assert_eq!(
             compile(".data\n.float ~1.0\n.text\nmain: nop"),
             Err(
-                ErrorKind::UnallowedFloatOperation(error::OperationKind::UnaryNegation)
+                ErrorKind::UnallowedFloatOperation(error::OperationKind::Complement)
                     .add_span(&(13..14))
             ),
         );

@@ -141,7 +141,7 @@ impl Expr {
             Self::UnaryOp { op, operand } => match op.0 {
                 UnaryOp::Plus => operand.0.float()?,
                 UnaryOp::Minus => -operand.0.float()?,
-                UnaryOp::Complement => return Err(err(OperationKind::UnaryNegation, &op.1)),
+                UnaryOp::Complement => return Err(err(OperationKind::Complement, &op.1)),
             },
             Self::BinaryOp { op, lhs, rhs } => {
                 let lhs = lhs.0.float()?;
@@ -402,7 +402,7 @@ mod test {
             (
                 "~2",
                 un_op((UnaryOp::Complement, 0..1), int(2, 1..2)),
-                (Ok(!2), Err(float_op(OperationKind::UnaryNegation, 0..1))),
+                (Ok(!2), Err(float_op(OperationKind::Complement, 0..1))),
             ),
         ]);
     }
@@ -650,7 +650,7 @@ mod test {
                         1..4,
                     ),
                 ),
-                (Ok(0), Err(float_op(OperationKind::UnaryNegation, 0..1))),
+                (Ok(0), Err(float_op(OperationKind::Complement, 0..1))),
             ),
             (
                 "1 + 6 | 3 * +9",

@@ -46,7 +46,7 @@ pub enum ArgumentType {
 /// Unsupported operations for floating point numbers
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperationKind {
-    UnaryNegation,
+    Complement,
     BitwiseOR,
     BitwiseAND,
     BitwiseXOR,
@@ -256,7 +256,7 @@ impl Kind {
 impl fmt::Display for OperationKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::UnaryNegation => write!(f, "unary negation (`~`)"),
+            Self::Complement => write!(f, "complement (`~`)"),
             Self::BitwiseOR => write!(f, "bitwise OR (`|`)"),
             Self::BitwiseAND => write!(f, "bitwise AND (`&`)"),
             Self::BitwiseXOR => write!(f, "bitwise XOR (`^`)"),
