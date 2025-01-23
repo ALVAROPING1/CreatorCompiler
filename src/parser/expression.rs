@@ -133,7 +133,7 @@ impl Expr {
         Ok(match self {
             Self::Integer(value) => biguint_to_f64(value),
             Self::Float((value, _)) => *value,
-            Self::Character(c) => f64::from(*c as u32),
+            Self::Character(c) => (*c as u32).into(),
             Self::Identifier((_, span)) => return Self::unallowed_ident("").add_span(span),
             Self::UnaryOp { op, operand } => match op.0 {
                 UnaryOp::Plus => operand.0.float()?,
