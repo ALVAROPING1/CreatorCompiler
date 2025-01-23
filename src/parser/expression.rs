@@ -92,7 +92,6 @@ impl Expr {
         &self,
         ident_eval: impl Copy + Fn(&str) -> Result<BigInt, ErrorKind>,
     ) -> Result<BigInt, CompileError> {
-        #[allow(clippy::cast_possible_wrap)]
         Ok(match self {
             Self::Integer(value) => value.clone().into(),
             Self::Float((_, span)) => return Err(ErrorKind::UnallowedFloat.add_span(span)),
