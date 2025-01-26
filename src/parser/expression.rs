@@ -216,7 +216,7 @@ pub fn parser() -> Parser!(Token, Expr) {
     // Literal values
     let literal = select! { |span|
         Token::Integer(x) => Expr::Integer(x),
-        Token::Float(x) => Expr::Float((f64::from_bits(x), span)),
+        Token::Float(x) => Expr::Float((x.into(), span)),
         Token::Character(c) => Expr::Character(c),
         Token::Identifier(ident) => Expr::Identifier((ident, span)),
     };

@@ -29,15 +29,31 @@ use std::fmt;
 
 use super::{Parser, Spanned};
 
+/// Thin wrapper for a hasheable [`f64`] value
+// NOTE: this has to be stored as an `u64` to be able to derive `Hash`. The `Hash` trait is required
+// by token types used for parsing by `chumsky`
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub struct HashableFloat(u64);
+
+impl From<HashableFloat> for f64 {
+    fn from(value: HashableFloat) -> Self {
+        Self::from_bits(value.0)
+    }
+}
+
+impl From<f64> for HashableFloat {
+    fn from(value: f64) -> Self {
+        Self(value.to_bits())
+    }
+}
+
 /// Tokens created by the lexer
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Token {
     /// Integer literal
     Integer(BigUint),
     /// Floating point literal
-    // NOTE: this contains an `f64`, but has to be stored as an `u64` to be able to derive `Hash`.
-    // The `Hash` trait is required by token types used for parsing by `chumsky`
-    Float(u64),
+    Float(HashableFloat),
     /// String literal
     String(String),
     /// Character literal
@@ -60,7 +76,7 @@ impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Integer(n) => write!(f, "{n}"),
-            Self::Float(n) => write!(f, "{}", f64::from_bits(*n)),
+            Self::Float(n) => write!(f, "{}", f64::from(*n)),
             Self::String(s) => write!(f, "\"{s}\""),
             Self::Character(s) => write!(f, "'{s}'"),
             Self::Identifier(i) | Self::Label(i) | Self::Directive(i) => write!(f, "{i}"),
@@ -130,7 +146,7 @@ fn float_lexer() -> Parser!(char, Token) {
 
     // Float token
     choice((float, named_constant))
-        .map(|x| Token::Float(x.to_bits()))
+        .map(|x| Token::Float(x.into()))
         .labelled("float")
 }
 
@@ -303,7 +319,7 @@ mod test {
 
     #[test]
     fn float() {
-        let float_tok = |x: &str| Token::Float(x.parse::<f64>().unwrap().to_bits());
+        let float_tok = |x: &str| Token::Float(x.parse::<f64>().unwrap().into());
         let test_cases = [
             "0.0", "1.0", "0.1", "100.0", "100.01", "100e1", "100E1", "0.5e1", "0.5e1", "0.5e+1",
             "0.5e-1", "0.5e0", "0.5e+0", "0.5e-0", "1e300", "1e400", "1e-30", "inf", "INF", "Inf",
