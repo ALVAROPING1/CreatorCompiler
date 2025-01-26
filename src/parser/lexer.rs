@@ -216,42 +216,32 @@ pub fn lexer(comment_prefix: &str) -> Parser!(char, Vec<Spanned<Token>>, '_) {
 
     // Other literal punctuation characters. This should be the last option if all other patterns
     // fail, so we don't need to be too specific to avoid ambiguities with other patterns
-    let literal = filter(|c: &char| c.is_ascii_punctuation())
-        .map(Token::Literal)
-        .labelled("literal");
+    let literal = any().map(Token::Literal).labelled("literal");
 
     // Generic identifiers
-    let ident = filter(|c: &char| c.is_ascii_alphabetic() || *c == '_')
-        .chain(filter(|c: &char| c.is_ascii_alphanumeric() || *c == '_' || *c == '.').repeated())
+    let ident = filter(|c: &char| c.is_ascii_alphabetic() || "_.".contains(*c))
+        .chain(filter(|c: &char| c.is_ascii_alphanumeric() || "_.".contains(*c)).repeated())
+        .collect::<String>()
         .labelled("identifier");
 
-    // Name identifiers
-    let identifier = ident.collect::<String>().map(Token::Identifier);
-
-    // Label names
-    let label = just('.')
-        .or_not()
-        .chain::<char, _, _>(ident)
-        .collect::<String>()
-        .then_ignore(just(':'))
-        .map(Token::Label)
-        .labelled("label");
-
-    // Directive names
-    let directive = just('.')
-        .chain(ident)
-        .collect::<String>()
-        .map(Token::Directive)
-        .labelled("directive name");
+    // Identifiers (names/labels/directives)
+    let identifier = ident
+        .then(just(':').or_not().map(|x| x.is_some()))
+        .map(|(ident, label)| {
+            if label {
+                Token::Label(ident)
+            } else if ident.starts_with('.') {
+                Token::Directive(ident)
+            } else {
+                Token::Identifier(ident)
+            }
+        });
 
     // String/character literals
     let (string, character) = str_lexer();
 
     // Any of the previous patterns can be a token
-    let token = choice((
-        num, op, ctrl, label, directive, identifier, string, character, literal,
-    ))
-    .labelled("token");
+    let token = choice((num, op, ctrl, identifier, string, character, literal)).labelled("token");
 
     // Comments
     let line_comment = just(comment_prefix)
@@ -395,6 +385,7 @@ mod test {
             "_start_underscore",
             "a._123",
             "z....___1",
+            "_1_",
         ];
         for s in test_cases {
             assert_eq!(lex(s), Ok(vec![(Token::Identifier(s.into()), 0..s.len())]));
@@ -415,6 +406,9 @@ mod test {
             "z....___1:",
             "z....___1..:",
             "z....___1__:",
+            ".1_:",
+            "_.1_a:",
+            ".:",
         ];
         for s in test_cases {
             let l = s.len();
@@ -434,6 +428,9 @@ mod test {
             ".z....___1",
             ".z....___1__",
             ".z....___1..",
+            ".1_",
+            "._1_a",
+            ".",
         ];
         for s in test_cases {
             assert_eq!(lex(s), Ok(vec![(Token::Directive(s.into()), 0..s.len())]));
@@ -456,7 +453,7 @@ mod test {
 
     #[test]
     fn literal() {
-        for c in ".!?=:;${}[]\\<>".chars() {
+        for c in "@!?=:;${}[]\\<>".chars() {
             assert_eq!(lex(&c.to_string()), Ok(vec![(Token::Literal(c), 0..1)]));
         }
     }
