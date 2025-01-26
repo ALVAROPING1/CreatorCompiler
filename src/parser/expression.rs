@@ -219,6 +219,7 @@ pub fn parser() -> Parser!(Token, Expr) {
         Token::Float(x) => Expr::Float((x.into(), span)),
         Token::Character(c) => Expr::Character(c),
         Token::Identifier(ident) => Expr::Identifier((ident, span)),
+        Token::Directive(ident) => Expr::Identifier((ident, span)),
     };
     recursive(|expr| {
         // NOTE: newlines before atoms (literal numbers/parenthesized expressions) and operators
@@ -350,6 +351,14 @@ mod test {
                 (
                     Err(ErrorKind::UnknownLabel("test".into()).add_span(&(0..4))),
                     Err(ErrorKind::UnallowedLabel.add_span(&(0..4))),
+                ),
+            ),
+            (
+                ".test",
+                Expr::Identifier((".test".into(), 0..5)),
+                (
+                    Err(ErrorKind::UnknownLabel(".test".into()).add_span(&(0..5))),
+                    Err(ErrorKind::UnallowedLabel.add_span(&(0..5))),
                 ),
             ),
             (
