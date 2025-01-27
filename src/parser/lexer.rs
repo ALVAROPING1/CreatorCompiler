@@ -95,7 +95,7 @@ fn int_lexer() -> Parser!(char, Token) {
     // Decimal: integer not followed by a decimal part/exponent
     let decimal = text::int(10)
         // Disambiguate integer literals from the integer part of a floating point literal
-        .then_ignore(none_of(".eE").rewind().to(()).or(end()))
+        .then_ignore(none_of(".eE").rewind().ignored().or(end()))
         .from_str()
         .map(|x| x.expect(EXPECT_MSG));
 
