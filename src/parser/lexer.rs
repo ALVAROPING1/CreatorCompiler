@@ -27,7 +27,7 @@ use num_bigint::BigUint;
 use num_traits::Num as _;
 use std::fmt;
 
-use super::{Parser, Spanned};
+use super::{Parser, Span, Spanned};
 
 /// Thin wrapper for a hasheable [`f64`] value
 // NOTE: this has to be stored as an `u64` to be able to derive `Hash`. The `Hash` trait is required
@@ -154,19 +154,24 @@ fn float_lexer() -> Parser!(char, Token) {
 #[must_use]
 fn str_lexer() -> (Parser!(char, Token), Parser!(char, Token)) {
     // Escape sequences in strings
-    let escape = just('\\').ignore_then(choice((
-        just('\\'),
-        just('"'),
-        just('\''),
-        just('a').to('\x07'),
-        just('b').to('\x08'),
-        just('e').to('\x1B'),
-        just('f').to('\x0C'),
-        just('n').to('\n'),
-        just('r').to('\r'),
-        just('t').to('\t'),
-        just('0').to('\0'),
-    )));
+    let escape = just('\\')
+        .ignore_then(choice((
+            just('\\'),
+            just('"'),
+            just('\''),
+            just('a').to('\x07'),
+            just('b').to('\x08'),
+            just('e').to('\x1B'),
+            just('f').to('\x0C'),
+            just('n').to('\n'),
+            just('r').to('\r'),
+            just('t').to('\t'),
+            just('0').to('\0'),
+        )))
+        .map_err_with_span(|_, s: Span| {
+            #[allow(clippy::range_plus_one)]
+            Simple::custom(s.start..s.end + 1, "Invalid escape sequence")
+        });
 
     // Characters allowed inside string/character literals: anything that isn't their delimiter or
     // a backslash
@@ -216,7 +221,9 @@ pub fn lexer(comment_prefix: &str) -> Parser!(char, Vec<Spanned<Token>>, '_) {
 
     // Other literal punctuation characters. This should be the last option if all other patterns
     // fail, so we don't need to be too specific to avoid ambiguities with other patterns
-    let literal = any().map(Token::Literal).labelled("literal");
+    let literal = filter(|c: &char| !(c.is_ascii_alphanumeric() || "\"'_.".contains(*c)))
+        .map(Token::Literal)
+        .labelled("literal");
 
     // Generic identifiers
     let ident = filter(|c: &char| c.is_ascii_alphabetic() || "_.".contains(*c))
@@ -269,7 +276,8 @@ pub fn lexer(comment_prefix: &str) -> Parser!(char, Vec<Spanned<Token>>, '_) {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod test {
-    use super::{lexer, Parser as _, Spanned, Token};
+    use super::*;
+
     fn lex(code: &str) -> Result<Vec<Spanned<Token>>, ()> {
         lexer("#").parse(code).map_err(|e| eprintln!("{e:?}"))
     }
@@ -353,12 +361,14 @@ mod test {
         }
         let msg = "\"a string with escape sequences like newline `\\n` or tabs `\\t`, also quotes `\\\"` and literal backslashes `\\\\`\"";
         assert_eq!(lex(msg), Ok(vec![(Token::String("a string with escape sequences like newline `\n` or tabs `\t`, also quotes `\"` and literal backslashes `\\`".into()), 0..msg.len())]));
+        let err = Simple::custom(8..10, "Invalid escape sequence").with_label("token");
+        assert_eq!(lexer("#").parse("\"invalid\\z\""), Err(vec![err]));
     }
 
     #[test]
     fn char() {
         // normal characters
-        for c in ('!'..='~').filter(|c| !['\\', '\''].contains(c)) {
+        for c in ('!'..='~').filter(|c| !"\\\'".contains(*c)) {
             assert_eq!(
                 lex(&format!("'{c}'")),
                 Ok(vec![(Token::Character(c), 0..3)])
@@ -370,6 +380,8 @@ mod test {
                 Ok(vec![(Token::Character(res), 0..s.len() + 3)])
             );
         }
+        let err = Simple::custom(1..3, "Invalid escape sequence").with_label("token");
+        assert_eq!(lexer("#").parse("'\\z'"), Err(vec![err]));
     }
 
     #[test]
