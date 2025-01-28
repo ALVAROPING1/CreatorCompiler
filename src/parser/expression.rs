@@ -301,9 +301,9 @@ mod test {
         super::super::parse_with(super::parser(), "#", code).map_err(|_| ())
     }
 
-    type ExprResult = (Result<i64, CompileError>, Result<f64, CompileError>);
+    type ExprResult<T> = (Result<T, CompileError>, Result<f64, CompileError>);
 
-    fn test(test_cases: &[(&str, Expr, ExprResult)]) {
+    fn test_bigint(test_cases: impl IntoIterator<Item = (&'static str, Expr, ExprResult<BigInt>)>) {
         let ident_eval = |ident: &str| {
             if ident.len() == 1 {
                 Ok(BigInt::from(ident.as_bytes()[0] - b'a' + 5))
@@ -314,10 +314,17 @@ mod test {
         for (src, expr, (res1, res2)) in test_cases {
             assert_eq!(parse(src), Ok(expr.clone()), "`{src}`");
             let int = expr.int(ident_eval);
-            let res1 = res1.clone().map(BigInt::from);
             assert_eq!(int, res1, "`{src}` as int\n{expr:?}");
-            assert_eq!(expr.float(), *res2, "`{src}` as float\n{expr:?}");
+            assert_eq!(expr.float(), res2, "`{src}` as float\n{expr:?}");
         }
+    }
+
+    fn test(test_cases: impl IntoIterator<Item = (&'static str, Expr, ExprResult<i64>)>) {
+        test_bigint(
+            test_cases
+                .into_iter()
+                .map(|(src, expr, (res1, res2))| (src, expr, (res1.map(BigInt::from), res2))),
+        );
     }
 
     fn float_op(op: OperationKind, s: Span) -> CompileError {
@@ -336,7 +343,7 @@ mod test {
 
     #[test]
     fn literal() {
-        test(&[
+        test([
             ("16", Expr::Integer(16u8.into()), (Ok(16), Ok(16.0))),
             ("\n\n16", Expr::Integer(16u8.into()), (Ok(16), Ok(16.0))),
             ("'a'", Expr::Character('a'), (Ok(97), Ok(97.0))),
@@ -394,7 +401,7 @@ mod test {
 
     #[test]
     fn unary() {
-        test(&[
+        test([
             (
                 "+2",
                 un_op((UnaryOp::Plus, 0..1), int(2, 1..2)),
@@ -420,7 +427,7 @@ mod test {
 
     #[test]
     fn binary_add() {
-        test(&[
+        test([
             (
                 "5 + 7",
                 bin_op((BinaryOp::Add, 2..3), int(5, 0..1), int(7, 4..5)),
@@ -455,7 +462,7 @@ mod test {
 
     #[test]
     fn binary_sub() {
-        test(&[
+        test([
             (
                 "4294967295 - 4294967295",
                 bin_op(
@@ -479,7 +486,7 @@ mod test {
 
     #[test]
     fn binary_mul() {
-        test(&[
+        test([
             (
                 "5 * 7",
                 bin_op((BinaryOp::Mul, 2..3), int(5, 0..1), int(7, 4..5)),
@@ -507,7 +514,7 @@ mod test {
 
     #[test]
     fn binary_div() {
-        test(&[
+        test([
             (
                 "8 / 2",
                 bin_op((BinaryOp::Div, 2..3), int(8, 0..1), int(2, 4..5)),
@@ -526,7 +533,7 @@ mod test {
 
     #[test]
     fn binary_rem() {
-        test(&[(
+        test([(
             "7 % 5",
             bin_op((BinaryOp::Rem, 2..3), int(7, 0..1), int(5, 4..5)),
             (Ok(2), Ok(2.0)),
@@ -535,7 +542,7 @@ mod test {
 
     #[test]
     fn binary_bitwise() {
-        test(&[
+        test([
             (
                 "0b0101 | 0b0011",
                 bin_op(
@@ -578,7 +585,7 @@ mod test {
     #[test]
     #[allow(clippy::too_many_lines)]
     fn precedence() {
-        test(&[
+        test([
             (
                 "1 + 2 - 3",
                 bin_op(
@@ -685,6 +692,67 @@ mod test {
                     ),
                 ),
                 (Ok(32), Err(float_op(OperationKind::BitwiseOR, 6..7))),
+            ),
+        ]);
+    }
+
+    #[test]
+    fn bigint() {
+        let int = BigUint::from(2u8).pow(128) - 1u8;
+        #[allow(clippy::unwrap_used)]
+        test_bigint([
+            (
+                "340282366920938463463374607431768211455",
+                Expr::Integer(int.clone()),
+                (Ok(int.clone().into()), Ok(int.to_f64().unwrap())),
+            ),
+            (
+                "340282366920938463463374607431768211455 * 340282366920938463463374607431768211455",
+                Expr::BinaryOp {
+                    op: (BinaryOp::Mul, 40..41),
+                    lhs: Box::new((Expr::Integer(int.clone()), 0..39)),
+                    rhs: Box::new((Expr::Integer(int.clone()), 42..81)),
+                },
+                {
+                    let square = int.clone() * &int;
+                    (Ok(square.clone().into()), Ok(square.to_f64().unwrap()))
+                },
+            ),
+            (
+                "340282366920938463463374607431768211455 / 340282366920938463463374607431768211455",
+                Expr::BinaryOp {
+                    op: (BinaryOp::Div, 40..41),
+                    lhs: Box::new((Expr::Integer(int.clone()), 0..39)),
+                    rhs: Box::new((Expr::Integer(int.clone()), 42..81)),
+                },
+                (Ok(1.into()), Ok(1.0)),
+            ),
+            (
+                "340282366920938463463374607431768211465 - 340282366920938463463374607431768211453",
+                Expr::BinaryOp {
+                    op: (BinaryOp::Sub, 40..41),
+                    lhs: Box::new((Expr::Integer(int.clone() + 10u8), 0..39)),
+                    rhs: Box::new((Expr::Integer(int.clone() - 2u8), 42..81)),
+                },
+                (Ok(12.into()), Ok(0.0)),
+            ),
+            (
+                "340282366920938463463374607431768211455 - 340282366920938463463374607431768211465",
+                Expr::BinaryOp {
+                    op: (BinaryOp::Sub, 40..41),
+                    lhs: Box::new((Expr::Integer(int.clone()), 0..39)),
+                    rhs: Box::new((Expr::Integer(int.clone() + 10u8), 42..81)),
+                },
+                (Ok((-10).into()), Ok(0.0)),
+            ),
+            (
+                "340282366920938463463374607431768211465 % 340282366920938463463374607431768211453",
+                Expr::BinaryOp {
+                    op: (BinaryOp::Rem, 40..41),
+                    lhs: Box::new((Expr::Integer(int.clone() + 10u8), 0..39)),
+                    rhs: Box::new((Expr::Integer(int - 2u8), 42..81)),
+                },
+                (Ok(12.into()), Ok(0.0)),
             ),
         ]);
     }
