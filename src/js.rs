@@ -28,7 +28,17 @@ use wasm_bindgen::prelude::*;
 use crate::architecture::Architecture;
 use crate::RenderError;
 
-mod utils;
+// Creates a hook for panics to improve error messages
+pub fn set_panic_hook() {
+    // When the `console_error_panic_hook` feature is enabled, we can call the
+    // `set_panic_hook` function at least once during initialization, and then
+    // we will get better error messages if our code ever panics.
+    //
+    // For more details see
+    // https://github.com/rustwasm/console_error_panic_hook#readme
+    #[cfg(feature = "console_error_panic_hook")]
+    console_error_panic_hook::set_once();
+}
 
 self_cell!(
     /// Architecture definition
@@ -60,7 +70,7 @@ impl ArchitectureJS {
     /// Errors if the input `JSON` data is invalid, either because it's ill-formatted or because it
     /// doesn't conform to the specification
     pub fn from_json(json: String) -> Result<ArchitectureJS, String> {
-        utils::set_panic_hook();
+        set_panic_hook();
         Self::try_new(json, |json| Architecture::from_json(json)).map_err(|e| e.to_string())
     }
 
