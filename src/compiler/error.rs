@@ -194,8 +194,13 @@ impl Kind {
                 };
                 format!("Consider {msg}{n_str} argument{}", plural!(n))
             }
-            // TODO: Maybe add hint for required directive?
-            // Self::UnallowedStatementSection { expected, _ } => { ... }
+            // TODO: Maybe add hint for required directive name?
+            Self::UnallowedStatementType { found, .. } => {
+                format!("Consider changing the section to `{}`", match found {
+                    DirectiveSegment::Code => "code",
+                    DirectiveSegment::Data => "data",
+                })
+            }
             _ => return None,
         })
     }
