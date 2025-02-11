@@ -22,6 +22,8 @@ use num_bigint::BigUint;
 use once_cell::sync::Lazy;
 use regex::{Captures, Regex};
 
+use std::fmt::Write as _;
+
 use crate::architecture::{Architecture, FloatType, Pseudoinstruction, RegisterType};
 use crate::parser::ParseError;
 
@@ -208,7 +210,28 @@ pub fn expand<'b, 'a: 'b>(
             .value;
         #[allow(clippy::cast_possible_truncation)]
         let field = match ty {
-            "int" => format!("{:032b}", value.int(ident_eval)?),
+            "int" => {
+                let s = value.int(ident_eval)?.to_signed_bytes_be().iter().fold(
+                    String::new(),
+                    |mut s, byte| {
+                        write!(s, "{byte:08b}").expect("Writing to a string shouldn't fail");
+                        s
+                    },
+                );
+                if s.len() >= 32 {
+                    s
+                } else {
+                    let pad = s
+                        .chars()
+                        .next()
+                        .expect("There should always be at least 1 character");
+                    let mut pad = std::iter::repeat(pad)
+                        .take(32 - s.len())
+                        .collect::<String>();
+                    pad.push_str(&s);
+                    pad
+                }
+            }
             "float" => format!("{:032b}", (value.float()? as f32).to_bits()),
             "double" => format!("{:064b}", value.float()?.to_bits()),
             ty => {
