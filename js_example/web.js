@@ -19,7 +19,7 @@ document.getElementById("compile_btn").onclick = function() {
     window["data"] = compiled.data
     console.log(compiled.instructions)
     console.log(compiled.data)
-    out.innerHTML = compiled.msg + compiled.debug;
+    out.innerHTML = compiled.msg;
   } catch (e) {
     out.innerHTML = e;
   }
