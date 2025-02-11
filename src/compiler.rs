@@ -854,10 +854,18 @@ mod test {
     use super::*;
     use crate::architecture::{Architecture, BitRange, IntegerType, NonEmptyRangeInclusive};
 
-    fn compile(src: &str) -> Result<CompiledCode, CompileError> {
+    fn compile_with(
+        src: &str,
+        reserved_offset: &BigUint,
+        labels: HashMap<String, BigUint>,
+    ) -> Result<CompiledCode, CompileError> {
         let arch = Architecture::from_json(include_str!("../tests/architecture.json")).unwrap();
         let ast = crate::parser::parse(arch.comment_prefix(), src).unwrap();
-        super::compile(&arch, ast, &BigUint::ZERO, HashMap::new())
+        super::compile(&arch, ast, reserved_offset, labels)
+    }
+
+    fn compile(src: &str) -> Result<CompiledCode, CompileError> {
+        compile_with(src, &BigUint::ZERO, HashMap::new())
     }
 
     fn label_table(labels: impl IntoIterator<Item = (&'static str, u64, Span)>) -> LabelTable {
@@ -898,12 +906,11 @@ mod test {
         }
     }
 
-    fn main_nop(span: Span) -> Instruction {
-        let binary = "11110000000000000000000001111111";
-        inst(0, &["main"], "nop", binary, span)
-    }
-
     static NOP_BINARY: &str = "11110000000000000000000001111111";
+
+    fn main_nop(span: Span) -> Instruction {
+        inst(0, &["main"], "nop", NOP_BINARY, span)
+    }
 
     fn data(address: u64, labels: &[&str], value: Value) -> Data {
         Data {
@@ -1816,6 +1823,38 @@ mod test {
                 Err(ErrorKind::MemorySectionFull("Data").add_span(&span)),
                 "{directive}",
             );
+        }
+    }
+
+    #[test]
+    fn library_labels() {
+        let src = ".data\n.word test\n.text\nmain: nop";
+        for val in [3u8, 11, 27] {
+            let labels = HashMap::from([("test".into(), val.into())]);
+            let x = compile_with(src, &BigUint::ZERO, labels.clone()).unwrap();
+            let mut labels = LabelTable::from(labels);
+            labels
+                .insert("main".into(), Label::new(BigUint::ZERO, 23..28))
+                .unwrap();
+            assert_eq!(x.label_table, labels);
+            assert_eq!(x.instructions, vec![main_nop(29..32)]);
+            let val = val.into();
+            assert_eq!(
+                x.data_memory,
+                vec![data(16, &[], int_val(val, 32, IntegerType::Word))]
+            );
+        }
+    }
+
+    #[test]
+    fn library_offset() {
+        let src = ".text\nmain: nop";
+        for val in [5u64, 8, 11] {
+            let x = compile_with(src, &val.into(), HashMap::new()).unwrap();
+            assert_eq!(x.label_table, label_table([("main", val, 6..11)]));
+            let nop = inst(val, &["main"], "nop", NOP_BINARY, 12..15);
+            assert_eq!(x.instructions, vec![nop]);
+            assert_eq!(x.data_memory, vec![]);
         }
     }
 }

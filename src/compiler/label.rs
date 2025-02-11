@@ -125,7 +125,25 @@ impl Table {
 
 #[cfg(test)]
 mod test {
-    use super::{ErrorKind, Label, Table};
+    use super::*;
+
+    #[test]
+    fn from_library() {
+        let label = |s: &str, x: usize| {
+            (
+                s.into(),
+                Label {
+                    address: x.into(),
+                    definition: None,
+                },
+            )
+        };
+        let value = |s: &str, x: usize| (s.into(), x.into());
+        let labels = HashMap::from([value("test", 10), value("func", 17), value("obj", 101)]);
+        let correct = HashMap::from([label("test", 10), label("func", 17), label("obj", 101)]);
+        let table = Table::from(labels);
+        assert_eq!(table, Table(correct));
+    }
 
     #[test]
     fn insert() {
