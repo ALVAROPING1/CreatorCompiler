@@ -74,7 +74,7 @@ pub struct Config<'a> {
     main_function: &'a str,
     /// Whether to enable function parameter passing convention checks
     passing_convention: bool,
-    /// TODO: what does this represent? is this used currently?
+    /// Whether the register names should be case sensitive (true) or not
     sensitive_register_name: bool,
     /// String to use as line comment prefix
     comment_prefix: &'a str,
@@ -175,7 +175,7 @@ pub enum RegisterProperty {
     ExceptionProgramCounter,
     /// Interruption ID register
     EventCause,
-    /// TODO: is this ever used?
+    /// Register can only be used on kernel mode
     StatusRegister,
     /// Writes to this register are ignored. Ignored if `Write` is set
     IgnoreWrite,
