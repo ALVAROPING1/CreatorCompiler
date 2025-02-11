@@ -27,6 +27,8 @@ use num_bigint::{BigInt, BigUint};
 use once_cell::sync::Lazy;
 use regex::{NoExpand, Regex};
 
+use std::collections::HashMap;
+
 use crate::architecture::{
     AlignmentType, Architecture, DirectiveAction, DirectiveData, DirectiveSegment, FieldType,
     FloatType, IntegerType, RegisterType, StringType,
@@ -613,8 +615,12 @@ fn compile_instructions<'a>(
     arch: &'a Architecture,
     label_table: &mut LabelTable,
     instructions: Vec<Statement<InstructionNode>>,
+    reserved_offset: &BigUint,
 ) -> Result<Vec<PendingInstruction<'a>>, CompileError> {
     let mut code_section = Section::new("Instructions", arch.code_section());
+    code_section
+        .try_reserve(reserved_offset)
+        .add_span(&(0..0))?;
     let mut pending_instructions = Vec::new();
 
     for mut instruction in instructions {
@@ -644,8 +650,13 @@ fn compile_instructions<'a>(
 }
 
 #[allow(clippy::too_many_lines)]
-pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, CompileError> {
-    let mut label_table = LabelTable::default();
+pub fn compile<S: std::hash::BuildHasher>(
+    arch: &Architecture,
+    ast: Vec<ASTNode>,
+    reserved_offset: &BigUint,
+    labels: HashMap<String, BigUint, S>,
+) -> Result<CompiledCode, CompileError> {
+    let mut label_table = LabelTable::from(labels);
     let word_size_bits = arch.word_size();
     let word_size_bytes = arch.word_size().div_ceil(8);
 
@@ -653,7 +664,8 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
 
     let instruction_eof = instructions.last().map_or(0, |inst| inst.statement.1.end);
     let pending_data = compile_data(arch, &mut label_table, data_directives)?;
-    let pending_instructions = compile_instructions(arch, &mut label_table, instructions)?;
+    let pending_instructions =
+        compile_instructions(arch, &mut label_table, instructions, reserved_offset)?;
 
     match label_table.get(arch.main_label()) {
         None => {
@@ -665,7 +677,10 @@ pub fn compile(arch: &Architecture, ast: Vec<ASTNode>) -> Result<CompiledCode, C
             let text = arch.code_section();
             if !text.contains(main.address()) {
                 return Err(
-                    ErrorKind::MainOutsideCode(arch.main_label().to_owned()).add_span(main.span())
+                    ErrorKind::MainOutsideCode(arch.main_label().to_owned()).add_span(
+                        main.span()
+                            .expect("Main label shouldn't be used in libraries"),
+                    ),
                 );
             }
         }
@@ -842,7 +857,7 @@ mod test {
     fn compile(src: &str) -> Result<CompiledCode, CompileError> {
         let arch = Architecture::from_json(include_str!("../tests/architecture.json")).unwrap();
         let ast = crate::parser::parse(arch.comment_prefix(), src).unwrap();
-        super::compile(&arch, ast)
+        super::compile(&arch, ast, &BigUint::ZERO, HashMap::new())
     }
 
     fn label_table(labels: impl IntoIterator<Item = (&'static str, u64, Span)>) -> LabelTable {
@@ -1767,11 +1782,11 @@ mod test {
     fn duplicate_label() {
         assert_eq!(
             compile(".text\nmain: nop\nmain: nop"),
-            Err(ErrorKind::DuplicateLabel("main".into(), 6..11).add_span(&(16..21))),
+            Err(ErrorKind::DuplicateLabel("main".into(), Some(6..11)).add_span(&(16..21))),
         );
         assert_eq!(
             compile(".text\nmain: nop\nlabel:\nlabel: nop"),
-            Err(ErrorKind::DuplicateLabel("label".into(), 16..22).add_span(&(23..29))),
+            Err(ErrorKind::DuplicateLabel("label".into(), Some(16..22)).add_span(&(23..29))),
         );
     }
 

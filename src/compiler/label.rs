@@ -31,8 +31,9 @@ use crate::span::Span;
 pub struct Label {
     /// Address to which the label points
     address: BigUint,
-    /// Location of the definition of the label in the assembly
-    definition: Span,
+    /// Location of the definition of the label in the assembly. [`None`] if the label comes from a
+    /// library
+    definition: Option<Span>,
 }
 
 impl Label {
@@ -45,7 +46,7 @@ impl Label {
     pub const fn new(address: BigUint, definition: Span) -> Self {
         Self {
             address,
-            definition,
+            definition: Some(definition),
         }
     }
 
@@ -55,14 +56,33 @@ impl Label {
     }
 
     /// Gets the [`Span`] where the label was defined
-    pub const fn span(&self) -> &Span {
-        &self.definition
+    pub const fn span(&self) -> Option<&Span> {
+        self.definition.as_ref()
     }
 }
 
 /// Symbol table for labels
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Table(HashMap<String, Label>);
+
+impl<S: std::hash::BuildHasher> From<HashMap<String, BigUint, S>> for Table {
+    fn from(value: HashMap<String, BigUint, S>) -> Self {
+        Self(
+            value
+                .into_iter()
+                .map(|(name, address)| {
+                    (
+                        name,
+                        Label {
+                            address,
+                            definition: None,
+                        },
+                    )
+                })
+                .collect(),
+        )
+    }
+}
 
 impl Table {
     /// Inserts a new label
@@ -85,7 +105,11 @@ impl Table {
                 e.key().clone(),
                 e.get().definition.clone(),
             )
-            .add_span(&data.definition)),
+            .add_span(
+                &data
+                    .definition
+                    .expect("New labels should always have a definition"),
+            )),
         }
     }
 
@@ -116,11 +140,11 @@ mod test {
         );
         assert_eq!(
             table.insert("test".to_string(), Label::new(4u8.into(), 13..17)),
-            Err(ErrorKind::DuplicateLabel("test".to_string(), 0..2).add_span(&(13..17)))
+            Err(ErrorKind::DuplicateLabel("test".to_string(), Some(0..2)).add_span(&(13..17)))
         );
         assert_eq!(
             table.insert("test2".to_string(), Label::new(128u8.into(), 20..22)),
-            Err(ErrorKind::DuplicateLabel("test2".to_string(), 6..10).add_span(&(20..22)))
+            Err(ErrorKind::DuplicateLabel("test2".to_string(), Some(6..10)).add_span(&(20..22)))
         );
     }
 

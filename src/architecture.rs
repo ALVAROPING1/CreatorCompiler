@@ -29,7 +29,7 @@ use serde_json::Number;
 
 mod utils;
 pub use utils::NonEmptyRangeInclusive;
-use utils::{BaseN, Integer, Pair};
+pub use utils::{BaseN, Integer, Pair};
 
 mod json;
 

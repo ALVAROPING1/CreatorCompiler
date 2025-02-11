@@ -21,11 +21,14 @@
 //! Module containing the definition of wrappers for the compiler and generattion of `JS` bindings
 //! for interoperability
 
+use std::collections::HashMap;
+use std::hash::RandomState;
+
 use num_traits::cast::ToPrimitive;
 use self_cell::self_cell;
 use wasm_bindgen::prelude::*;
 
-use crate::architecture::Architecture;
+use crate::architecture::{Architecture, Integer};
 use crate::RenderError;
 
 // Creates a hook for panics to improve error messages
@@ -86,21 +89,34 @@ impl ArchitectureJS {
     /// # Parameters
     ///
     /// * `src`: assembly code to compile
+    /// * `reserved_offset`: amount of bytes that should be reserved for library instructions
+    /// * `labels`: mapping from label names specified in the library to their addresses, in `JSON`
     /// * `html_error`: whether to format error messages in HTML (`true`) or ANSI (`false`)
     ///
     /// # Errors
     ///
-    /// Errors if the assembly code has a syntactical or semantical error
-    pub fn compile(&self, src: &str, html_error: bool) -> Result<CompiledCodeJS, String> {
+    /// Errors if the assembly code has a syntactical or semantical error, or if the `labels`
+    /// parameter is either an invalid `JSON` or has invalid mappings
+    pub fn compile(
+        &self,
+        src: &str,
+        reserved_offset: usize,
+        labels: &str,
+        html_error: bool,
+    ) -> Result<CompiledCodeJS, String> {
         const FILENAME: &str = "assembly";
         let format_err = |e: String| if html_error { to_html(&e) } else { e };
+        let labels: HashMap<String, Integer> =
+            serde_json::from_str(labels).map_err(|e| e.to_string())?;
+        let labels = labels.into_iter().map(|(k, v)| (k, v.0)).collect();
         let arch = self.borrow_dependent();
         // Parse the source to an AST
         let ast = crate::parser::parse(arch.comment_prefix(), src)
             .map_err(|e| format_err(e.render(FILENAME, src)))?;
         // Compile the AST
         let compiled =
-            crate::compiler::compile(arch, ast).map_err(|e| format_err(e.render(FILENAME, src)))?;
+            crate::compiler::compile::<RandomState>(arch, ast, &reserved_offset.into(), labels)
+                .map_err(|e| format_err(e.render(FILENAME, src)))?;
         // Wrap the instructions in a type that can be returned to `JS`
         let instructions = compiled
             .instructions

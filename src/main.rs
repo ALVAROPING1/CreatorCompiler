@@ -20,9 +20,11 @@
 
 #![cfg(feature = "cli")]
 
-use std::process::ExitCode;
+use std::{collections::HashMap, process::ExitCode};
 
 use clap::{Parser, Subcommand};
+
+use num_bigint::BigUint;
 
 use creator_compiler::{architecture::Architecture, compiler, parser, RenderError};
 
@@ -116,14 +118,15 @@ fn run() -> Result<(), Error> {
             // Parse the architecture
             let arch = build_architecture(&arch)?;
             // Parse the assembly code
-            let ast = parser::parse(arch.comment_prefix(), &src).map_err(|e| Error::Compilation(e.render(&code, &src)))?;
+            let ast = parser::parse(arch.comment_prefix(), &src)
+                .map_err(|e| Error::Compilation(e.render(&code, &src)))?;
             // Print AST if asked
             if verbose {
                 println!("\n\x1B[1;32m============================== AST ==============================\x1B[0m\n");
                 println!("{ast:#?}");
             }
             // Compile the assembly code
-            let compiled = compiler::compile(&arch, ast)
+            let compiled = compiler::compile(&arch, ast, &BigUint::ZERO, HashMap::new())
                 .map_err(|e| Error::Compilation(e.render(&code, &src)))?;
             // Print the compiled code
             println!("\n\x1B[1;32m========================= Compiled Code =========================\x1B[0m\n");

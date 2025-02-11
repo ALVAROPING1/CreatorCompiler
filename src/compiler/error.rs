@@ -64,7 +64,7 @@ pub enum Kind {
         bank: RegisterType,
     },
     IncorrectInstructionSyntax(Vec<(String, ParseError)>),
-    DuplicateLabel(String, Span),
+    DuplicateLabel(String, Option<Span>),
     MissingMainLabel(String),
     MainOutsideCode(String),
     IntegerTooBig(BigInt, RangeInclusive<BigInt>),
@@ -171,6 +171,7 @@ impl Kind {
                 }
                 res
             }
+            Self::DuplicateLabel(_, None) => "Label also defined in library".into(),
             _ => return None,
         })
     }
@@ -178,7 +179,8 @@ impl Kind {
     /// Gets a hint about how to fix the error if available
     fn hint(&self) -> Option<String> {
         Some(match self {
-            Self::DuplicateLabel(..) => "Consider renaming either of the labels".into(),
+            Self::DuplicateLabel(.., Some(_)) => "Consider renaming either of the labels".into(),
+            Self::DuplicateLabel(.., None) => "Consider renaming the label".into(),
             Self::MainOutsideCode(..) => "Consider moving the label to an instruction".into(),
             Self::IncorrectDirectiveArgumentNumber { expected, found } => {
                 let expected = expected.amount;
@@ -196,10 +198,13 @@ impl Kind {
             }
             // TODO: Maybe add hint for required directive name?
             Self::UnallowedStatementType { found, .. } => {
-                format!("Consider changing the section to `{}`", match found {
-                    DirectiveSegment::Code => "code",
-                    DirectiveSegment::Data => "data",
-                })
+                format!(
+                    "Consider changing the section to `{}`",
+                    match found {
+                        DirectiveSegment::Code => "code",
+                        DirectiveSegment::Data => "data",
+                    }
+                )
             }
             _ => return None,
         })
@@ -244,7 +249,7 @@ impl Kind {
     /// Gets a list of extra context labels related to the error
     fn context(&self) -> Vec<(&Span, &'static str)> {
         match self {
-            Self::DuplicateLabel(_, span) => {
+            Self::DuplicateLabel(_, Some(span)) => {
                 vec![(span, "Label also defined here")]
             }
             Self::UnallowedStatementType {
