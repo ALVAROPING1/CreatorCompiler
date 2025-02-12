@@ -645,6 +645,9 @@ fn compile_instructions<'a>(
         if let Some(inst) = pending_instructions.get_mut(first_idx) {
             inst.labels = take_spanned_vec(&mut instruction.labels);
         }
+        for inst in &mut pending_instructions[first_idx + 1..] {
+            inst.span = 0..0;
+        }
     }
     Ok(pending_instructions)
 }
