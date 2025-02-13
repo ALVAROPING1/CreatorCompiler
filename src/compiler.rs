@@ -27,7 +27,7 @@ use num_bigint::{BigInt, BigUint};
 use once_cell::sync::Lazy;
 use regex::{NoExpand, Regex};
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::architecture::{
     AlignmentType, Architecture, DirectiveAction, DirectiveData, DirectiveSegment, FieldType,
@@ -40,7 +40,7 @@ use crate::parser::{
 use crate::span::{Span, Spanned};
 
 mod label;
-use label::{Label, Table as LabelTable};
+pub use label::{Label, Table as LabelTable};
 
 pub mod error;
 use error::{ArgumentType, SpannedErr as _};
@@ -352,6 +352,8 @@ impl DataToken {
 pub struct CompiledCode {
     /// Symbol table for labels
     pub label_table: LabelTable,
+    /// Table indicating which labels are global
+    pub global_symbols: GlobalSymbols,
     /// Compiled instructions
     pub instructions: Vec<Instruction>,
     /// Compiled data elements
@@ -386,14 +388,16 @@ struct DataValue {
 
 type Instructions = Vec<Statement<InstructionNode>>;
 type DataDirectives = Vec<Statement<DataValue>>;
+pub type GlobalSymbols = HashSet<String>;
 
 fn split_statements(
     arch: &Architecture,
     ast: Vec<ASTNode>,
-) -> Result<(Instructions, DataDirectives), CompileError> {
+) -> Result<(Instructions, DataDirectives, GlobalSymbols), CompileError> {
     let mut current_section: Option<Spanned<DirectiveSegment>> = None;
     let mut data_directives = Vec::new();
     let mut instructions = Vec::new();
+    let mut global_symbols = HashSet::new();
 
     for node in ast {
         match node.statement.0 {
@@ -406,7 +410,25 @@ fn split_statements(
                         ArgumentNumber::new(0, false).check(&directive.args)?;
                         current_section = Some((new_section, node.statement.1));
                     }
-                    (DirectiveAction::GlobalSymbol(_), _) => todo!(),
+                    (DirectiveAction::GlobalSymbol(_), _) => {
+                        ArgumentNumber::new(1, true).check(&directive.args)?;
+                        for (label, span) in directive.args.0 {
+                            let label = match label {
+                                DataToken::Number(Expr::Identifier(label)) => label,
+                                DataToken::Number(_) => Err(ErrorKind::IncorrectArgumentType {
+                                    expected: ArgumentType::Identifier,
+                                    found: ArgumentType::Expression,
+                                }
+                                .add_span(&span))?,
+                                DataToken::String(_) => Err(ErrorKind::IncorrectArgumentType {
+                                    expected: ArgumentType::Identifier,
+                                    found: ArgumentType::String,
+                                }
+                                .add_span(&span))?,
+                            };
+                            global_symbols.insert(label.0);
+                        }
+                    }
                     (DirectiveAction::Nop(_), _) => {}
                     (DirectiveAction::Data(data_type), Some((DirectiveSegment::Data, _))) => {
                         let span = node.statement.1;
@@ -445,7 +467,7 @@ fn split_statements(
             }
         }
     }
-    Ok((instructions, data_directives))
+    Ok((instructions, data_directives, global_symbols))
 }
 
 /// Amount of arguments expected by a directive
@@ -664,7 +686,7 @@ pub fn compile<S: std::hash::BuildHasher>(
     let word_size_bits = arch.word_size();
     let word_size_bytes = arch.word_size().div_ceil(8);
 
-    let (instructions, data_directives) = split_statements(arch, ast)?;
+    let (instructions, data_directives, global_symbols) = split_statements(arch, ast)?;
 
     let instruction_eof = instructions.last().map_or(0, |inst| inst.statement.1.end);
     let pending_data = compile_data(arch, &mut label_table, data_directives)?;
@@ -848,6 +870,7 @@ pub fn compile<S: std::hash::BuildHasher>(
 
     Ok(CompiledCode {
         label_table,
+        global_symbols,
         instructions,
         data_memory,
     })
@@ -937,6 +960,7 @@ mod test {
         assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
         assert_eq!(x.instructions, vec![main_nop(12..15)]);
         assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.global_symbols, HashSet::new());
         // 2 instructions
         let x = compile(".text\nmain: nop\nnop").unwrap();
         assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
@@ -948,6 +972,7 @@ mod test {
             ]
         );
         assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.global_symbols, HashSet::new());
     }
 
     #[test]
@@ -963,6 +988,7 @@ mod test {
             ]
         );
         assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.global_symbols, HashSet::new());
     }
 
     #[test]
@@ -976,6 +1002,7 @@ mod test {
             vec![inst(0, &["main"], "multi 15", binary, 12..20)]
         );
         assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.global_symbols, HashSet::new());
         // Definition 2
         let x = compile(".text\nmain: multi $").unwrap();
         let binary = "00000000000000000000000001011101";
@@ -985,6 +1012,7 @@ mod test {
             vec![inst(0, &["main"], "multi $", binary, 12..19)]
         );
         assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.global_symbols, HashSet::new());
         // Definition 3
         let x = compile(".text\nmain: multi 17").unwrap();
         let binary = "10001000000000000000000001000001";
@@ -994,6 +1022,7 @@ mod test {
             vec![inst(0, &["main"], "multi 17", binary, 12..20)]
         );
         assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.global_symbols, HashSet::new());
     }
 
     #[test]
@@ -1008,6 +1037,7 @@ mod test {
             vec![inst(0, &["main"], "reg ctrl1 x2 ft1 ft2", binary, 12..35)]
         );
         assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.global_symbols, HashSet::new());
         // Aliases
         let x = compile(".text\nmain: reg ctrl1, two, F1, Field2").unwrap();
         assert_eq!(x.label_table, tbl);
@@ -1017,6 +1047,7 @@ mod test {
             vec![inst(0, &["main"], instruction, binary, 12..38)]
         );
         assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.global_symbols, HashSet::new());
         // Number aliases
         let x = compile(".text\nmain: reg ctrl1, 2, ft1, ft2").unwrap();
         assert_eq!(x.label_table, tbl);
@@ -1025,6 +1056,7 @@ mod test {
             vec![inst(0, &["main"], "reg ctrl1 2 ft1 ft2", binary, 12..34)]
         );
         assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.global_symbols, HashSet::new());
         // Linked floating point registers
         let x = compile(".text\nmain: reg ctrl1, x2, fs1, FD2").unwrap();
         assert_eq!(x.label_table, tbl);
@@ -1033,6 +1065,7 @@ mod test {
             vec![inst(0, &["main"], "reg ctrl1 x2 fs1 FD2", binary, 12..35)]
         );
         assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.global_symbols, HashSet::new());
     }
 
     #[test]
@@ -1045,6 +1078,7 @@ mod test {
             vec![inst(0, &["main"], "imm -7 255 11", binary, 12..27)]
         );
         assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.global_symbols, HashSet::new());
     }
 
     #[test]
@@ -1072,6 +1106,7 @@ mod test {
             x.data_memory,
             vec![data(16, &["c"], Value::Space(1u8.into()))]
         );
+        assert_eq!(x.global_symbols, HashSet::new());
     }
 
     #[test]
@@ -1084,6 +1119,7 @@ mod test {
             vec![inst(0, &["main"], "off 7 -8", binary, 12..21)]
         );
         assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.global_symbols, HashSet::new());
     }
 
     #[test]
@@ -1096,6 +1132,7 @@ mod test {
             vec![inst(0, &["main"], "off -4 -1", binary, 12..26)]
         );
         assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.global_symbols, HashSet::new());
 
         let x = compile(".text\na: off main, main\nnop\nmain: nop").unwrap();
         let binary = "01000000000000000000000000000001";
@@ -1112,6 +1149,7 @@ mod test {
             ]
         );
         assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.global_symbols, HashSet::new());
     }
 
     #[test]
@@ -1124,6 +1162,7 @@ mod test {
             vec![inst(0, &["main"], "off 6 7", binary, 12..20)]
         );
         assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.global_symbols, HashSet::new());
     }
 
     #[test]
@@ -1145,6 +1184,7 @@ mod test {
                 data(17, &["a"], Value::Space(1u8.into()))
             ]
         );
+        assert_eq!(x.global_symbols, HashSet::new());
     }
 
     #[test]
@@ -1159,6 +1199,7 @@ mod test {
                 data(19, &[], Value::Space(1u8.into())),
             ]
         );
+        assert_eq!(x.global_symbols, HashSet::new());
     }
 
     #[test]
@@ -1183,6 +1224,7 @@ mod test {
                 x.data_memory,
                 vec![data(16, &["a"], int_val(1, bits, r#type))]
             );
+            assert_eq!(x.global_symbols, HashSet::new());
             // Multiple arguments
             let x = compile(&format!(".data\nb: .{name} -128, 255\n.text\nmain: nop")).unwrap();
             assert_eq!(
@@ -1197,6 +1239,7 @@ mod test {
                     data((16 + size).into(), &[], int_val(255, bits, r#type))
                 ]
             );
+            assert_eq!(x.global_symbols, HashSet::new());
         }
     }
 
@@ -1216,6 +1259,7 @@ mod test {
                 data(18, &["b"], int_val(0, 8, IntegerType::Byte)),
             ]
         );
+        assert_eq!(x.global_symbols, HashSet::new());
     }
 
     #[test]
@@ -1240,6 +1284,7 @@ mod test {
                 data(31, &["end"], int_val(0, 8, IntegerType::Byte)),
             ]
         );
+        assert_eq!(x.global_symbols, HashSet::new());
     }
 
     #[test]
@@ -1261,6 +1306,7 @@ mod test {
             );
             assert_eq!(x.instructions, vec![main_nop(31..34)]);
             assert_eq!(x.data_memory, vec![data(16, &["a"], value(1.0, r#type))]);
+            assert_eq!(x.global_symbols, HashSet::new());
             // Multiple arguments
             let x = compile(&format!(".data\nb: .{name} 1, 2\n.text\nmain: nop")).unwrap();
             assert_eq!(
@@ -1275,6 +1321,7 @@ mod test {
                     data((16 + size).try_into().unwrap(), &[], value(2.0, r#type)),
                 ]
             );
+            assert_eq!(x.global_symbols, HashSet::new());
         }
     }
 
@@ -1294,6 +1341,7 @@ mod test {
                 null_terminated,
             };
             assert_eq!(x.data_memory, vec![data(16, &["a"], str("a"))]);
+            assert_eq!(x.global_symbols, HashSet::new());
             // Multiple arguments
             let x = compile(&format!(".data\nb: .{name} \"b\", \"0\"\n.text\nmain: nop")).unwrap();
             assert_eq!(
@@ -1308,7 +1356,37 @@ mod test {
                     data(17 + u64::from(null_terminated), &[], str("0")),
                 ]
             );
+            assert_eq!(x.global_symbols, HashSet::new());
         }
+    }
+
+    #[test]
+    fn global() {
+        // Before definition
+        let x = compile(".global main\n.text\nmain: nop").unwrap();
+        assert_eq!(x.label_table, label_table([("main", 0, 19..24)]));
+        assert_eq!(x.instructions, vec![main_nop(25..28)]);
+        assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.global_symbols, HashSet::from(["main".into()]));
+        // After definition
+        let x = compile(".text\nmain: nop\n.global main").unwrap();
+        assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
+        assert_eq!(x.instructions, vec![main_nop(12..15)]);
+        assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.global_symbols, HashSet::from(["main".into()]));
+        // Multiple arguments
+        let x = compile(".text\nmain: nop\ntest: nop\n.global main, test").unwrap();
+        assert_eq!(
+            x.label_table,
+            label_table([("main", 0, 6..11), ("test", 4, 16..21)])
+        );
+        let nop = inst(4, &["test"], "nop", NOP_BINARY, 22..25);
+        assert_eq!(x.instructions, vec![main_nop(12..15), nop]);
+        assert_eq!(x.data_memory, vec![]);
+        assert_eq!(
+            x.global_symbols,
+            HashSet::from(["main".into(), "test".into()])
+        );
     }
 
     #[test]
@@ -1332,6 +1410,7 @@ mod test {
                     data(17 + alignment, &[], Value::Space(1u8.into()))
                 ]
             );
+            assert_eq!(x.global_symbols, HashSet::new());
         }
     }
 
@@ -1356,6 +1435,7 @@ mod test {
                     data(17 + alignment, &[], Value::Space(1u8.into()))
                 ]
             );
+            assert_eq!(x.global_symbols, HashSet::new());
         }
     }
 
@@ -1373,6 +1453,7 @@ mod test {
                     data(17, &[], Value::Padding(alignment.into())),
                 ]
             );
+            assert_eq!(x.global_symbols, HashSet::new());
         }
     }
 
@@ -1395,6 +1476,7 @@ mod test {
                     data(20, &[], Value::Space(1u8.into()))
                 ]
             );
+            assert_eq!(x.global_symbols, HashSet::new());
         }
     }
 
@@ -1415,6 +1497,7 @@ mod test {
                 data(24, &[], Value::Space(1u8.into()))
             ]
         );
+        assert_eq!(x.global_symbols, HashSet::new());
     }
 
     #[test]
@@ -1721,6 +1804,26 @@ mod test {
     }
 
     #[test]
+    fn global_args_type() {
+        assert_eq!(
+            compile(".global \"test\"\n.text\nmain: nop"),
+            Err(ErrorKind::IncorrectArgumentType {
+                expected: ArgumentType::Identifier,
+                found: ArgumentType::String
+            }
+            .add_span(&(8..14))),
+        );
+        assert_eq!(
+            compile(".global 123\n.text\nmain: nop"),
+            Err(ErrorKind::IncorrectArgumentType {
+                expected: ArgumentType::Identifier,
+                found: ArgumentType::Expression
+            }
+            .add_span(&(8..11))),
+        );
+    }
+
+    #[test]
     fn incorrect_instruction_syntax() {
         let assert = |err, syntaxes: &[&str], expected_span| match err {
             Err(CompileError { span, kind }) => match *kind {
@@ -1849,6 +1952,7 @@ mod test {
                 x.data_memory,
                 vec![data(16, &[], int_val(val, 32, IntegerType::Word))]
             );
+            assert_eq!(x.global_symbols, HashSet::new());
         }
     }
 
@@ -1861,6 +1965,7 @@ mod test {
             let nop = inst(val, &["main"], "nop", NOP_BINARY, 12..15);
             assert_eq!(x.instructions, vec![nop]);
             assert_eq!(x.data_memory, vec![]);
+            assert_eq!(x.global_symbols, HashSet::new());
         }
     }
 
@@ -1871,6 +1976,7 @@ mod test {
         let nop = inst(0, &["test"], "nop", NOP_BINARY, 12..15);
         assert_eq!(x.instructions, vec![nop]);
         assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.global_symbols, HashSet::new());
     }
 
     #[test]

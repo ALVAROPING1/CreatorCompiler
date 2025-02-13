@@ -551,6 +551,11 @@
       "name": ".double",
       "action": "double",
       "size": null
+    },
+    {
+      "name": ".global",
+      "action": "global_symbol",
+      "size": null
     }
   ],
   "memory_layout": [

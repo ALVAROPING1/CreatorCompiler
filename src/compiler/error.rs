@@ -41,6 +41,7 @@ pub enum ArgumentType {
     String,
     Expression,
     RegisterName,
+    Identifier,
 }
 
 /// Unsupported operations for floating point numbers
