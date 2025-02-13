@@ -1,3 +1,6 @@
+WEB_TARGET="web"
+CLI_TARGET="nodejs"
+
 function Info(){
     echo -e '\033[1;34m'"Build:\033[0m $*";
 }
@@ -7,8 +10,8 @@ function Build() {
 }
 
 function Move() {
-    mv "pkg/web/$1" "pkg/$1"
-    rm "pkg/nodejs/$1"
+    mv "pkg/$WEB_TARGET/$1" "pkg/$1"
+    rm "pkg/$CLI_TARGET/$1"
 }
 
 function Cleanup() {
@@ -18,8 +21,8 @@ function Cleanup() {
 }
 
 function BuildFull() {
-    Build web $1
-    Build nodejs $1
+    Build $WEB_TARGET $1
+    Build $CLI_TARGET $1
     Cleanup
 }
 
