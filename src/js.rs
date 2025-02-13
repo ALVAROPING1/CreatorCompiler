@@ -91,6 +91,7 @@ impl ArchitectureJS {
     /// * `src`: assembly code to compile
     /// * `reserved_offset`: amount of bytes that should be reserved for library instructions
     /// * `labels`: mapping from label names specified in the library to their addresses, in `JSON`
+    /// * `library`: whether the code should be compiled as a library (`true`) or not (`false`)
     /// * `html_error`: whether to format error messages in HTML (`true`) or ANSI (`false`)
     ///
     /// # Errors
@@ -102,20 +103,22 @@ impl ArchitectureJS {
         src: &str,
         reserved_offset: usize,
         labels: &str,
+        library: bool,
         html_error: bool,
     ) -> Result<CompiledCodeJS, String> {
         const FILENAME: &str = "assembly";
         let format_err = |e: String| if html_error { to_html(&e) } else { e };
         let labels: HashMap<String, Integer> =
             serde_json::from_str(labels).map_err(|e| e.to_string())?;
-        let labels = labels.into_iter().map(|(k, v)| (k, v.0)).collect();
+        let labels: HashMap<_, _, RandomState> =
+            labels.into_iter().map(|(k, v)| (k, v.0)).collect();
         let arch = self.borrow_dependent();
         // Parse the source to an AST
         let ast = crate::parser::parse(arch.comment_prefix(), src)
             .map_err(|e| format_err(e.render(FILENAME, src)))?;
         // Compile the AST
         let compiled =
-            crate::compiler::compile::<RandomState>(arch, ast, &reserved_offset.into(), labels)
+            crate::compiler::compile(arch, ast, &reserved_offset.into(), labels, library)
                 .map_err(|e| format_err(e.render(FILENAME, src)))?;
         // Wrap the instructions in a type that can be returned to `JS`
         let instructions = compiled

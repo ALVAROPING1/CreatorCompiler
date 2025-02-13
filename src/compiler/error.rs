@@ -66,6 +66,7 @@ pub enum Kind {
     IncorrectInstructionSyntax(Vec<(String, ParseError)>),
     DuplicateLabel(String, Option<Span>),
     MissingMainLabel(String),
+    MainInLibrary(String),
     MainOutsideCode(String),
     IntegerTooBig(BigInt, RangeInclusive<BigInt>),
     MemorySectionFull(&'static str),
@@ -142,6 +143,7 @@ impl Kind {
             Self::IncorrectInstructionSyntax(..) => 6,
             Self::DuplicateLabel(..) => 7,
             Self::MissingMainLabel(..) => 8,
+            Self::MainInLibrary(..) => 22,
             Self::MainOutsideCode(..) => 9,
             Self::IntegerTooBig(..) => 10,
             Self::MemorySectionFull(..) => 11,
@@ -180,7 +182,9 @@ impl Kind {
     fn hint(&self) -> Option<String> {
         Some(match self {
             Self::DuplicateLabel(.., Some(_)) => "Consider renaming either of the labels".into(),
-            Self::DuplicateLabel(.., None) => "Consider renaming the label".into(),
+            Self::DuplicateLabel(.., None) | Self::MainInLibrary(..) => {
+                "Consider renaming the label".into()
+            }
             Self::MainOutsideCode(..) => "Consider moving the label to an instruction".into(),
             Self::IncorrectDirectiveArgumentNumber { expected, found } => {
                 let expected = expected.amount;
@@ -224,7 +228,7 @@ impl Kind {
             Self::MissingMainLabel(main) => {
                 format!("Consider adding a label called `{main}` to an instruction")
             }
-            Self::MainOutsideCode(..) => "Label defined here".into(),
+            Self::MainOutsideCode(..) | Self::MainInLibrary(..) => "Label defined here".into(),
             Self::IntegerTooBig(val, _) | Self::UnallowedNegativeValue(val) => {
                 format!("This expression has value {val}")
             }
@@ -298,6 +302,7 @@ impl fmt::Display for Kind {
             Self::IncorrectInstructionSyntax(..) => write!(f, "Incorrect instruction syntax"),
             Self::DuplicateLabel(s, _) => write!(f, "Label `{s}` is already defined"),
             Self::MissingMainLabel(s) => write!(f, "Main label `{s}` not found"),
+            Self::MainInLibrary(s) => write!(f, "Main label `{s}` can't be used in libraries"),
             Self::MainOutsideCode(s) => {
                 write!(f, "Main label `{s}` defined outside of the text segment")
             }

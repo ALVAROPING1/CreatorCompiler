@@ -658,6 +658,7 @@ pub fn compile<S: std::hash::BuildHasher>(
     ast: Vec<ASTNode>,
     reserved_offset: &BigUint,
     labels: HashMap<String, BigUint, S>,
+    library: bool,
 ) -> Result<CompiledCode, CompileError> {
     let mut label_table = LabelTable::from(labels);
     let word_size_bits = arch.word_size();
@@ -670,23 +671,24 @@ pub fn compile<S: std::hash::BuildHasher>(
     let pending_instructions =
         compile_instructions(arch, &mut label_table, instructions, reserved_offset)?;
 
-    match label_table.get(arch.main_label()) {
-        None => {
+    let main_label = || arch.main_label().to_owned();
+    let add_main_span = |e: ErrorKind, main: &Label| e.add_span(main.span().unwrap_or(&(0..0)));
+    match (label_table.get(arch.main_label()), library) {
+        (None, false) => {
             #[allow(clippy::range_plus_one)] // Ariadne works with exclusive ranges
-            return Err(ErrorKind::MissingMainLabel(arch.main_label().to_owned())
+            return Err(ErrorKind::MissingMainLabel(main_label())
                 .add_span(&(instruction_eof..instruction_eof + 1)));
         }
-        Some(main) => {
-            let text = arch.code_section();
-            if !text.contains(main.address()) {
-                return Err(
-                    ErrorKind::MainOutsideCode(arch.main_label().to_owned()).add_span(
-                        main.span()
-                            .expect("Main label shouldn't be used in libraries"),
-                    ),
-                );
-            }
+        (Some(main), true) => {
+            return Err(add_main_span(ErrorKind::MainInLibrary(main_label()), main))
         }
+        (Some(main), false) if !arch.code_section().contains(main.address()) => {
+            return Err(add_main_span(
+                ErrorKind::MainOutsideCode(main_label()),
+                main,
+            ));
+        }
+        _ => {}
     }
 
     let instructions = pending_instructions
@@ -861,14 +863,15 @@ mod test {
         src: &str,
         reserved_offset: &BigUint,
         labels: HashMap<String, BigUint>,
+        library: bool,
     ) -> Result<CompiledCode, CompileError> {
         let arch = Architecture::from_json(include_str!("../tests/architecture.json")).unwrap();
         let ast = crate::parser::parse(arch.comment_prefix(), src).unwrap();
-        super::compile(&arch, ast, reserved_offset, labels)
+        super::compile(&arch, ast, reserved_offset, labels, library)
     }
 
     fn compile(src: &str) -> Result<CompiledCode, CompileError> {
-        compile_with(src, &BigUint::ZERO, HashMap::new())
+        compile_with(src, &BigUint::ZERO, HashMap::new(), false)
     }
 
     fn label_table(labels: impl IntoIterator<Item = (&'static str, u64, Span)>) -> LabelTable {
@@ -1834,7 +1837,7 @@ mod test {
         let src = ".data\n.word test\n.text\nmain: nop";
         for val in [3u8, 11, 27] {
             let labels = HashMap::from([("test".into(), val.into())]);
-            let x = compile_with(src, &BigUint::ZERO, labels.clone()).unwrap();
+            let x = compile_with(src, &BigUint::ZERO, labels.clone(), false).unwrap();
             let mut labels = LabelTable::from(labels);
             labels
                 .insert("main".into(), Label::new(BigUint::ZERO, 23..28))
@@ -1853,11 +1856,33 @@ mod test {
     fn library_offset() {
         let src = ".text\nmain: nop";
         for val in [5u64, 8, 11] {
-            let x = compile_with(src, &val.into(), HashMap::new()).unwrap();
+            let x = compile_with(src, &val.into(), HashMap::new(), false).unwrap();
             assert_eq!(x.label_table, label_table([("main", val, 6..11)]));
             let nop = inst(val, &["main"], "nop", NOP_BINARY, 12..15);
             assert_eq!(x.instructions, vec![nop]);
             assert_eq!(x.data_memory, vec![]);
         }
+    }
+
+    #[test]
+    fn compile_library() {
+        let x = compile_with(".text\ntest: nop", &BigUint::ZERO, HashMap::new(), true).unwrap();
+        assert_eq!(x.label_table, label_table([("test", 0, 6..11)]));
+        let nop = inst(0, &["test"], "nop", NOP_BINARY, 12..15);
+        assert_eq!(x.instructions, vec![nop]);
+        assert_eq!(x.data_memory, vec![]);
+    }
+
+    #[test]
+    fn main_in_library() {
+        assert_eq!(
+            compile_with(".text\nmain: nop", &BigUint::ZERO, HashMap::new(), true),
+            Err(ErrorKind::MainInLibrary("main".into()).add_span(&(6..11)))
+        );
+        let labels = HashMap::from([("main".into(), 4u8.into())]);
+        assert_eq!(
+            compile_with(".text\ntest: nop", &BigUint::ZERO, labels, true),
+            Err(ErrorKind::MainInLibrary("main".into()).add_span(&(0..0)))
+        );
     }
 }

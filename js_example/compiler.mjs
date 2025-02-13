@@ -38,7 +38,7 @@ function data_category(wasm, category) {
  * @returns {CompilationResult}
  **/
 export function compile(wasm, arch, code) {
-    const compiled = arch.compile(code, 0, "{}", typeof document != "undefined");
+    const compiled = arch.compile(code, 0, "{}", false, typeof document != "undefined");
     const result = {
         instructions: compiled.instructions.map(x => ({
             address: x.address,
