@@ -43,6 +43,7 @@ impl Label {
     ///
     /// * `address`: memory address the label points at
     /// * `definition`: [`Span`] where the label was defined
+    #[must_use]
     pub const fn new(address: BigUint, definition: Span) -> Self {
         Self {
             address,
@@ -51,11 +52,13 @@ impl Label {
     }
 
     /// Gets the address this label is pointing in
+    #[must_use]
     pub const fn address(&self) -> &BigUint {
         &self.address
     }
 
     /// Gets the [`Span`] where the label was defined
+    #[must_use]
     pub const fn span(&self) -> Option<&Span> {
         self.definition.as_ref()
     }
@@ -126,6 +129,7 @@ impl Table {
     /// # Parameters
     ///
     /// * `label`: name of the label to search
+    #[must_use]
     pub fn get(&self, label: &str) -> Option<&Label> {
         self.0.get(label)
     }
