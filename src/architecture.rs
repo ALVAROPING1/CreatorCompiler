@@ -464,11 +464,8 @@ utils::schema_from!(MemoryLayout, [Pair<json::MemoryLayoutKeys, BaseN<16>>; 6]);
 
 impl<'a> Architecture<'a> {
     /// Generate a `JSON` schema
-    ///
-    /// # Panics
-    ///
-    /// Panics if the data can't be serialized. This should never happen
     #[must_use]
+    #[allow(clippy::missing_panics_doc)] // This should never panic at runtime from user error
     pub fn schema() -> String {
         let schema = schema_for!(Architecture);
         serde_json::to_string_pretty(&schema)
@@ -613,6 +610,7 @@ impl<'a> Component<'a> {
 impl BitRange {
     /// Calculates the size of this range in bits
     #[must_use]
+    #[allow(clippy::missing_panics_doc)] // This should never panic at runtime from user error
     pub fn size(&self) -> usize {
         // We need a closure because there are multiple methods for different types
         #[allow(clippy::redundant_closure_for_method_calls)]
