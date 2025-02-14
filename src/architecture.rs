@@ -207,8 +207,7 @@ pub struct Instruction<'a> {
     // Can't be a reference because there might be escape sequences, which require
     // modifying the data on deserialization
     pub definition: String,
-    /// Determines whether the field `i` is separated in the resulting binary instruction. Ignored
-    #[deprecated = "Values are obtained from the variant used in BitPosition in each field"]
+    /// Determines whether the field `i` is separated in the resulting binary instruction
     separated: Option<Vec<bool>>,
     /// Help information of the instruction
     help: &'a str,
