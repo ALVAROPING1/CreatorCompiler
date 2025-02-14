@@ -84,6 +84,14 @@ impl<S: std::hash::BuildHasher> From<HashMap<String, BigUint, S>> for Table {
     }
 }
 
+impl IntoIterator for Table {
+    type Item = (String, Label);
+    type IntoIter = <HashMap<String, Label> as IntoIterator>::IntoIter;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
 impl Table {
     /// Inserts a new label
     ///

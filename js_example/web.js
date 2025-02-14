@@ -12,13 +12,15 @@ window["arch"] = arch
 const src = document.getElementById("src");
 const out = document.getElementById("result");
 
-document.getElementById("compile_btn").onclick = function() {
+document.getElementById("compile_btn").onclick = function () {
   try {
     const compiled = compiler.compile(wasm, arch, src.value);
     window["instructions"] = compiled.instructions
     window["data"] = compiled.data
+    window["instructions"] = compiled.label_table
     console.log(compiled.instructions)
     console.log(compiled.data)
+    console.log(compiled.label_table)
     out.innerHTML = compiled.msg;
   } catch (e) {
     out.innerHTML = e;

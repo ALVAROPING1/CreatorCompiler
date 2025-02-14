@@ -134,7 +134,25 @@ impl ArchitectureJS {
             .collect();
         // Wrap the data elements in a type that can be returned to `JS`
         let data = compiled.data_memory.into_iter().map(DataJS).collect();
-        Ok(CompiledCodeJS { instructions, data })
+        // Convert the label table to a type that can be returned to `JS`
+        let label_table = compiled
+            .label_table
+            .into_iter()
+            .map(|(name, label)| {
+                let global = compiled.global_symbols.contains(&name);
+                let address = label.address().try_into().unwrap_or(u64::MAX);
+                LabelJS {
+                    name,
+                    address,
+                    global,
+                }
+            })
+            .collect();
+        Ok(CompiledCodeJS {
+            instructions,
+            data,
+            label_table,
+        })
     }
 }
 
@@ -148,6 +166,9 @@ pub struct CompiledCodeJS {
     /// Compiled data to add to the data segment
     #[wasm_bindgen(readonly)]
     pub data: Vec<DataJS>,
+    /// Symbol table for labels
+    #[wasm_bindgen(readonly)]
+    pub label_table: Vec<LabelJS>,
 }
 
 #[wasm_bindgen]
@@ -158,6 +179,18 @@ impl CompiledCodeJS {
     pub fn debug(&self) -> String {
         format!("{self:#?}")
     }
+}
+
+/// Label table entry wrapper
+#[wasm_bindgen(getter_with_clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct LabelJS {
+    /// Name of the label
+    pub name: String,
+    /// Address to which the label points
+    pub address: u64,
+    /// Whether the label is local to the file (`false`) or global
+    pub global: bool,
 }
 
 /// Compiled instruction wrapper

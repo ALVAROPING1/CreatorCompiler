@@ -12,6 +12,7 @@ import("./compiler.mjs").then(compiler => {
         console.log(compiled.msg);
         console.log(compiled.instructions);
         console.log(compiled.data);
+        console.log(compiled.label_table);
     } catch (e) {
         console.error(e);
     }

@@ -1,5 +1,3 @@
-/** @typedef {} Wasm */
-
 /**
  * @typedef {Object} CompilationResult
  * @property {Object[]} instructions
@@ -47,17 +45,22 @@ export function compile(wasm, arch, code) {
             binary: x.binary,
             user: x.user
         })),
-        data: compiled.data.map(data => {
-            return {
-                labels: data.labels(),
-                addr: data.address(),
-                size: data.size(),
-                type: data.type(),
-                value: data.value(false),
-                value_human: data.value(true),
-                category: data_category(wasm, data.data_category()),
-            }
-        }),
+        data: compiled.data.map(data => ({
+            labels: data.labels(),
+            addr: data.address(),
+            size: data.size(),
+            type: data.type(),
+            value: data.value(false),
+            value_human: data.value(true),
+            category: data_category(wasm, data.data_category()),
+        })),
+        label_table: compiled.label_table.reduce(
+            (tbl, x) => {
+                tbl[x.name] = { address: x.address, global: x.global };
+                return tbl
+            },
+            {},
+        ),
         msg: `Code compiled successfully\n` + compiled.toString(),
     };
     return result;
