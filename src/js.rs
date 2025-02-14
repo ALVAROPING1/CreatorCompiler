@@ -160,6 +160,11 @@ impl ArchitectureJS {
             label_table,
         })
     }
+
+    /// Generate a `JSON` schema
+    pub fn schema() -> String {
+        Architecture::schema()
+    }
 }
 
 /// Assembly compilation output
