@@ -23,8 +23,9 @@
 
 use std::collections::HashMap;
 use std::hash::RandomState;
+use std::str::FromStr;
 
-use num_traits::cast::ToPrimitive;
+use js_sys::BigInt;
 use self_cell::self_cell;
 use wasm_bindgen::prelude::*;
 
@@ -57,6 +58,11 @@ self_cell!(
 fn to_html(str: &str) -> String {
     let opts = ansi_to_html::Opts::default().four_bit_var_prefix(Some("err-".into()));
     ansi_to_html::convert_with_opts(str, &opts).expect("we should only generate valid ANSI escapes")
+}
+
+fn to_js_bigint(x: &(impl num_traits::Num + ToString)) -> BigInt {
+    BigInt::from_str(&x.to_string())
+        .expect("Converting a number to string should always return a valid format")
 }
 
 #[wasm_bindgen]
@@ -140,7 +146,7 @@ impl ArchitectureJS {
             .into_iter()
             .map(|(name, label)| {
                 let global = compiled.global_symbols.contains(&name);
-                let address = label.address().try_into().unwrap_or(u64::MAX);
+                let address = to_js_bigint(label.address());
                 LabelJS {
                     name,
                     address,
@@ -188,7 +194,7 @@ pub struct LabelJS {
     /// Name of the label
     pub name: String,
     /// Address to which the label points
-    pub address: u64,
+    pub address: BigInt,
     /// Whether the label is local to the file (`false`) or global
     pub global: bool,
 }
@@ -229,11 +235,8 @@ pub enum DataCategoryJS {
 impl DataJS {
     /// Address of the data element
     #[must_use]
-    pub fn address(&self) -> u64 {
-        self.0
-            .address
-            .to_u64()
-            .expect("Addresses shouldn't exceed 64 bits")
+    pub fn address(&self) -> BigInt {
+        to_js_bigint(&self.0.address)
     }
 
     /// Labels pointing to this data element
@@ -307,26 +310,15 @@ impl DataJS {
     }
 
     /// Size of the data element in bytes
-    ///
-    /// # Panics
-    ///
-    /// Panics if an integer bigger than 2^64 bits or a string longer than 2^64 bytes was compiled
     #[must_use]
-    pub fn size(&self) -> u64 {
+    pub fn size(&self) -> BigInt {
         use crate::compiler::Value;
         match &self.0.value {
-            Value::Integer(int) => {
-                let x = u64::try_from(int.size())
-                    .expect("we should never have integers bigger than 2^64 bits");
-                (x + 7) / 8
-            }
-            Value::Float(_) => 4,
-            Value::Double(_) => 8,
-            Value::String { data, .. } => u64::try_from(data.len())
-                .expect("we should never have strings bigger than 2^64 bytes"),
-            Value::Space(x) | Value::Padding(x) => x
-                .to_u64()
-                .expect("Padding/Space sizes shouldn't exceed 64 bits"),
+            Value::Integer(int) => to_js_bigint(&((int.size() + 7) / 8)),
+            Value::Float(_) => BigInt::from(4),
+            Value::Double(_) => BigInt::from(8),
+            Value::String { data, .. } => to_js_bigint(&data.len()),
+            Value::Space(x) | Value::Padding(x) => to_js_bigint(x),
         }
     }
 }
