@@ -1,3 +1,5 @@
+set -e
+
 WEB_TARGET="web"
 CLI_TARGET="nodejs"
 
