@@ -65,6 +65,15 @@ fn to_js_bigint(x: &(impl num_traits::Num + ToString)) -> BigInt {
         .expect("Converting a number to string should always return a valid format")
 }
 
+/// Method used to render colors in error messages
+#[wasm_bindgen]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Color {
+    HTML,
+    ANSI,
+    NoColor,
+}
+
 #[wasm_bindgen]
 #[allow(clippy::use_self)] // wasm_bindgen doesn't support using `Self` on nested types
 impl ArchitectureJS {
@@ -98,7 +107,7 @@ impl ArchitectureJS {
     /// * `reserved_offset`: amount of bytes that should be reserved for library instructions
     /// * `labels`: mapping from label names specified in the library to their addresses, in `JSON`
     /// * `library`: whether the code should be compiled as a library (`true`) or not (`false`)
-    /// * `html_error`: whether to format error messages in HTML (`true`) or ANSI (`false`)
+    /// * `color`: method used to render colors in error messages
     ///
     /// # Errors
     ///
@@ -110,10 +119,10 @@ impl ArchitectureJS {
         reserved_offset: usize,
         labels: &str,
         library: bool,
-        html_error: bool,
+        color: Color,
     ) -> Result<CompiledCodeJS, String> {
         const FILENAME: &str = "assembly";
-        let format_err = |e: String| if html_error { to_html(&e) } else { e };
+        let format_err = |e: String| if color == Color::HTML { to_html(&e) } else { e };
         let labels: HashMap<String, Integer> =
             serde_json::from_str(labels).map_err(|e| e.to_string())?;
         let labels: HashMap<_, _, RandomState> =
@@ -121,11 +130,11 @@ impl ArchitectureJS {
         let arch = self.borrow_dependent();
         // Parse the source to an AST
         let ast = crate::parser::parse(arch.comment_prefix(), src)
-            .map_err(|e| format_err(e.render(FILENAME, src)))?;
+            .map_err(|e| format_err(e.render(FILENAME, src, color != Color::NoColor)))?;
         // Compile the AST
         let compiled =
             crate::compiler::compile(arch, ast, &reserved_offset.into(), labels, library)
-                .map_err(|e| format_err(e.render(FILENAME, src)))?;
+                .map_err(|e| format_err(e.render(FILENAME, src, color != Color::NoColor)))?;
         // Wrap the instructions in a type that can be returned to `JS`
         let instructions = compiled
             .instructions

@@ -22,7 +22,7 @@
 //!
 //! The main type is [`Error`]
 
-use ariadne::{Color, Fmt, Label, Report, ReportKind, Source};
+use ariadne::{Color, Config, Fmt, Label, Report, ReportKind, Source};
 use num_bigint::{BigInt, BigUint};
 
 use std::fmt;
@@ -358,8 +358,10 @@ impl fmt::Display for Kind {
 }
 
 impl crate::RenderError for Error {
-    fn format(self, filename: &str, src: &str, mut buffer: &mut Vec<u8>) {
+    fn format(self, filename: &str, src: &str, mut buffer: &mut Vec<u8>, color: bool) {
+        let note_color = color.then_some(Color::BrightBlue);
         let mut report = Report::build(ReportKind::Error, (filename, self.span.clone()))
+            .with_config(Config::default().with_color(color))
             .with_code(format!("E{:02}", self.kind.error_code()))
             .with_message(self.kind.to_string())
             .with_label(
@@ -369,7 +371,7 @@ impl crate::RenderError for Error {
             )
             .with_labels(self.kind.context().into_iter().map(|label| {
                 Label::new((filename, label.0.clone()))
-                    .with_message(format!("{} {}", "Note:".fg(Color::BrightBlue), label.1))
+                    .with_message(format!("{} {}", "Note:".fg(note_color), label.1))
                     .with_color(Color::BrightBlue)
                     .with_order(10)
             }));
@@ -393,12 +395,12 @@ impl crate::RenderError for Error {
                         "\nThe syntax `{syntax}` failed with the following reason:"
                     )
                     .expect("Writing to an in-memory vector can't fail");
-                    err.format(filename, src, buffer);
+                    err.format(filename, src, buffer, color);
                 }
             }
             Kind::PseudoinstructionError { error, .. } => {
                 writeln!(&mut buffer).expect("Writing to an in-memory vector can't fail");
-                error.format(filename, src, buffer);
+                error.format(filename, src, buffer, color);
             }
             _ => {}
         }
@@ -438,10 +440,11 @@ impl fmt::Display for PseudoinstructionErrorKind {
 }
 
 impl crate::RenderError for PseudoinstructionError {
-    fn format(self, _: &str, _: &str, mut buffer: &mut Vec<u8>) {
+    fn format(self, _: &str, _: &str, mut buffer: &mut Vec<u8>, color: bool) {
         static FILENAME: &str = "<pseudoinstruction expansion>";
         let src = &self.definition;
         Report::build(ReportKind::Error, (FILENAME, self.span.clone()))
+            .with_config(Config::default().with_color(color))
             .with_message(self.kind.to_string())
             .with_label(
                 Label::new((FILENAME, self.span))

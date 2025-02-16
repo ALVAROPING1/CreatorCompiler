@@ -20,7 +20,7 @@
 
 //! Module containing the definition of the error type used by syntax errors
 
-use ariadne::{Color, Label, Report, ReportKind, Source};
+use ariadne::{Color, Config, Label, Report, ReportKind, Source};
 use chumsky::error::{Simple, SimpleReason};
 
 use super::Token;
@@ -47,7 +47,7 @@ impl From<Vec<Simple<Token>>> for Error {
 }
 
 impl crate::RenderError for Error {
-    fn format(self, filename: &str, src: &str, mut buffer: &mut Vec<u8>) {
+    fn format(self, filename: &str, src: &str, mut buffer: &mut Vec<u8>, color: bool) {
         let (lex, parse) = match self {
             Self::Lexer(errs) => (errs, vec![]),
             Self::Parser(errs) => (vec![], errs),
@@ -57,6 +57,7 @@ impl crate::RenderError for Error {
             .chain(parse.into_iter().map(|e| e.map(|tok| tok.to_string())))
             .for_each(|e| {
                 Report::build(ReportKind::Error, (filename, e.span()))
+                    .with_config(Config::default().with_color(color))
                     .with_message(match e.reason() {
                         SimpleReason::Custom(msg) => msg.clone(),
                         _ => e.to_string(),

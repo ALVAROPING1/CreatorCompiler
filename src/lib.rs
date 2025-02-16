@@ -36,7 +36,8 @@ pub trait RenderError {
     /// * `filename`: name of the file with the code
     /// * `src`: original source code parsed
     /// * `buffer`: writer in which to write the formatted error
-    fn format(self, filename: &str, src: &str, buffer: &mut Vec<u8>)
+    /// * `color`: whether to enable colors or not
+    fn format(self, filename: &str, src: &str, buffer: &mut Vec<u8>, color: bool)
     where
         Self: Sized;
 
@@ -46,13 +47,14 @@ pub trait RenderError {
     ///
     /// * `filename`: name of the file with the code
     /// * `src`: original source code parsed
+    /// * `color`: whether to enable colors or not
     #[must_use]
-    fn render(self, filename: &str, src: &str) -> String
+    fn render(self, filename: &str, src: &str, color: bool) -> String
     where
         Self: Sized,
     {
         let mut buffer = Vec::new();
-        self.format(filename, src, &mut buffer);
+        self.format(filename, src, &mut buffer, color);
         String::from_utf8(buffer).expect("the rendered error should be valid UTF-8")
     }
 }
