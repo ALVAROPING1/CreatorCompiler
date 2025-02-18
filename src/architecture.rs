@@ -155,6 +155,7 @@ pub struct Register<'a> {
     value: Number,
     /// Default value of the register
     #[serde(deserialize_with = "utils::optional_from_str")]
+    #[serde(default = "Option::<Number>::default")]
     #[schemars(with = "Option<utils::StringOrT<Number>>")]
     default_value: Option<Number>,
     /// Properties of this register
