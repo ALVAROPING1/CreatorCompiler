@@ -150,8 +150,12 @@ pub struct Register<'a> {
     #[schemars(with = "utils::StringOrT<Integer>")]
     nbits: Integer,
     /// Current value of the register
+    #[serde(deserialize_with = "utils::from_str")]
+    #[schemars(with = "utils::StringOrT<Number>")]
     value: Number,
     /// Default value of the register
+    #[serde(deserialize_with = "utils::optional_from_str")]
+    #[schemars(with = "Option<utils::StringOrT<Number>>")]
     default_value: Option<Number>,
     /// Properties of this register
     properties: Vec<RegisterProperty>,
