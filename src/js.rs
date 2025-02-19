@@ -69,9 +69,9 @@ fn to_js_bigint(x: &(impl num_traits::Num + ToString)) -> BigInt {
 #[wasm_bindgen]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Color {
-    HTML,
-    ANSI,
-    NoColor,
+    Html,
+    Ansi,
+    Off,
 }
 
 #[wasm_bindgen]
@@ -122,7 +122,7 @@ impl ArchitectureJS {
         color: Color,
     ) -> Result<CompiledCodeJS, String> {
         const FILENAME: &str = "assembly";
-        let format_err = |e: String| if color == Color::HTML { to_html(&e) } else { e };
+        let format_err = |e: String| if color == Color::Html { to_html(&e) } else { e };
         let labels: HashMap<String, Integer> =
             serde_json::from_str(labels).map_err(|e| e.to_string())?;
         let labels: HashMap<_, _, RandomState> =
@@ -130,11 +130,11 @@ impl ArchitectureJS {
         let arch = self.borrow_dependent();
         // Parse the source to an AST
         let ast = crate::parser::parse(arch.comment_prefix(), src)
-            .map_err(|e| format_err(e.render(FILENAME, src, color != Color::NoColor)))?;
+            .map_err(|e| format_err(e.render(FILENAME, src, color != Color::Off)))?;
         // Compile the AST
         let compiled =
             crate::compiler::compile(arch, ast, &reserved_offset.into(), labels, library)
-                .map_err(|e| format_err(e.render(FILENAME, src, color != Color::NoColor)))?;
+                .map_err(|e| format_err(e.render(FILENAME, src, color != Color::Off)))?;
         // Wrap the instructions in a type that can be returned to `JS`
         let instructions = compiled
             .instructions

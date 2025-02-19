@@ -36,7 +36,7 @@ function data_category(wasm, category) {
  * @returns {CompilationResult}
  **/
 export function compile(wasm, arch, code) {
-    const color = typeof document != "undefined"? wasm.Color.HTML : wasm.Color.ANSI;
+    const color = typeof document != "undefined"? wasm.Color.Html : wasm.Color.Ansi;
     const compiled = arch.compile(code, 0, "{}", false, color);
     const result = {
         instructions: compiled.instructions.map(x => ({
