@@ -48,10 +48,13 @@ case "$1" in
         BuildFull
         ;;
     'release')
-        BuildFull
+        BuildFull --release
         ;;
     'debug')
         BuildFull --dev
+        ;;
+    'profiling')
+        BuildFull --profiling
         ;;
     'help')
         Help
