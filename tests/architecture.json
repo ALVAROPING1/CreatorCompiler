@@ -534,6 +534,16 @@
       "size": null
     },
     {
+      "name": ".kdata",
+      "action": "kernel_data_segment",
+      "size": null
+    },
+    {
+      "name": ".ktext",
+      "action": "kernel_code_segment",
+      "size": null
+    },
+    {
       "name": ".zero",
       "action": "space",
       "size": "1"
@@ -595,6 +605,22 @@
     }
   ],
   "memory_layout": [
+    {
+      "name": "ktext start",
+      "value": "0x00000020"
+    },
+    {
+      "name": "ktext end",
+      "value": "0x0000002f"
+    },
+    {
+      "name": "kdata start",
+      "value": "0x00000030"
+    },
+    {
+      "name": "kdata end",
+      "value": "0x0000003f"
+    },
     {
       "name": "text start",
       "value": "0x00000000"

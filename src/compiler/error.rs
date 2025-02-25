@@ -186,7 +186,7 @@ impl Kind {
             Self::DuplicateLabel(.., None) | Self::MainInLibrary(..) => {
                 "Consider renaming the label".into()
             }
-            Self::MainOutsideCode(..) => "Consider moving the label to an instruction".into(),
+            Self::MainOutsideCode(..) => "Consider moving the label to a user instruction".into(),
             Self::IncorrectDirectiveArgumentNumber { expected, found } => {
                 let expected = expected.amount;
                 let (msg, n) = if expected > *found {
@@ -205,10 +205,7 @@ impl Kind {
             Self::UnallowedStatementType { found, .. } => {
                 format!(
                     "Consider changing the section to `{}`",
-                    match found {
-                        DirectiveSegment::Code => "code",
-                        DirectiveSegment::Data => "data",
-                    }
+                    if found.is_code() { "code" } else { "data" }
                 )
             }
             _ => return None,
@@ -341,13 +338,10 @@ impl fmt::Display for Kind {
                 write!(
                     f,
                     "Can't use `{}` statements while in section `{}`",
-                    match found {
-                        DirectiveSegment::Code => "instruction",
-                        DirectiveSegment::Data => "data directive",
-                    },
-                    match section {
-                        Some((DirectiveSegment::Data, _)) => "data",
-                        Some((DirectiveSegment::Code, _)) => "code",
+                    if found.is_code() {"instruction"} else {"data directive"},
+                    match section.as_ref().map(|(s, _)| s.is_code()) {
+                        Some(false) => "data",
+                        Some(true) => "code",
                         None => "none",
                     }
                 )

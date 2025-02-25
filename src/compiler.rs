@@ -374,8 +374,10 @@ fn take_spanned_vec<T>(src: &mut Vec<Spanned<T>>) -> Vec<T> {
 struct Statement<T> {
     /// Labels attached to the node
     labels: Vec<Spanned<String>>,
+    /// Whether the statement is in a kernel section (`true`) or not (`false`)
+    kernel: bool,
     /// Statement of the node
-    statement: Spanned<T>,
+    value: Spanned<T>,
 }
 
 /// Data values to add to the data segment
@@ -430,17 +432,20 @@ fn split_statements(
                         }
                     }
                     (DirectiveAction::Nop(_), _) => {}
-                    (DirectiveAction::Data(data_type), Some((DirectiveSegment::Data, _))) => {
+                    (DirectiveAction::Data(data_type), Some((section, _)))
+                        if !section.is_code() =>
+                    {
                         let span = node.statement.1;
                         data_directives.push(Statement {
                             labels: node.labels,
-                            statement: (
+                            value: (
                                 DataValue {
                                     data_type,
                                     values: directive.args,
                                 },
                                 span,
                             ),
+                            kernel: *section == DirectiveSegment::KernelData,
                         });
                     }
                     (DirectiveAction::Data(_), _) => {
@@ -452,19 +457,20 @@ fn split_statements(
                     }
                 }
             }
-            StatementNode::Instruction(instruction) => {
-                if !matches!(current_section, Some((DirectiveSegment::Code, _))) {
+            StatementNode::Instruction(instruction) => match &current_section {
+                Some((section, _)) if section.is_code() => instructions.push(Statement {
+                    labels: node.labels,
+                    value: (instruction, node.statement.1),
+                    kernel: *section == DirectiveSegment::KernelCode,
+                }),
+                _ => {
                     return Err(ErrorKind::UnallowedStatementType {
                         section: current_section,
                         found: DirectiveSegment::Code,
                     }
                     .add_span(&node.statement.1));
                 }
-                instructions.push(Statement {
-                    labels: node.labels,
-                    statement: (instruction, node.statement.1),
-                });
-            }
+            },
         }
     }
     Ok((instructions, data_directives, global_symbols))
@@ -508,25 +514,50 @@ impl ArgumentNumber {
     }
 }
 
+/// Combines a kernel section with a user section into a single memory vector. The sections
+/// shouldn't overlap
+fn combine_sections<T>(kernel: (Section, Vec<T>), user: (Section, Vec<T>)) -> Vec<T> {
+    // Sort the sections
+    let (mem1, mem2) = if kernel.0.get() <= user.0.get() {
+        (kernel.1, user.1)
+    } else {
+        (user.1, kernel.1)
+    };
+    // Chain the elements
+    mem1.into_iter().chain(mem2).collect()
+}
+
 #[allow(clippy::too_many_lines)]
 fn compile_data(
     arch: &Architecture,
     label_table: &mut LabelTable,
     elements: Vec<Statement<DataValue>>,
 ) -> Result<Vec<PendingData>, CompileError> {
-    let mut memory = Vec::with_capacity(elements.len());
-    let mut section = Section::new("Data", arch.data_section());
+    let size = elements.len();
+    let mut user = (
+        Section::new("Data", Some(arch.data_section())),
+        Vec::with_capacity(size),
+    );
+    let mut kernel = (
+        Section::new("KernelData", arch.kernel_data_section()),
+        Vec::with_capacity(size),
+    );
     let word_size_bytes = arch.word_size().div_ceil(8);
 
     for data_directive in elements {
         let mut labels = data_directive.labels;
+        let (section, memory) = if data_directive.kernel {
+            &mut kernel
+        } else {
+            &mut user
+        };
         for (label, span) in &labels {
             label_table.insert(
                 label.to_owned(),
                 Label::new(section.get().clone(), span.clone()),
             )?;
         }
-        let (statement, statement_span) = data_directive.statement;
+        let (statement, statement_span) = data_directive.value;
         let args = statement.values;
         match statement.data_type {
             DirectiveData::Alignment(align_type) => {
@@ -630,7 +661,7 @@ fn compile_data(
             }
         }
     }
-    Ok(memory)
+    Ok(combine_sections(kernel, user))
 }
 
 fn compile_instructions<'a>(
@@ -639,30 +670,40 @@ fn compile_instructions<'a>(
     instructions: Vec<Statement<InstructionNode>>,
     reserved_offset: &BigUint,
 ) -> Result<Vec<PendingInstruction<'a>>, CompileError> {
-    let mut code_section = Section::new("Instructions", arch.code_section());
-    code_section
-        .try_reserve(reserved_offset)
-        .add_span(&(0..0))?;
-    let mut pending_instructions = Vec::new();
+    let size = instructions.len();
+    let mut user = (
+        Section::new("Instructions", Some(arch.code_section())),
+        Vec::with_capacity(size),
+    );
+    let mut kernel = (
+        Section::new("KernelInstructions", arch.kernel_code_section()),
+        Vec::with_capacity(size),
+    );
+    user.0.try_reserve(reserved_offset).add_span(&(0..0))?;
 
     for mut instruction in instructions {
-        let (name, span) = instruction.statement.0.name;
+        let (name, span) = instruction.value.0.name;
+        let (section, pending_instructions) = if instruction.kernel {
+            &mut kernel
+        } else {
+            &mut user
+        };
         let parsed_instruction =
-            parse_instruction(arch, (name, span.clone()), &instruction.statement.0.args)?;
+            parse_instruction(arch, (name, span.clone()), &instruction.value.0.args)?;
         for (label, span) in &instruction.labels {
             label_table.insert(
                 label.clone(),
-                Label::new(code_section.get().clone(), span.clone()),
+                Label::new(section.get().clone(), span.clone()),
             )?;
         }
         let first_idx = pending_instructions.len();
         process_instruction(
             arch,
-            &mut code_section,
+            section,
             label_table,
-            &mut pending_instructions,
+            pending_instructions,
             parsed_instruction,
-            instruction.statement.1,
+            instruction.value.1,
         )?;
         if let Some(inst) = pending_instructions.get_mut(first_idx) {
             inst.labels = take_spanned_vec(&mut instruction.labels);
@@ -671,7 +712,7 @@ fn compile_instructions<'a>(
             inst.span = 0..0;
         }
     }
-    Ok(pending_instructions)
+    Ok(combine_sections(kernel, user))
 }
 
 #[allow(clippy::too_many_lines)]
@@ -688,7 +729,7 @@ pub fn compile<S: std::hash::BuildHasher>(
 
     let (instructions, data_directives, global_symbols) = split_statements(arch, ast)?;
 
-    let instruction_eof = instructions.last().map_or(0, |inst| inst.statement.1.end);
+    let instruction_eof = instructions.last().map_or(0, |inst| inst.value.1.end);
     let pending_data = compile_data(arch, &mut label_table, data_directives)?;
     let pending_instructions =
         compile_instructions(arch, &mut label_table, instructions, reserved_offset)?;
@@ -889,6 +930,12 @@ mod test {
         let arch = Architecture::from_json(include_str!("../tests/architecture.json")).unwrap();
         let ast = crate::parser::parse(arch.comment_prefix(), src).unwrap();
         super::compile(&arch, ast, reserved_offset, labels, library)
+    }
+
+    fn compile_arch(src: &str, arch: &str) -> Result<CompiledCode, CompileError> {
+        let arch = Architecture::from_json(arch).unwrap();
+        let ast = crate::parser::parse(arch.comment_prefix(), src).unwrap();
+        super::compile(&arch, ast, &BigUint::ZERO, HashMap::new(), false)
     }
 
     fn compile(src: &str) -> Result<CompiledCode, CompileError> {
@@ -1197,6 +1244,58 @@ mod test {
         assert_eq!(
             x.instructions,
             vec![inst(0, &["main"], "pad -16 -4", binary, 12..23)]
+        );
+        assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.global_symbols, HashSet::new());
+    }
+
+    #[test]
+    fn kernel_text() {
+        let x = compile(".text\nmain: nop\n.ktext\nfoo: nop").unwrap();
+        assert_eq!(
+            x.label_table,
+            label_table([("main", 0, 6..11), ("foo", 32, 23..27)])
+        );
+        assert_eq!(
+            x.instructions,
+            vec![
+                main_nop(12..15),
+                inst(32, &["foo"], "nop", NOP_BINARY, 28..31),
+            ]
+        );
+        assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.global_symbols, HashSet::new());
+
+        let x = compile(".ktext\nfoo: nop\n.text\nmain: nop").unwrap();
+        assert_eq!(
+            x.label_table,
+            label_table([("main", 0, 22..27), ("foo", 32, 7..11)])
+        );
+        assert_eq!(
+            x.instructions,
+            vec![
+                main_nop(28..31),
+                inst(32, &["foo"], "nop", NOP_BINARY, 12..15),
+            ]
+        );
+        assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.global_symbols, HashSet::new());
+
+        let x = compile_arch(
+            ".text\nmain: nop\n.ktext\nfoo: nop",
+            include_str!("../tests/architecture2.json"),
+        )
+        .unwrap();
+        assert_eq!(
+            x.label_table,
+            label_table([("main", 32, 6..11), ("foo", 0, 23..27)])
+        );
+        assert_eq!(
+            x.instructions,
+            vec![
+                inst(0, &["foo"], "nop", NOP_BINARY, 28..31),
+                inst(32, &["main"], "nop", NOP_BINARY, 12..15),
+            ]
         );
         assert_eq!(x.data_memory, vec![]);
         assert_eq!(x.global_symbols, HashSet::new());
@@ -1516,6 +1615,44 @@ mod test {
     }
 
     #[test]
+    fn kernel_data() {
+        let x = compile(".text\nmain: nop\n.kdata\n.zero 1\n.data\n.zero 2").unwrap();
+        let data_mem = vec![
+            data(16, &[], Value::Space(2u8.into())),
+            data(48, &[], Value::Space(1u8.into())),
+        ];
+        assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
+        assert_eq!(x.instructions, vec![main_nop(12..15)]);
+        assert_eq!(x.data_memory, data_mem);
+        assert_eq!(x.global_symbols, HashSet::new());
+
+        let x = compile(".text\nmain: nop\n.data\n.zero 2\n.kdata\n.zero 1").unwrap();
+        assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
+        assert_eq!(x.instructions, vec![main_nop(12..15)]);
+        assert_eq!(x.data_memory, data_mem);
+        assert_eq!(x.global_symbols, HashSet::new());
+
+        let x = compile_arch(
+            ".text\nmain: nop\n.data\n.zero 2\n.kdata\n.zero 1",
+            include_str!("../tests/architecture2.json"),
+        )
+        .unwrap();
+        assert_eq!(x.label_table, label_table([("main", 32, 6..11)]));
+        assert_eq!(
+            x.instructions,
+            vec![inst(32, &["main"], "nop", NOP_BINARY, 12..15)]
+        );
+        assert_eq!(
+            x.data_memory,
+            vec![
+                data(16, &[], Value::Space(1u8.into())),
+                data(48, &[], Value::Space(2u8.into()))
+            ]
+        );
+        assert_eq!(x.global_symbols, HashSet::new());
+    }
+
+    #[test]
     fn unallowed_statement() {
         assert_eq!(
             compile(".data\nnop\n.text\nmain: nop"),
@@ -1526,12 +1663,28 @@ mod test {
             .add_span(&(6..9))),
         );
         assert_eq!(
+            compile(".kdata\nnop\n.text\nmain: nop"),
+            Err(ErrorKind::UnallowedStatementType {
+                section: Some((DirectiveSegment::KernelData, 0..6)),
+                found: DirectiveSegment::Code,
+            }
+            .add_span(&(7..10))),
+        );
+        assert_eq!(
             compile(".text\nmain: nop\n.byte 1"),
             Err(ErrorKind::UnallowedStatementType {
                 section: Some((DirectiveSegment::Code, 0..5)),
                 found: DirectiveSegment::Data,
             }
             .add_span(&(16..23))),
+        );
+        assert_eq!(
+            compile(".ktext\nmain: nop\n.byte 1"),
+            Err(ErrorKind::UnallowedStatementType {
+                section: Some((DirectiveSegment::KernelCode, 0..6)),
+                found: DirectiveSegment::Data,
+            }
+            .add_span(&(17..24))),
         );
         assert_eq!(
             compile("nop\n.text\nmain: nop"),
@@ -1905,10 +2058,18 @@ mod test {
     }
 
     #[test]
-    fn main_in_data() {
+    fn main_outside_code() {
         assert_eq!(
             compile(".data\nmain: .byte 1\n.text\nnop"),
             Err(ErrorKind::MainOutsideCode("main".into()).add_span(&(6..11))),
+        );
+        assert_eq!(
+            compile(".kdata\nmain: .byte 1\n.text\nnop"),
+            Err(ErrorKind::MainOutsideCode("main".into()).add_span(&(7..12))),
+        );
+        assert_eq!(
+            compile(".ktext\nmain: nop\n.text\nnop"),
+            Err(ErrorKind::MainOutsideCode("main".into()).add_span(&(7..12))),
         );
     }
 
@@ -1951,6 +2112,19 @@ mod test {
                 "{directive}",
             );
         }
+    }
+
+    #[test]
+    fn no_kernel() {
+        let compile = |src| compile_arch(src, include_str!("../tests/architecture_no_kernel.json"));
+        assert_eq!(
+            compile(".ktext\nfoo: nop\n.text\nmain: nop"),
+            Err(ErrorKind::MemorySectionFull("KernelInstructions").add_span(&(12..15))),
+        );
+        assert_eq!(
+            compile(".kdata\n.zero 1\n.text\nmain: nop"),
+            Err(ErrorKind::MemorySectionFull("KernelData").add_span(&(13..14))),
+        );
     }
 
     #[test]

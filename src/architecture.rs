@@ -51,8 +51,9 @@ pub struct Architecture<'a> {
     pseudoinstructions: Vec<Pseudoinstruction<'a>>,
     /// Directives allowed
     directives: Vec<Directive<'a>>,
-    /// Memory layout of the architecture
-    /// Order of elements is assumed to be text start/end, data start/end, and stack start/end
+    /// Memory layout of the architecture. Order of elements is assumed to be optionally ktext
+    /// start/end and kdata start/end, followed by text start/end, data start/end, and stack
+    /// start/end
     memory_layout: MemoryLayout,
     /// Interrupt configuration
     #[serde(default)]
@@ -399,6 +400,10 @@ pub enum Nop {
 /// Memory segment to switch to
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DirectiveSegment {
+    #[serde(rename = "kernel_code_segment")]
+    KernelCode,
+    #[serde(rename = "kernel_data_segment")]
+    KernelData,
     #[serde(rename = "code_segment")]
     Code,
     #[serde(rename = "data_segment")]
@@ -463,8 +468,12 @@ pub enum AlignmentType {
 
 /// Memory layout of the architecture
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
-#[serde(try_from = "[Pair<json::MemoryLayoutKeys, BaseN<16>>; 6]")]
+#[serde(try_from = "Vec<Pair<json::MemoryLayoutKeys, BaseN<16>>>")]
 pub struct MemoryLayout {
+    /// Addresses reserved for the kernel text segment
+    kernel_text: Option<NonEmptyRangeInclusive<BigUint>>,
+    /// Addresses reserved for the kernel data segment
+    kernel_data: Option<NonEmptyRangeInclusive<BigUint>>,
     /// Addresses reserved for the text segment
     text: NonEmptyRangeInclusive<BigUint>,
     /// Addresses reserved for the data segment
@@ -472,7 +481,7 @@ pub struct MemoryLayout {
     /// Addresses reserved for the stack segment
     stack: NonEmptyRangeInclusive<BigUint>,
 }
-utils::schema_from!(MemoryLayout, [Pair<json::MemoryLayoutKeys, BaseN<16>>; 6]);
+utils::schema_from!(MemoryLayout, Vec<Pair<json::MemoryLayoutKeys, BaseN<16>>>);
 
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Interrupts<'a> {
@@ -571,10 +580,22 @@ impl<'a> Architecture<'a> {
         &self.memory_layout.text
     }
 
+    /// Gets the kernel's code section's start/end addresses
+    #[must_use]
+    pub const fn kernel_code_section(&self) -> Option<&NonEmptyRangeInclusive<BigUint>> {
+        self.memory_layout.kernel_text.as_ref()
+    }
+
     /// Gets the data section's start/end addresses
     #[must_use]
     pub const fn data_section(&self) -> &NonEmptyRangeInclusive<BigUint> {
         &self.memory_layout.data
+    }
+
+    /// Gets the kernel's data section's start/end addresses
+    #[must_use]
+    pub const fn kernel_data_section(&self) -> Option<&NonEmptyRangeInclusive<BigUint>> {
+        self.memory_layout.kernel_data.as_ref()
     }
 
     /// Gets the instructions with the given name
@@ -638,6 +659,14 @@ impl<'a> Component<'a> {
             .iter()
             .enumerate()
             .find(|(_, reg)| reg.name.contains(&name))
+    }
+}
+
+impl DirectiveSegment {
+    /// Checks whether the segment allows adding instructions
+    #[must_use]
+    pub const fn is_code(&self) -> bool {
+        matches!(self, Self::Code | Self::KernelCode)
     }
 }
 

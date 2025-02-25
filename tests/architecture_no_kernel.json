@@ -1,0 +1,143 @@
+{
+  "arch_conf": [
+    {
+      "name": "Name",
+      "value": "Test"
+    },
+    {
+      "name": "Bits",
+      "value": "32"
+    },
+    {
+      "name": "Description",
+      "value": "Test architecture"
+    },
+    {
+      "name": "Data Format",
+      "value": "big_endian"
+    },
+    {
+      "name": "Memory Alignment",
+      "value": "1"
+    },
+    {
+      "name": "Main Function",
+      "value": "main"
+    },
+    {
+      "name": "Passing Convention",
+      "value": "1"
+    },
+    {
+      "name": "Sensitive Register Name",
+      "value": "1"
+    },
+    {
+      "name": "CommentPrefix",
+      "value": "#"
+    }
+  ],
+  "components": [
+    {
+      "name": "Integer registers",
+      "type": "int_registers",
+      "double_precision": false,
+      "elements": [
+        {
+          "name": [
+            "x0"
+          ],
+          "nbits": "32",
+          "value": 0,
+          "default_value": 0,
+          "properties": []
+        }
+      ]
+    }
+  ],
+  "instructions": [
+    {
+      "name": "nop",
+      "type": "Arithmetic integer",
+      "signature_definition": "F0",
+      "signature": "nop",
+      "signatureRaw": "nop",
+      "co": "1111111",
+      "cop": "0000000000",
+      "nwords": 1,
+      "clk_cycles": 1,
+      "fields": [
+        {
+          "name": "nop",
+          "type": "co",
+          "startbit": 6,
+          "stopbit": 0
+        },
+        {
+          "name": "cop",
+          "type": "cop",
+          "startbit": 31,
+          "stopbit": 28,
+          "valueField": "1111"
+        }
+      ],
+      "definition": "",
+      "separated": [],
+      "help": ""
+    }
+  ],
+  "pseudoinstructions": [],
+  "directives": [
+    {
+      "name": ".data",
+      "action": "data_segment",
+      "size": null
+    },
+    {
+      "name": ".text",
+      "action": "code_segment",
+      "size": null
+    },
+    {
+      "name": ".kdata",
+      "action": "kernel_data_segment",
+      "size": null
+    },
+    {
+      "name": ".ktext",
+      "action": "kernel_code_segment",
+      "size": null
+    },
+    {
+      "name": ".zero",
+      "action": "space",
+      "size": "1"
+    }
+  ],
+  "memory_layout": [
+    {
+      "name": "text start",
+      "value": "0x00000000"
+    },
+    {
+      "name": "text end",
+      "value": "0x0000000f"
+    },
+    {
+      "name": "data start",
+      "value": "0x00000010"
+    },
+    {
+      "name": "data end",
+      "value": "0x0000001f"
+    },
+    {
+      "name": "stack start",
+      "value": "0x0FFFFFFC"
+    },
+    {
+      "name": "stack end",
+      "value": "0x0FFFFFFF"
+    }
+  ]
+}
