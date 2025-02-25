@@ -44,12 +44,19 @@ impl Section {
     ///
     /// * `name`: name of the memory section
     /// * `bounds`: start/end addresses of the section
-    pub fn new(name: &'static str, bounds: &NonEmptyRangeInclusive<BigUint>) -> Self {
-        Self {
-            name,
-            address: bounds.start().clone(),
-            end: bounds.end(),
-        }
+    pub fn new(name: &'static str, bounds: Option<&NonEmptyRangeInclusive<BigUint>>) -> Self {
+        bounds.map_or(
+            Self {
+                name,
+                address: 1u8.into(),
+                end: BigUint::ZERO,
+            },
+            |bounds| Self {
+                name,
+                address: bounds.start().clone(),
+                end: bounds.end(),
+            },
+        )
     }
 
     /// Gets the first available address
@@ -141,7 +148,7 @@ mod test {
     #[test]
     fn reserve1() {
         let one = 1u8.into();
-        let mut section = Section::new("test", &range(0, 3));
+        let mut section = Section::new("test", Some(&range(0, 3)));
         assert_eq!(section.try_reserve(&one), Ok(BigUint::ZERO));
         assert_eq!(section.try_reserve(&one), Ok(1u8.into()));
         assert_eq!(section.try_reserve(&one), Ok(2u8.into()));
@@ -153,10 +160,26 @@ mod test {
     }
 
     #[test]
+    fn new() {
+        let one = 1u8.into();
+        let mut section = Section::new("test", Some(&range(0, 0)));
+        assert_eq!(section.try_reserve(&one), Ok(BigUint::ZERO));
+        assert_eq!(
+            section.try_reserve(&1u8.into()),
+            Err(ErrorKind::MemorySectionFull("test"))
+        );
+        let mut section = Section::new("test", None);
+        assert_eq!(
+            section.try_reserve(&1u8.into()),
+            Err(ErrorKind::MemorySectionFull("test"))
+        );
+    }
+
+    #[test]
     fn reserve4() {
         let four = 4u8.into();
         for i in 1u8..=4 {
-            let mut section = Section::new("test2", &range(0, 11));
+            let mut section = Section::new("test2", Some(&range(0, 11)));
             assert_eq!(section.try_reserve(&i.into()), Ok(BigUint::ZERO));
             assert_eq!(section.try_reserve(&four), Ok(i.into()));
             assert_eq!(section.try_reserve(&four), Ok((i + 4).into()));
@@ -171,7 +194,7 @@ mod test {
     fn reserve6() {
         let six = 6u8.into();
         for i in 1u8..=6 {
-            let mut section = Section::new("test3", &range(0, 17));
+            let mut section = Section::new("test3", Some(&range(0, 17)));
             assert_eq!(section.try_reserve(&i.into()), Ok(BigUint::ZERO));
             assert_eq!(section.try_reserve(&six), Ok(i.into()));
             assert_eq!(section.try_reserve(&six), Ok((i + 6).into()));
@@ -185,7 +208,7 @@ mod test {
     #[test]
     fn already_aligned() {
         let four = 4u8.into();
-        let mut section = Section::new("test4", &range(0, 11));
+        let mut section = Section::new("test4", Some(&range(0, 11)));
         assert_eq!(section.try_align(&four), Ok((BigUint::ZERO, BigUint::ZERO)));
         assert_eq!(section.try_reserve(&four), Ok(BigUint::ZERO));
         assert_eq!(section.get(), &four);
@@ -196,7 +219,7 @@ mod test {
     #[test]
     fn align_memory_limit() {
         for i in 1u8..4 {
-            let mut section = Section::new("test5", &range(0, 3));
+            let mut section = Section::new("test5", Some(&range(0, 3)));
             assert_eq!(section.try_reserve(&i.into()), Ok(BigUint::ZERO));
             assert_eq!(
                 section.try_align(&4u8.into()),
@@ -209,7 +232,7 @@ mod test {
     fn align_fail() {
         let four = 4u8.into();
         for i in 1u8..2 {
-            let mut section = Section::new("test6", &range(0, 2));
+            let mut section = Section::new("test6", Some(&range(0, 2)));
             assert_eq!(section.try_align(&four), Ok((BigUint::ZERO, BigUint::ZERO)));
             assert_eq!(section.try_reserve(&i.into()), Ok(BigUint::ZERO));
             assert_eq!(
@@ -223,7 +246,7 @@ mod test {
     fn align4() {
         let four = 4u8.into();
         for i in 1u8..4 {
-            let mut section = Section::new("test7", &range(0, 11));
+            let mut section = Section::new("test7", Some(&range(0, 11)));
             assert_eq!(section.try_reserve(&i.into()), Ok(BigUint::ZERO));
             assert_eq!(section.try_align(&four), Ok((i.into(), (4 - i).into())));
             assert_eq!(section.get(), &four);
@@ -235,7 +258,7 @@ mod test {
     fn align6() {
         let six = 6u8.into();
         for i in 1u8..6 {
-            let mut section = Section::new("test8", &range(0, 17));
+            let mut section = Section::new("test8", Some(&range(0, 17)));
             assert_eq!(section.try_reserve(&i.into()), Ok(BigUint::ZERO));
             assert_eq!(section.try_align(&six), Ok((i.into(), (6 - i).into())));
             assert_eq!(section.get(), &six);
@@ -245,7 +268,7 @@ mod test {
 
     #[test]
     fn try_reserve_aligned_ok() {
-        let mut section = Section::new("test9", &range(0, 17));
+        let mut section = Section::new("test9", Some(&range(0, 17)));
         assert_eq!(section.try_reserve_aligned(&2u8.into(), 4), Ok(0u8.into()));
         assert_eq!(section.try_reserve_aligned(&2u8.into(), 4), Ok(2u8.into()));
         assert_eq!(section.try_reserve_aligned(&8u8.into(), 4), Ok(4u8.into()));
@@ -255,7 +278,7 @@ mod test {
 
     #[test]
     fn try_reserve_aligned_fail() {
-        let mut section = Section::new("test10", &range(0, 17));
+        let mut section = Section::new("test10", Some(&range(0, 17)));
         assert_eq!(
             section.try_reserve_aligned(&1u8.into(), 3),
             Ok(BigUint::ZERO)
