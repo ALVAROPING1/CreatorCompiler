@@ -250,6 +250,14 @@ impl<'a> TryFrom<[Config<'a>; 9]> for super::Config<'a> {
 /// Memory layout attribute keys
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
 pub enum MemoryLayoutKeys {
+    #[serde(rename = "ktext start")]
+    KtextStart,
+    #[serde(rename = "ktext end")]
+    KtextEnd,
+    #[serde(rename = "kdata start")]
+    KdataStart,
+    #[serde(rename = "kdata end")]
+    KdataEnd,
     #[serde(rename = "text start")]
     TextStart,
     #[serde(rename = "text end")]
@@ -264,9 +272,9 @@ pub enum MemoryLayoutKeys {
     StackEnd,
 }
 
-impl TryFrom<[Pair<MemoryLayoutKeys, BaseN<16>>; 6]> for super::MemoryLayout {
+impl TryFrom<Vec<Pair<MemoryLayoutKeys, BaseN<16>>>> for super::MemoryLayout {
     type Error = &'static str;
-    fn try_from(mut value: [Pair<MemoryLayoutKeys, BaseN<16>>; 6]) -> Result<Self, Self::Error> {
+    fn try_from(mut value: Vec<Pair<MemoryLayoutKeys, BaseN<16>>>) -> Result<Self, Self::Error> {
         macro_rules! unwrap_field {
             ($i:expr, $name:ident) => {
                 match value[$i].name {
@@ -288,18 +296,77 @@ impl TryFrom<[Pair<MemoryLayoutKeys, BaseN<16>>; 6]> for super::MemoryLayout {
                 }
             };
         }
-        let text = (unwrap_field!(0, TextStart), unwrap_field!(1, TextEnd));
-        let data = (unwrap_field!(2, DataStart), unwrap_field!(3, DataEnd));
-        let stack = (unwrap_field!(4, StackStart), unwrap_field!(5, StackEnd));
+
+        // unwrap values
+
+        // check for kernel segment
+        let (kernel_text, kernel_data, offset) = match value.len() {
+            10 => {
+                let ktext = (unwrap_field!(0, KtextStart), unwrap_field!(1, KtextEnd));
+                let kdata = (unwrap_field!(2, KdataStart), unwrap_field!(3, KdataEnd));
+
+                let ktext = NonEmptyRangeInclusive::<BigUint>::build(ktext.0, ktext.1)
+                    .ok_or("section `ktext` is empty")?;
+                let kdata = NonEmptyRangeInclusive::<BigUint>::build(kdata.0, kdata.1)
+                    .ok_or("section `kdata` is empty")?;
+
+                (Some(ktext), Some(kdata), 4)
+            }
+            6 => (None, None, 0),
+
+            _ => {
+                return Err("Incorrect number of key-value pairs for memory_layout");
+            }
+        };
+
+        let text = (
+            unwrap_field!(offset, TextStart),
+            unwrap_field!(offset + 1, TextEnd),
+        );
+        let data = (
+            unwrap_field!(offset + 2, DataStart),
+            unwrap_field!(offset + 3, DataEnd),
+        );
+        let stack = (
+            unwrap_field!(offset + 4, StackStart),
+            unwrap_field!(offset + 5, StackEnd),
+        );
+
         let text = NonEmptyRangeInclusive::<BigUint>::build(text.0, text.1)
             .ok_or("section `text` is empty")?;
         let data = NonEmptyRangeInclusive::<BigUint>::build(data.0, data.1)
             .ok_or("section `data` is empty")?;
         let stack = NonEmptyRangeInclusive::<BigUint>::build(stack.0, stack.1)
             .ok_or("section `stack` is empty")?;
+
+        // check overlap
+
+        if let Some(ktext) = &kernel_text {
+            if let Some(kdata) = &kernel_data {
+                check_overlap!(ktext, kdata);
+            }
+
+            check_overlap!(ktext, text);
+            check_overlap!(ktext, data);
+            check_overlap!(ktext, stack);
+        };
+
+        if let Some(kdata) = &kernel_data {
+            check_overlap!(kdata, text);
+            check_overlap!(kdata, data);
+            check_overlap!(kdata, stack);
+        }
+
         check_overlap!(text, data);
         check_overlap!(text, stack);
         check_overlap!(data, stack);
-        Ok(Self { text, data, stack })
+
+        Ok(Self {
+            kernel_text,
+            kernel_data,
+            text,
+            data,
+            stack,
+        })
     }
 }
