@@ -552,10 +552,21 @@ impl<'a> Architecture<'a> {
         &self.memory_layout.text
     }
 
+    /// Gets the kernel's code section's start/end addresses
+    #[must_use]
+    pub const fn kernel_code_section(&self) -> Option<&NonEmptyRangeInclusive<BigUint>> {
+        self.memory_layout.kernel_text.as_ref()
+    }
+
     /// Gets the data section's start/end addresses
     #[must_use]
     pub const fn data_section(&self) -> &NonEmptyRangeInclusive<BigUint> {
         &self.memory_layout.data
+    }
+
+    /// Gets the kernel's data section's start/end addresses
+    pub const fn kernel_data_section(&self) -> Option<&NonEmptyRangeInclusive<BigUint>> {
+        self.memory_layout.kernel_data.as_ref()
     }
 
     /// Gets the instructions with the given name
@@ -619,6 +630,14 @@ impl<'a> Component<'a> {
             .iter()
             .enumerate()
             .find(|(_, reg)| reg.name.contains(&name))
+    }
+}
+
+impl DirectiveSegment {
+    /// Checks whether the segment allows adding instructions
+    #[must_use]
+    pub const fn is_code(&self) -> bool {
+        matches!(self, Self::Code | Self::KernelCode)
     }
 }
 
