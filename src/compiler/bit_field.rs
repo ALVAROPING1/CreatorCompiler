@@ -47,9 +47,9 @@ impl BitField {
     /// * `start`: starting bit of the range
     /// * `data`: binary string of bits to use as a replacement
     fn replace_range(&mut self, start: usize, data: &str) {
+        assert!(start < self.0.len(), "{} <= {}", start, self.0.len());
         let end = self.0.len() - start;
         let start = end - data.len();
-        assert!(end <= self.0.len(), "{} <= {}", end, self.0.len());
         self.0.replace_range(start..end, data);
     }
 
