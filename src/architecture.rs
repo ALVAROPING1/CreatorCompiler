@@ -286,7 +286,10 @@ pub struct InstructionField<'a, BitRange> {
 /// Range of bits of a field in a binary instruction
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 #[serde(try_from = "json::BitRange")]
-pub struct BitRange(Vec<NonEmptyRangeInclusive<usize>>);
+pub struct BitRange {
+    ranges: Vec<NonEmptyRangeInclusive<usize>>,
+    padding: usize,
+}
 utils::schema_from!(BitRange, json::BitRange);
 
 /// Allowed instruction field types
@@ -614,27 +617,35 @@ impl<'a> Component<'a> {
 impl BitRange {
     /// Calculates the size of this range in bits
     #[must_use]
-    #[allow(clippy::missing_panics_doc)] // This should never panic at runtime from user error
     pub fn size(&self) -> usize {
         // We need a closure because there are multiple methods for different types
         #[allow(clippy::redundant_closure_for_method_calls)]
-        self.iter()
+        let size = self
+            .ranges
+            .iter()
             .map(|x| *x.size())
             .reduce(|acc, val| acc.saturating_add(val))
-            .expect("There should always be at least 1 field")
+            .unwrap_or_default();
+        size + self.padding
     }
 
     /// Gets an iterator of the ranges of bits specified
     pub fn iter(&self) -> impl Iterator<Item = &NonEmptyRangeInclusive<usize>> {
-        self.0.iter()
+        self.ranges.iter()
     }
 
     /// Creates a new [`BitRange`]
     #[must_use]
-    pub fn build(ranges: Vec<NonEmptyRangeInclusive<usize>>) -> Option<Self> {
+    pub fn build(ranges: Vec<NonEmptyRangeInclusive<usize>>, padding: usize) -> Option<Self> {
         if ranges.is_empty() {
             return None;
         }
-        Some(Self(ranges))
+        Some(Self { ranges, padding })
+    }
+
+    /// Gets the amount of least significant bits that should be ignored
+    #[must_use]
+    pub fn padding(&self) -> usize {
+        self.padding
     }
 }

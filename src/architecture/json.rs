@@ -99,6 +99,9 @@ pub struct BitRange {
     pub startbit: BitPosition,
     /// End position of the field. Ignored for pseudoinstructions
     pub stopbit: BitPosition,
+    /// Amount of least significant bits that should be ignored
+    #[serde(default)]
+    pub padding: usize,
 }
 
 /// Position of the start/end bit of a field in a binary instruction
@@ -118,7 +121,7 @@ impl TryFrom<BitRange> for super::BitRange {
         let range = |(msb, lsb)| {
             NonEmptyRangeInclusive::<usize>::build(lsb, msb).ok_or("invalid empty range")
         };
-        Self::build(match (value.startbit, value.stopbit) {
+        let ranges = match (value.startbit, value.stopbit) {
             (BitPosition::Single(msb), BitPosition::Single(lsb)) => vec![range((msb, lsb))?],
             (BitPosition::Multiple(msb), BitPosition::Multiple(lsb)) => {
                 if msb.len() != lsb.len() {
@@ -129,7 +132,9 @@ impl TryFrom<BitRange> for super::BitRange {
                     .collect::<Result<_, _>>()?
             }
             _ => return Err("the type of the startbit and endbit fields should be the same"),
-        }).ok_or("the startbit and endbit fields must not be empty if they are vectors")
+        };
+        Self::build(ranges, value.padding)
+            .ok_or("the startbit and endbit fields must not be empty if they are vectors")
     }
 }
 

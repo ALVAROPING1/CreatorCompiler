@@ -72,7 +72,7 @@ impl BitField {
     ) -> Result<(), ErrorKind> {
         let field_size = range.size();
         let data = Integer::build(data, field_size, None, Some(signed))?.to_string();
-        let mut data = &data[..];
+        let mut data = &data[..data.len() - range.padding()];
         for segment in range.iter() {
             let size = *segment.size();
             self.replace_range(*segment.start(), &data[..size]);
@@ -101,14 +101,12 @@ mod test {
 
     type NonEmptyRangeInclusive = crate::architecture::NonEmptyRangeInclusive<usize>;
 
-    fn range(segments: Vec<(usize, usize)>) -> BitRange {
-        BitRange::build(
-            segments
-                .into_iter()
-                .map(|(a, b)| NonEmptyRangeInclusive::build(b, a).expect("This shouldn't fail"))
-                .collect(),
-        )
-        .expect("this shouldn't fail")
+    fn range(segments: Vec<(usize, usize)>, padding: usize) -> BitRange {
+        let ranges = segments
+            .into_iter()
+            .map(|(a, b)| NonEmptyRangeInclusive::build(b, a).expect("This shouldn't fail"))
+            .collect();
+        BitRange::build(ranges, padding).expect("this shouldn't fail")
     }
 
     #[test]
@@ -123,35 +121,59 @@ mod test {
     #[test]
     fn replace_contiguous() {
         let mut field = BitField::new(16);
-        assert!(field
-            .replace(&range(vec![(15, 12)]), 0b1111.into(), false)
-            .is_ok());
+        assert_eq!(
+            field.replace(&range(vec![(15, 12)], 0), 0b1111.into(), false),
+            Ok(())
+        );
         assert_eq!(field.as_str(), "1111000000000000");
-        assert!(field
-            .replace(&range(vec![(2, 0)]), 0b101.into(), false)
-            .is_ok());
+        assert_eq!(
+            field.replace(&range(vec![(2, 0)], 0), 0b101.into(), false),
+            Ok(())
+        );
         assert_eq!(field.as_str(), "1111000000000101");
     }
 
     #[test]
     fn replace_separated() {
         let mut field = BitField::new(16);
-        assert!(field
-            .replace(&range(vec![(15, 12), (7, 6)]), 0b10_0111.into(), false)
-            .is_ok());
+        assert_eq!(
+            field.replace(&range(vec![(15, 12), (7, 6)], 0), 0b10_0111.into(), false),
+            Ok(())
+        );
         assert_eq!(field.as_str(), "1001000011000000");
+    }
+
+    #[test]
+    fn replace_padding() {
+        let mut field = BitField::new(10);
+        assert_eq!(
+            field.replace(&range(vec![(7, 2)], 2), 0b1110_0111.into(), false),
+            Ok(())
+        );
+        assert_eq!(field.as_str(), "0011100100");
+
+        let mut field = BitField::new(10);
+        assert_eq!(
+            field.replace(&range(vec![(7, 2)], 2), (-1).into(), true),
+            Ok(())
+        );
+        assert_eq!(field.as_str(), "0011111100");
     }
 
     #[test]
     fn replace_error() {
         let mut field = BitField::new(16);
         assert_eq!(
-            field.replace(&range(vec![(15, 12)]), 18.into(), false,),
+            field.replace(&range(vec![(15, 12)], 0), 18.into(), false,),
             Err(ErrorKind::IntegerTooBig(18.into(), 0.into()..=15.into()))
         );
         assert_eq!(
-            field.replace(&range(vec![(15, 12)]), 8.into(), true),
+            field.replace(&range(vec![(15, 12)], 0), 8.into(), true),
             Err(ErrorKind::IntegerTooBig(8.into(), (-8).into()..=7.into()))
+        );
+        assert_eq!(
+            field.replace(&range(vec![(3, 1)], 1), 16.into(), false),
+            Err(ErrorKind::IntegerTooBig(16.into(), 0.into()..=15.into()))
         );
     }
 }

@@ -483,6 +483,42 @@
       "definition": "",
       "separated": [],
       "help": ""
+    },
+    {
+      "name": "pad",
+      "type": "Arithmetic integer",
+      "signature_definition": "F0 F1 F2",
+      "signature": "multi,inm-signed,inm-signed",
+      "signatureRaw": "multi imm5 imm6",
+      "co": "1111101",
+      "cop": "0000000000",
+      "nwords": 1,
+      "clk_cycles": 1,
+      "fields": [
+        {
+          "name": "multi",
+          "type": "co",
+          "startbit": 16,
+          "stopbit": 10
+        },
+        {
+          "name": "imm5",
+          "type": "inm-signed",
+          "startbit": 31,
+          "stopbit": 29,
+          "padding": 2
+        },
+        {
+          "name": "imm6",
+          "type": "inm-signed",
+          "startbit": 5,
+          "stopbit": 2,
+          "padding": 2
+        }
+      ],
+      "definition": "",
+      "separated": [],
+      "help": ""
     }
   ],
   "pseudoinstructions": [],

@@ -751,6 +751,8 @@ pub fn compile<S: std::hash::BuildHasher>(
                             })
                         };
                         let value = arg.value.0.int(ident_eval)?;
+                        let padding = field.range.padding();
+                        let value = (value >> padding) << padding;
                         let value_str = value.to_string();
                         (value, value_str)
                     }
@@ -906,15 +908,9 @@ mod test {
         for (i, c) in bits.chars().enumerate() {
             if c == '1' {
                 let i = bits.len() - i - 1;
+                let ranges = vec![NonEmptyRangeInclusive::<usize>::build(i, i).unwrap()];
                 field
-                    .replace(
-                        &BitRange::build(vec![
-                            NonEmptyRangeInclusive::<usize>::build(i, i).unwrap()
-                        ])
-                        .unwrap(),
-                        1.into(),
-                        false,
-                    )
+                    .replace(&BitRange::build(ranges, 0).unwrap(), 1.into(), false)
                     .unwrap();
             }
         }
@@ -1125,10 +1121,7 @@ mod test {
         assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
         assert_eq!(
             x.instructions,
-            vec![
-                main_nop(12..15),
-                inst(4, &[], "off -4 -1", binary, 16..30),
-            ]
+            vec![main_nop(12..15), inst(4, &[], "off -4 -1", binary, 16..30),]
         );
         assert_eq!(x.data_memory, vec![]);
         assert_eq!(x.global_symbols, HashSet::new());
@@ -1183,6 +1176,29 @@ mod test {
                 data(17, &["a"], Value::Space(1u8.into()))
             ]
         );
+        assert_eq!(x.global_symbols, HashSet::new());
+    }
+
+    #[test]
+    fn instruction_fields_padding() {
+        let x = compile(".text\nmain: pad 15, 4").unwrap();
+        let binary = "01100000000000011111010000000100";
+        assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
+        assert_eq!(
+            x.instructions,
+            vec![inst(0, &["main"], "pad 12 4", binary, 12..21)]
+        );
+        assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.global_symbols, HashSet::new());
+
+        let x = compile(".text\nmain: pad -15, -1").unwrap();
+        let binary = "10000000000000011111010000111100";
+        assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
+        assert_eq!(
+            x.instructions,
+            vec![inst(0, &["main"], "pad -16 -4", binary, 12..23)]
+        );
+        assert_eq!(x.data_memory, vec![]);
         assert_eq!(x.global_symbols, HashSet::new());
     }
 
