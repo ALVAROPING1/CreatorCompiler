@@ -71,7 +71,7 @@ impl Integer {
         );
         if !bounds.contains(&value) {
             #[allow(clippy::range_minus_one)] // We need an inclusive range due to the error type
-            return Err(ErrorKind::IntegerTooBig(
+            return Err(ErrorKind::IntegerOutOfRange(
                 value,
                 bounds.start..=bounds.end - 1,
             ));
@@ -147,7 +147,10 @@ mod test {
         for x in [8, -9] {
             assert_eq!(
                 Integer::build(x.into(), 4, None, Some(true)),
-                Err(ErrorKind::IntegerTooBig(x.into(), (-8).into()..=7.into()))
+                Err(ErrorKind::IntegerOutOfRange(
+                    x.into(),
+                    (-8).into()..=7.into()
+                ))
             );
         }
         for x in [i64::MAX, i64::MIN] {
@@ -180,7 +183,7 @@ mod test {
         for x in [-1, 16] {
             assert_eq!(
                 Integer::build(x.into(), 4, None, Some(false)),
-                Err(ErrorKind::IntegerTooBig(x.into(), 0.into()..=15.into()))
+                Err(ErrorKind::IntegerOutOfRange(x.into(), 0.into()..=15.into()))
             );
         }
         for x in [0, i64::MAX] {
@@ -213,7 +216,10 @@ mod test {
         for x in [-9, 16] {
             assert_eq!(
                 Integer::build(x.into(), 4, Some(IntegerType::Byte), None),
-                Err(ErrorKind::IntegerTooBig(x.into(), (-8).into()..=15.into()))
+                Err(ErrorKind::IntegerOutOfRange(
+                    x.into(),
+                    (-8).into()..=15.into()
+                ))
             );
         }
     }

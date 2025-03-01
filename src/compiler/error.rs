@@ -69,7 +69,7 @@ pub enum Kind {
     MissingMainLabel(String),
     MainInLibrary(String),
     MainOutsideCode(String),
-    IntegerTooBig(BigInt, RangeInclusive<BigInt>),
+    IntegerOutOfRange(BigInt, RangeInclusive<BigInt>),
     MemorySectionFull(&'static str),
     DataUnaligned {
         address: BigUint,
@@ -146,7 +146,7 @@ impl Kind {
             Self::MissingMainLabel(..) => 8,
             Self::MainInLibrary(..) => 22,
             Self::MainOutsideCode(..) => 9,
-            Self::IntegerTooBig(..) => 10,
+            Self::IntegerOutOfRange(..) => 10,
             Self::MemorySectionFull(..) => 11,
             Self::DataUnaligned { .. } => 12,
             Self::UnallowedNegativeValue(..) => 13,
@@ -164,7 +164,7 @@ impl Kind {
     /// Gets a note with extra information about the error if available
     fn note(&self) -> Option<String> {
         Some(match self {
-            Self::IntegerTooBig(_, bounds) => {
+            Self::IntegerOutOfRange(_, bounds) => {
                 format!("Allowed range is [{}, {}]", bounds.start(), bounds.end())
             }
             Self::IncorrectInstructionSyntax(errs) => {
@@ -230,7 +230,7 @@ impl Kind {
                 format!("Consider adding a label called `{main}` to an instruction")
             }
             Self::MainOutsideCode(..) | Self::MainInLibrary(..) => "Label defined here".into(),
-            Self::IntegerTooBig(val, _) | Self::UnallowedNegativeValue(val) => {
+            Self::IntegerOutOfRange(val, _) | Self::UnallowedNegativeValue(val) => {
                 format!("This expression has value {val}")
             }
             Self::MemorySectionFull(..) => "This element doesn't fit in the available space".into(),
@@ -307,8 +307,8 @@ impl fmt::Display for Kind {
             Self::MainOutsideCode(s) => {
                 write!(f, "Main label `{s}` defined outside of the text segment")
             }
-            Self::IntegerTooBig(val, _) => {
-                write!(f, "Field is too small to contain value `{val}`")
+            Self::IntegerOutOfRange(val, _) => {
+                write!(f, "Value `{val}` is outside of the valid range of the field")
             }
             Self::MemorySectionFull(name) => write!(f, "{name} memory segment is full"),
             Self::DataUnaligned { address, alignment, word_size } => write!(

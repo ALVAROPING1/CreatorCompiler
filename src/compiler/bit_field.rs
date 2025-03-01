@@ -165,15 +165,24 @@ mod test {
         let mut field = BitField::new(16);
         assert_eq!(
             field.replace(&range(vec![(15, 12)], 0), 18.into(), false,),
-            Err(ErrorKind::IntegerTooBig(18.into(), 0.into()..=15.into()))
+            Err(ErrorKind::IntegerOutOfRange(
+                18.into(),
+                0.into()..=15.into()
+            ))
         );
         assert_eq!(
             field.replace(&range(vec![(15, 12)], 0), 8.into(), true),
-            Err(ErrorKind::IntegerTooBig(8.into(), (-8).into()..=7.into()))
+            Err(ErrorKind::IntegerOutOfRange(
+                8.into(),
+                (-8).into()..=7.into()
+            ))
         );
         assert_eq!(
             field.replace(&range(vec![(3, 1)], 1), 16.into(), false),
-            Err(ErrorKind::IntegerTooBig(16.into(), 0.into()..=15.into()))
+            Err(ErrorKind::IntegerOutOfRange(
+                16.into(),
+                0.into()..=15.into()
+            ))
         );
     }
 }

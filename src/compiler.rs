@@ -539,7 +539,7 @@ fn compile_data(
                 let align = match align_type {
                     AlignmentType::Exponential => {
                         let value = u128::try_from(value).map_err(|e| {
-                            ErrorKind::IntegerTooBig(
+                            ErrorKind::IntegerOutOfRange(
                                 e.into_original().into(),
                                 0.into()..=u128::MAX.into(),
                             )
@@ -1761,36 +1761,39 @@ mod test {
         // Data directives
         assert_eq!(
             compile(".data\n.byte 256\n.text\nmain: nop"),
-            Err(ErrorKind::IntegerTooBig(256.into(), range(-128..256)).add_span(&(12..15))),
+            Err(ErrorKind::IntegerOutOfRange(256.into(), range(-128..256)).add_span(&(12..15))),
         );
         assert_eq!(
             compile(".data\n.byte -129\n.text\nmain: nop"),
-            Err(ErrorKind::IntegerTooBig((-129).into(), range(-128..256)).add_span(&(12..16))),
+            Err(ErrorKind::IntegerOutOfRange((-129).into(), range(-128..256)).add_span(&(12..16))),
         );
         assert_eq!(
             compile(".data\n.half 65536\n.text\nmain: nop"),
-            Err(ErrorKind::IntegerTooBig(65536.into(), range(-32768..65536)).add_span(&(12..17))),
+            Err(
+                ErrorKind::IntegerOutOfRange(65536.into(), range(-32768..65536))
+                    .add_span(&(12..17))
+            ),
         );
         // Instruction arguments
         assert_eq!(
             compile(".text\nmain: imm 8, 0, 0"),
-            Err(ErrorKind::IntegerTooBig(8.into(), range(-8..8)).add_span(&(16..17))),
+            Err(ErrorKind::IntegerOutOfRange(8.into(), range(-8..8)).add_span(&(16..17))),
         );
         assert_eq!(
             compile(".text\nmain: imm -9, 0, 0"),
-            Err(ErrorKind::IntegerTooBig((-9).into(), range(-8..8)).add_span(&(16..18))),
+            Err(ErrorKind::IntegerOutOfRange((-9).into(), range(-8..8)).add_span(&(16..18))),
         );
         assert_eq!(
             compile(".text\nmain: imm 0, 256, 0"),
-            Err(ErrorKind::IntegerTooBig(256.into(), range(0..256)).add_span(&(19..22))),
+            Err(ErrorKind::IntegerOutOfRange(256.into(), range(0..256)).add_span(&(19..22))),
         );
         assert_eq!(
             compile(".text\nmain: imm 0, -1, 0"),
-            Err(ErrorKind::IntegerTooBig((-1).into(), range(0..256)).add_span(&(19..21))),
+            Err(ErrorKind::IntegerOutOfRange((-1).into(), range(0..256)).add_span(&(19..21))),
         );
         assert_eq!(
             compile(".text\nmain: imm 0, 0, 20"),
-            Err(ErrorKind::IntegerTooBig(20.into(), range(0..16)).add_span(&(22..24))),
+            Err(ErrorKind::IntegerOutOfRange(20.into(), range(0..16)).add_span(&(22..24))),
         );
     }
 
