@@ -743,11 +743,7 @@ pub fn compile<S: std::hash::BuildHasher>(
                                 .address()
                                 .clone()
                                 .into();
-                            let offset = |x| {
-                                let next_address = inst.address.clone()
-                                    + BigUint::from(word_size_bytes) * def.nwords;
-                                x - BigInt::from(next_address)
-                            };
+                            let offset = |x| x - BigInt::from(inst.address.clone());
                             Ok(match val_type {
                                 FieldType::OffsetWords => offset(value) / word_size_bytes,
                                 FieldType::OffsetBytes => offset(value),
@@ -1124,17 +1120,20 @@ mod test {
 
     #[test]
     fn instruction_fields_offsets_aligned_labels() {
-        let x = compile(".text\nmain: off main, main").unwrap();
+        let x = compile(".text\nmain: nop\noff main, main").unwrap();
         let binary = "11000000000000000000000000001111";
         assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
         assert_eq!(
             x.instructions,
-            vec![inst(0, &["main"], "off -4 -1", binary, 12..26)]
+            vec![
+                main_nop(12..15),
+                inst(4, &[], "off -4 -1", binary, 16..30),
+            ]
         );
         assert_eq!(x.data_memory, vec![]);
         assert_eq!(x.global_symbols, HashSet::new());
 
-        let x = compile(".text\na: off main, main\nnop\nmain: nop").unwrap();
+        let x = compile(".text\na: nop\noff main, main\nmain: nop").unwrap();
         let binary = "01000000000000000000000000000001";
         assert_eq!(
             x.label_table,
@@ -1143,8 +1142,8 @@ mod test {
         assert_eq!(
             x.instructions,
             vec![
-                inst(0, &["a"], "off 4 1", binary, 9..23),
-                inst(4, &[], "nop", NOP_BINARY, 24..27),
+                inst(0, &["a"], "nop", NOP_BINARY, 9..12),
+                inst(4, &[], "off 4 1", binary, 13..27),
                 inst(8, &["main"], "nop", NOP_BINARY, 34..37),
             ]
         );
@@ -1168,14 +1167,14 @@ mod test {
     #[test]
     fn instruction_fields_offsets_unaligned_labels() {
         let x = compile(".text\nmain: off 1, a\n.data\n.zero 1\na: .zero 1").unwrap();
-        let binary = "00010000000000000000000000000011";
+        let binary = "00010000000000000000000000000100";
         assert_eq!(
             x.label_table,
             label_table([("main", 0, 6..11), ("a", 17, 35..37)])
         );
         assert_eq!(
             x.instructions,
-            vec![inst(0, &["main"], "off 1 3", binary, 12..20)]
+            vec![inst(0, &["main"], "off 1 4", binary, 12..20)]
         );
         assert_eq!(
             x.data_memory,
