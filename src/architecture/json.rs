@@ -203,7 +203,7 @@ pub enum Config<'a> {
     /// Whether to enable function parameter passing convention checks
     #[serde(rename = "Passing Convention")]
     PassingConvention(Bool),
-    /// TODO: what does this represent? is this used currently?
+    /// Whether the register names should be case sensitive (true) or not
     #[serde(rename = "Sensitive Register Name")]
     SensitiveRegisterName(Bool),
     /// String to use as line comment prefix
