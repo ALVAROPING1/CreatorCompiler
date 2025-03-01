@@ -38,7 +38,7 @@ pub struct Directive<'a> {
     pub action: DirectiveAction<DirectiveData>,
     /// Size in bytes of values associated with this directive
     #[serde(deserialize_with = "utils::optional_from_str")]
-    #[serde(default = "Option::<usize>::default")]
+    #[serde(default)]
     #[schemars(with = "Option<StringOrT<usize>>")]
     pub size: Option<usize>,
 }
