@@ -701,7 +701,7 @@ impl BitRange {
 
     /// Gets the amount of least significant bits that should be ignored
     #[must_use]
-    pub fn padding(&self) -> usize {
+    pub const fn padding(&self) -> usize {
         self.padding
     }
 }
