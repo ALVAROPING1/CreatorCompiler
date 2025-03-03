@@ -54,6 +54,9 @@ pub struct Architecture<'a> {
     /// Memory layout of the architecture
     /// Order of elements is assumed to be text start/end, data start/end, and stack start/end
     memory_layout: MemoryLayout,
+    /// Interrupt configuration
+    #[serde(default)]
+    interrupts: Option<Interrupts<'a>>,
 }
 
 /// Architecture metadata attributes
@@ -268,6 +271,8 @@ pub enum InstructionProperties {
     ExitSubrutine,
     #[serde(rename = "enter_subrutine")]
     EnterSubrutine,
+    #[serde(rename = "privileged")]
+    Privileged,
 }
 
 /// Instruction field specification
@@ -468,6 +473,28 @@ pub struct MemoryLayout {
     stack: NonEmptyRangeInclusive<BigUint>,
 }
 utils::schema_from!(MemoryLayout, [Pair<json::MemoryLayoutKeys, BaseN<16>>; 6]);
+
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
+pub struct Interrupts<'a> {
+    /// Controls whether interrupts are enabled by default (`true`) or not (`false`)
+    enabled: bool,
+    /// JS code to be executed in order to check whether an interrupt happened.
+    /// It must return an `InterruptType` (if an interrupt happened) or `null` (if it didn't)
+    interrupt_check: &'a str,
+    /// JS code to be executed in order to check whether interrupts are enabled
+    enable_check: &'a str,
+    /// JS code to be executed in order to enable interrupts
+    interrupt_enable: &'a str,
+    /// JS code to be executed in order to disable interrupts
+    interrupt_disable: &'a str,
+    /// JS code to be executed in order to obtain the interrupt handler address
+    get_handler_addr: &'a str,
+    /// JS code to be executed in order to clear an interrupt
+    clear_interrupt: &'a str,
+    /// JS arrow (lambda) function to be executed in order to set an interrupt given an interrupt
+    /// type
+    set_interrupt_cause: &'a str,
+}
 
 impl<'a> Architecture<'a> {
     /// Generate a `JSON` schema
