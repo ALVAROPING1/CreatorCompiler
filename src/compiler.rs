@@ -778,12 +778,16 @@ pub fn compile<S: std::hash::BuildHasher>(
                     | FieldType::OffsetBytes
                     | FieldType::OffsetWords) => {
                         let ident_eval = |label: &str| {
-                            let value: BigInt = label_table
-                                .get(label)
-                                .ok_or_else(|| ErrorKind::UnknownLabel(label.to_owned()))?
-                                .address()
-                                .clone()
-                                .into();
+                            let value = if label == "." {
+                                BigInt::from(inst.address.clone())
+                            } else {
+                                label_table
+                                    .get(label)
+                                    .ok_or_else(|| ErrorKind::UnknownLabel(label.to_owned()))?
+                                    .address()
+                                    .clone()
+                                    .into()
+                            };
                             let offset = |x| x - BigInt::from(inst.address.clone());
                             Ok(match val_type {
                                 FieldType::OffsetWords => offset(value) / word_size_bytes,
@@ -873,17 +877,20 @@ pub fn compile<S: std::hash::BuildHasher>(
         .into_iter()
         .map(|data| {
             Ok(Data {
-                address: data.address,
                 labels: data.labels,
                 value: match data.value {
                     PendingValue::Integer((value, span), size, int_type) => {
                         let ident_eval = |label: &str| {
-                            Ok(label_table
-                                .get(label)
-                                .ok_or_else(|| ErrorKind::UnknownLabel(label.to_owned()))?
-                                .address()
-                                .clone()
-                                .into())
+                            Ok(if label == "." {
+                                BigInt::from(data.address.clone())
+                            } else {
+                                label_table
+                                    .get(label)
+                                    .ok_or_else(|| ErrorKind::UnknownLabel(label.to_owned()))?
+                                    .address()
+                                    .clone()
+                                    .into()
+                            })
                         };
                         let value = value.int(ident_eval)?;
                         Value::Integer(
@@ -903,6 +910,7 @@ pub fn compile<S: std::hash::BuildHasher>(
                         null_terminated,
                     },
                 },
+                address: data.address,
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -1648,6 +1656,22 @@ mod test {
                 data(16, &[], Value::Space(1u8.into())),
                 data(48, &[], Value::Space(2u8.into()))
             ]
+        );
+        assert_eq!(x.global_symbols, HashSet::new());
+    }
+
+    #[test]
+    fn read_pc() {
+        let x = compile(".text\nmain: nop\nimm ., 0, 0\n.data\n.word .").unwrap();
+        assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
+        let binary = "00010000000000000000000000000000";
+        assert_eq!(
+            x.instructions,
+            vec![main_nop(12..15), inst(4, &[], "imm 4 0 0", binary, 16..27)]
+        );
+        assert_eq!(
+            x.data_memory,
+            vec![data(16, &[], int_val(16, 32, IntegerType::Word)),]
         );
         assert_eq!(x.global_symbols, HashSet::new());
     }

@@ -237,7 +237,7 @@ pub fn lexer(comment_prefix: &str) -> Parser!(char, Vec<Spanned<Token>>, '_) {
         .map(|(ident, label)| {
             if label {
                 Token::Label(ident)
-            } else if ident.starts_with('.') {
+            } else if ident.starts_with('.') && ident != "." {
                 Token::Directive(ident)
             } else {
                 Token::Identifier(ident)
@@ -398,6 +398,8 @@ mod test {
             "a._123",
             "z....___1",
             "_1_",
+            "_",
+            ".",
         ];
         for s in test_cases {
             assert_eq!(lex(s), Ok(vec![(Token::Identifier(s.into()), 0..s.len())]));
@@ -442,7 +444,6 @@ mod test {
             ".z....___1..",
             ".1_",
             "._1_a",
-            ".",
         ];
         for s in test_cases {
             assert_eq!(lex(s), Ok(vec![(Token::Directive(s.into()), 0..s.len())]));
