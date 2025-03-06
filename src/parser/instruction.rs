@@ -178,10 +178,19 @@ impl<'a> Instruction<'a> {
     /// Errors if there is an error lexing the code
     pub fn lex(code: &str) -> Result<(&str, Vec<Spanned<Token>>), ParseError> {
         let (name, args) = code.trim().split_once(' ').unwrap_or((code, ""));
+        let len = code.chars().count();
+        #[allow(clippy::range_plus_one)] // Chumsky requires an inclusive range to avoid type errors
+        let stream = chumsky::stream::Stream::from_iter(
+            len..len + 1,
+            args.chars().enumerate().map(|(i, c)| {
+                let span = i + name.len() + 1;
+                (c, span..span + 1)
+            }),
+        );
         // NOTE: we use a null character as the comment prefix because we don't know what prefix
         // the architecture specifies here. Null characters can't appear in the input, so this
         // disallows line comments
-        let tokens = super::lexer::lexer("\0").parse(args)?;
+        let tokens = super::lexer::lexer("\0").parse(stream)?;
         Ok((name, tokens))
     }
 }

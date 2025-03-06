@@ -38,15 +38,9 @@ pub enum Kind {
     UnknownFieldNumber(usize),
     UnknownFieldType(String),
     EmptyBitRange,
-    BitRangeOutOfBounds {
-        upper_bound: usize,
-        msb: usize,
-    },
+    BitRangeOutOfBounds { upper_bound: usize, msb: usize },
     EvaluationError(String),
-    ParseError {
-        instruction: String,
-        error: ParseError,
-    },
+    ParseError(ParseError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -356,18 +350,15 @@ pub fn expand<'b, 'a: 'b>(
 
     def.split_terminator(';')
         .map(|inst| {
+            let addr_of = |str: &str| str.as_ptr() as usize;
+            let span_start = addr_of(inst) - addr_of(&def);
             let (name, args) = crate::parser::Instruction::lex(inst).map_err(|error| {
-                let addr_of = |str: &str| str.as_ptr() as usize;
-                let span_start = addr_of(inst) - addr_of(&def);
                 Error {
-                    definition: def.to_string(),
+                    definition: def.clone(),
                     // Calculate the span in the original `instructions` as the difference between the
                     // pointers and the size
                     span: span_start..(span_start + inst.len()),
-                    kind: Kind::ParseError {
-                        instruction: inst.to_string(),
-                        error,
-                    },
+                    kind: Kind::ParseError(error),
                 }
                 .compile_error(instruction, &span)
             })?;
@@ -379,7 +370,7 @@ pub fn expand<'b, 'a: 'b>(
                 match &value.0 {
                     Expr::Identifier((ident, _)) => {
                         if let Some(pseudoinstruction_arg) = get_arg(ident) {
-                            arg.value = pseudoinstruction_arg.value.clone();
+                            arg.value.0 = pseudoinstruction_arg.value.0.clone();
                         }
                     }
                     _ => continue,

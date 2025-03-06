@@ -46,15 +46,10 @@ impl From<Vec<Simple<Token>>> for Error {
     }
 }
 
-impl crate::RenderError for Error {
+impl<T: ToString + std::hash::Hash + std::cmp::Eq> crate::RenderError for Vec<Simple<T>> {
     fn format(self, filename: &str, src: &str, mut buffer: &mut Vec<u8>, color: bool) {
-        let (lex, parse) = match self {
-            Self::Lexer(errs) => (errs, vec![]),
-            Self::Parser(errs) => (vec![], errs),
-        };
-        lex.into_iter()
+        self.into_iter()
             .map(|e| e.map(|c| c.to_string()))
-            .chain(parse.into_iter().map(|e| e.map(|tok| tok.to_string())))
             .for_each(|e| {
                 Report::build(ReportKind::Error, (filename, e.span()))
                     .with_config(Config::default().with_color(color))
@@ -82,5 +77,14 @@ impl crate::RenderError for Error {
                     .write((filename, Source::from(src)), &mut buffer)
                     .expect("Writing to an in-memory vector can't fail");
             });
+    }
+}
+
+impl crate::RenderError for Error {
+    fn format(self, filename: &str, src: &str, buffer: &mut Vec<u8>, color: bool) {
+        match self {
+            Self::Lexer(errs) => errs.format(filename, src, buffer, color),
+            Self::Parser(errs) => errs.format(filename, src, buffer, color),
+        }
     }
 }

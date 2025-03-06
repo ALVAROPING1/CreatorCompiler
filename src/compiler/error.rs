@@ -403,7 +403,7 @@ impl crate::RenderError for Error {
 
 impl PseudoinstructionErrorKind {
     /// Gets the label text describing the error
-    fn label(&self) -> &'static str {
+    const fn label(&self) -> &'static str {
         match self {
             Self::UnknownFieldName(..) => "Unknown field name",
             Self::UnknownFieldNumber(..) => "Field index out of bounds",
@@ -411,7 +411,7 @@ impl PseudoinstructionErrorKind {
             Self::EmptyBitRange => "Empty bit range",
             Self::BitRangeOutOfBounds { .. } => "Bit range out of bounds",
             Self::EvaluationError(..) => "While evaluating this code",
-            Self::ParseError { .. } => todo!(),
+            Self::ParseError { .. } => "While parsing this instruction",
         }
     }
 }
@@ -428,7 +428,7 @@ impl fmt::Display for PseudoinstructionErrorKind {
                 "Bit range is of bounds, upper bound is {upper_bound} but the MSB is {msb}"
             ),
             Self::EvaluationError(s) => write!(f, "Error evaluating JS code:\n{s}"),
-            Self::ParseError { .. } => todo!(),
+            Self::ParseError(_) => write!(f, "Error parsing instruction"),
         }
     }
 }
@@ -441,13 +441,17 @@ impl crate::RenderError for PseudoinstructionError {
             .with_config(Config::default().with_color(color))
             .with_message(self.kind.to_string())
             .with_label(
-                Label::new((FILENAME, self.span))
+                Label::new((FILENAME, self.span.clone()))
                     .with_message(self.kind.label())
                     .with_color(Color::Red),
             )
             .finish()
             .write((FILENAME, Source::from(src)), &mut buffer)
             .expect("Writing to an in-memory vector shouldn't fail");
+        writeln!(&mut buffer).expect("Writing to an in-memory vector can't fail");
+        if let PseudoinstructionErrorKind::ParseError(err) = self.kind {
+            err.format(FILENAME, &src[self.span], buffer, color);
+        }
     }
 }
 
