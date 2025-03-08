@@ -25,3 +25,46 @@
 pub type Span = std::ops::Range<usize>;
 /// Value with an attached [`Span`]
 pub type Spanned<T> = (T, Span);
+
+/// Dynamically generated source code for a [`Span`]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Source {
+    /// Source assembly code
+    pub code: String,
+    /// Span of this dynamically generated code
+    pub span: SpanList,
+}
+
+/// [`Span`] that carries its source code, used to point into dynamically generated source code
+#[allow(clippy::module_name_repetitions)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpanList {
+    /// [`Span`] of the element in its source code
+    pub span: Span,
+    /// Source of the element, [`None`] if it comes from the user's assembly source code
+    pub source: Option<std::rc::Rc<Source>>,
+}
+
+impl From<Span> for SpanList {
+    fn from(span: Span) -> Self {
+        Self { span, source: None }
+    }
+}
+
+impl From<&Span> for SpanList {
+    fn from(span: &Span) -> Self {
+        Self {
+            span: span.clone(),
+            source: None,
+        }
+    }
+}
+
+impl From<(&Span, &Self)> for SpanList {
+    fn from(value: (&Span, &Self)) -> Self {
+        Self {
+            span: value.0.clone(),
+            source: value.1.source.clone(),
+        }
+    }
+}

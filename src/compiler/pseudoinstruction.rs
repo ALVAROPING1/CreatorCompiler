@@ -23,13 +23,14 @@ use once_cell::sync::Lazy;
 use regex::{Captures, Regex};
 
 use std::fmt::Write as _;
+use std::rc::Rc;
 
 use crate::architecture::{Architecture, FloatType, Pseudoinstruction, RegisterType};
 use crate::parser::ParseError;
 
 use super::{ArgumentType, CompileError, ErrorKind, InstructionDefinition, LabelTable};
 use super::{Expr, ParsedArgs};
-use super::{Span, Spanned};
+use super::{Source, Span, SpanList, Spanned};
 
 /// Pseudoinstruction evaluation error
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,7 +52,7 @@ pub struct Error {
 }
 
 impl Error {
-    fn compile_error(self, def: &Pseudoinstruction, span: &Span) -> CompileError {
+    fn compile_error(self, def: &Pseudoinstruction, span: impl Into<SpanList>) -> CompileError {
         ErrorKind::PseudoinstructionError {
             name: def.name.to_owned(),
             error: Box::new(self),
@@ -122,14 +123,17 @@ fn capture_span(captures: &Captures, i: usize) -> Span {
         .range()
 }
 
+/// Result of expanding a pseudoinstruction
+type ExpandedInstructions<'a> = Vec<((InstructionDefinition<'a>, ParsedArgs), SpanList)>;
+
 #[allow(clippy::too_many_lines)]
 pub fn expand<'b, 'a: 'b>(
     arch: &'a Architecture,
     label_table: &LabelTable,
     address: &BigUint,
-    instruction: Spanned<&'b Pseudoinstruction>,
+    instruction: (&'b Pseudoinstruction, SpanList),
     args: &ParsedArgs,
-) -> Result<Vec<(InstructionDefinition<'a>, ParsedArgs)>, CompileError> {
+) -> Result<ExpandedInstructions<'a>, CompileError> {
     // Regex used
     static ALIAS_DOUBLE: Lazy<Regex> = crate::regex!(r"aliasDouble\(([^;]+);(\d+)\)");
     static FIELD_VALUE: Lazy<Regex> = crate::regex!(r"Field\.(\d+)\.\((\d+),(\d+)\)\.(\w+)");
@@ -171,7 +175,7 @@ pub fn expand<'b, 'a: 'b>(
                 span: capture_span(&x, 1),
                 kind: Kind::UnknownFieldName(name.to_owned()),
             }
-            .compile_error(instruction, &span)
+            .compile_error(instruction, span.clone())
         })?;
         let name = reg_name(&name.value)?;
         let i: usize = num(i);
@@ -199,7 +203,7 @@ pub fn expand<'b, 'a: 'b>(
                     span: capture_span(&x, 1),
                     kind: Kind::UnknownFieldNumber(arg_num + 1),
                 }
-                .compile_error(instruction, &span)
+                .compile_error(instruction, span.clone())
             })?
             .value;
         #[allow(clippy::cast_possible_truncation)]
@@ -234,7 +238,7 @@ pub fn expand<'b, 'a: 'b>(
                     span: capture_span(&x, 4),
                     kind: Kind::UnknownFieldType(ty.to_owned()),
                 }
-                .compile_error(instruction, &span))
+                .compile_error(instruction, span))
             }
         };
         let start_bit = num(start_bit);
@@ -246,7 +250,7 @@ pub fn expand<'b, 'a: 'b>(
                 span: capture_span(&x, 2).start..capture_span(&x, 3).end,
                 kind: Kind::EmptyBitRange,
             }
-            .compile_error(instruction, &span));
+            .compile_error(instruction, span));
         }
         if start_bit > msb {
             return Err(Error {
@@ -257,7 +261,7 @@ pub fn expand<'b, 'a: 'b>(
                     msb,
                 },
             }
-            .compile_error(instruction, &span));
+            .compile_error(instruction, span));
         }
         let field = format!("0b{}", &field[msb - start_bit..=msb - end_bit]);
         def.replace_range(capture_span(&x, 0), &field);
@@ -275,7 +279,7 @@ pub fn expand<'b, 'a: 'b>(
                     span: capture_span(&x, 1),
                     kind: Kind::UnknownFieldNumber(arg_num + 1),
                 }
-                .compile_error(instruction, &span)
+                .compile_error(instruction, span.clone())
             })?
             .value;
         #[allow(clippy::cast_possible_truncation)]
@@ -305,7 +309,7 @@ pub fn expand<'b, 'a: 'b>(
                 span: capture_span(&x, 1),
                 kind: Kind::EvaluationError(error),
             }
-            .compile_error(instruction, &span)
+            .compile_error(instruction, span.clone())
         })?;
         def.replace_range(capture_span(&x, 0), "");
     }
@@ -319,7 +323,7 @@ pub fn expand<'b, 'a: 'b>(
                 span: capture_span(&x, 1),
                 kind: Kind::EvaluationError(error),
             }
-            .compile_error(instruction, &span)
+            .compile_error(instruction, span.clone())
         })?;
         def.replace_range(capture_span(&x, 0), &js::to_string(result));
     }
@@ -343,29 +347,37 @@ pub fn expand<'b, 'a: 'b>(
                 span: 0..def.len(),
                 kind: Kind::EvaluationError(error),
             }
-            .compile_error(instruction, &span)
+            .compile_error(instruction, span.clone())
         })?;
         def = js::to_string(result);
     };
 
+    let source = Rc::new(Source { code: def, span });
+    let def = &source.code;
     def.split_terminator(';')
         .map(|inst| {
             let addr_of = |str: &str| str.as_ptr() as usize;
-            let span_start = addr_of(inst) - addr_of(&def);
-            let (name, args) = crate::parser::Instruction::lex(inst).map_err(|error| {
+            let span_start = addr_of(inst) - addr_of(def);
+            // Calculate the span in the original `instructions` as the difference between the
+            // pointers and the size
+            let span = span_start..(span_start + inst.len());
+            let (name, mut args) = crate::parser::Instruction::lex(inst).map_err(|error| {
                 Error {
+                    span: span.clone(),
                     definition: def.clone(),
-                    // Calculate the span in the original `instructions` as the difference between the
-                    // pointers and the size
-                    span: span_start..(span_start + inst.len()),
                     kind: Kind::ParseError(error),
                 }
-                .compile_error(instruction, &span)
+                .compile_error(instruction, source.span.clone())
             })?;
-            let (def, mut args) =
-                super::parse_instruction(arch, (name.to_owned(), 0..0), &(args, 0..0))?;
+            for tok in &mut args {
+                tok.1.start += span_start;
+                tok.1.end += span_start;
+            }
+            let name_span = span_start..span_start + name.len();
+            let args_span = name_span.end + 1..span_start + inst.len();
+            let (inst_def, mut args) =
+                super::parse_instruction(arch, (name.to_owned(), name_span), &(args, args_span))?;
             for arg in &mut args {
-                arg.value.1 = span.clone();
                 let value = &arg.value;
                 match &value.0 {
                     Expr::Identifier((ident, _)) => {
@@ -376,7 +388,11 @@ pub fn expand<'b, 'a: 'b>(
                     _ => continue,
                 }
             }
-            Ok((def, args))
+            let span = SpanList {
+                span,
+                source: Some(source.clone()),
+            };
+            Ok(((inst_def, args), span))
         })
         .collect::<Result<Vec<_>, _>>()
 }

@@ -37,7 +37,7 @@ use crate::parser::instruction::ParsedArgs;
 use crate::parser::{
     ASTNode, Data as DataToken, Expr, InstructionNode, Statement as StatementNode, Token,
 };
-use crate::span::{Span, Spanned};
+use crate::span::{Source, Span, SpanList, Spanned};
 
 mod label;
 pub use label::{Label, Table as LabelTable};
@@ -63,6 +63,7 @@ pub use pseudoinstruction::{Error as PseudoinstructionError, Kind as Pseudoinstr
 *  - Combine `crate::parser::Error` with `crate::compiler::Error`
 **/
 
+#[derive(Debug)]
 enum InstructionDefinition<'arch> {
     Real(&'arch crate::architecture::Instruction<'arch>),
     Pseudo(&'arch crate::architecture::Pseudoinstruction<'arch>),
@@ -176,8 +177,10 @@ pub struct PendingInstruction<'arch> {
     address: BigUint,
     /// Labels pointing to this instruction
     labels: Vec<String>,
-    /// Span of the instruction in the assembly code
-    span: Span,
+    /// Span of the instruction in the user's assembly code
+    user_span: Span,
+    /// Span of the instruction in pseudoinstruction expansions
+    span: SpanList,
     /// Instruction definition selected
     definition: &'arch crate::architecture::Instruction<'arch>,
     /// Arguments parsed for this instruction
@@ -190,19 +193,21 @@ fn process_instruction<'arch>(
     label_table: &mut LabelTable,
     pending_instructions: &mut Vec<PendingInstruction<'arch>>,
     instruction: (InstructionDefinition<'arch>, ParsedArgs),
-    span: Span,
+    span: (Span, SpanList),
 ) -> Result<(), CompileError> {
+    let (user_span, span) = span;
     match instruction.0 {
         // Base case: we have a real instruction => push it to the parsed instructions normally
         InstructionDefinition::Real(definition) => {
             let word_size = BigUint::from(arch.word_size().div_ceil(8));
             let address = section
                 .try_reserve(&(word_size * definition.nwords))
-                .add_span(&span)?;
+                .add_span(span.clone())?;
             pending_instructions.push(PendingInstruction {
                 labels: Vec::new(),
                 args: instruction.1,
                 address,
+                user_span,
                 span,
                 definition,
             });
@@ -214,17 +219,17 @@ fn process_instruction<'arch>(
                 arch,
                 label_table,
                 section.get(),
-                (def, span.clone()),
+                (def, span),
                 &instruction.1,
             )?;
-            for instruction in instructions {
+            for (instruction, span) in instructions {
                 process_instruction(
                     arch,
                     section,
                     label_table,
                     pending_instructions,
                     instruction,
-                    span.clone(),
+                    (user_span.clone(), span),
                 )?;
             }
         }
@@ -703,13 +708,13 @@ fn compile_instructions<'a>(
             label_table,
             pending_instructions,
             parsed_instruction,
-            instruction.value.1,
+            (instruction.value.1.clone(), instruction.value.1.into()),
         )?;
         if let Some(inst) = pending_instructions.get_mut(first_idx) {
             inst.labels = take_spanned_vec(&mut instruction.labels);
         }
         for inst in &mut pending_instructions[first_idx + 1..] {
-            inst.span = 0..0;
+            inst.user_span = 0..0;
         }
     }
     Ok(combine_sections(kernel, user))
@@ -813,7 +818,7 @@ pub fn compile<S: std::hash::BuildHasher>(
                                     expected: ArgumentType::RegisterName,
                                     found: ArgumentType::Expression,
                                 }
-                                .add_span(&arg.value.1))
+                                .add_span((&arg.value.1, &inst.span)))
                             }
                         };
                         let bank_type = match val_type {
@@ -825,7 +830,8 @@ pub fn compile<S: std::hash::BuildHasher>(
                         };
                         let mut banks = arch.find_banks(bank_type).peekable();
                         banks.peek().ok_or_else(|| {
-                            ErrorKind::UnknownRegisterBank(bank_type).add_span(&arg.value.1)
+                            ErrorKind::UnknownRegisterBank(bank_type)
+                                .add_span((&arg.value.1, &inst.span))
                         })?;
                         let (i, _) = banks
                             .find_map(|bank| bank.find_register(&name))
@@ -834,7 +840,7 @@ pub fn compile<S: std::hash::BuildHasher>(
                                     name: name.clone(),
                                     bank: bank_type,
                                 }
-                                .add_span(&arg.value.1)
+                                .add_span((&arg.value.1, &inst.span))
                             })?;
                         (i.into(), name)
                     }
@@ -848,7 +854,7 @@ pub fn compile<S: std::hash::BuildHasher>(
                             FieldType::ImmSigned | FieldType::OffsetBytes | FieldType::OffsetWords
                         ),
                     )
-                    .add_span(&arg.value.1)?;
+                    .add_span((&arg.value.1, &inst.span))?;
                 translated_instruction = FIELD
                     .replace(&translated_instruction, NoExpand(&value_str))
                     .to_string();
@@ -861,14 +867,14 @@ pub fn compile<S: std::hash::BuildHasher>(
                 #[allow(clippy::cast_possible_wrap)]
                 binary_instruction
                     .replace(range, value.0.clone().into(), false)
-                    .add_span(&inst.span)?;
+                    .add_span(inst.span.clone())?;
             }
             Ok(Instruction {
                 labels: inst.labels,
                 address: inst.address,
                 binary: binary_instruction,
                 loaded: translated_instruction,
-                user: inst.span,
+                user: inst.user_span,
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -2020,10 +2026,10 @@ mod test {
 
     #[test]
     fn incorrect_instruction_syntax() {
-        let assert = |err, syntaxes: &[&str], expected_span| match err {
+        let assert = |err, syntaxes: &[&str], expected_span: Span| match err {
             Err(CompileError { span, kind }) => match *kind {
                 ErrorKind::IncorrectInstructionSyntax(s) => {
-                    assert_eq!(span, expected_span);
+                    assert_eq!(span, expected_span.into());
                     assert_eq!(s.into_iter().map(|x| x.0).collect::<Vec<_>>(), syntaxes);
                 }
                 x => panic!(
