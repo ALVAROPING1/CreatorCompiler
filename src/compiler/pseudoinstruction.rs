@@ -63,14 +63,14 @@ impl Error {
 
 #[cfg(not(feature = "pseudoinstructions"))]
 mod js {
+    #[derive(Debug)]
     pub enum Never {}
-    pub type Value = String;
 
-    pub fn eval_expr(_: &str) -> Option<Never> {
+    pub fn eval_expr(_: &str) -> Result<Never, String> {
         unimplemented!("Evaluating js code during pseudoinstruction expansion requires the `pseudoinstruction` feature flag");
     }
 
-    pub fn eval_fn(_: &str) -> Option<Never> {
+    pub fn eval_fn(_: &str) -> Result<Never, String> {
         unimplemented!("Evaluating js code during pseudoinstruction expansion requires the `pseudoinstruction` feature flag");
     }
 
