@@ -821,24 +821,24 @@ pub fn compile<S: std::hash::BuildHasher>(
                                 .add_span((&arg.value.1, &inst.span)))
                             }
                         };
-                        let bank_type = match val_type {
+                        let file_type = match val_type {
                             FieldType::IntReg => RegisterType::Int,
                             FieldType::CtrlReg => RegisterType::Ctrl,
                             FieldType::SingleFPReg => RegisterType::Float(FloatType::Float),
                             FieldType::DoubleFPReg => RegisterType::Float(FloatType::Double),
                             _ => unreachable!("We already matched one of these variants"),
                         };
-                        let mut banks = arch.find_banks(bank_type).peekable();
-                        banks.peek().ok_or_else(|| {
-                            ErrorKind::UnknownRegisterBank(bank_type)
+                        let mut files = arch.find_reg_files(file_type).peekable();
+                        files.peek().ok_or_else(|| {
+                            ErrorKind::UnknownRegisterFile(file_type)
                                 .add_span((&arg.value.1, &inst.span))
                         })?;
-                        let (i, _) = banks
-                            .find_map(|bank| bank.find_register(&name))
+                        let (i, _) = files
+                            .find_map(|file| file.find_register(&name))
                             .ok_or_else(|| {
                                 ErrorKind::UnknownRegister {
                                     name: name.clone(),
-                                    bank: bank_type,
+                                    file: file_type,
                                 }
                                 .add_span((&arg.value.1, &inst.span))
                             })?;
@@ -1764,7 +1764,7 @@ mod test {
             compile(".text\nmain: reg x0, x0, ft1, ft2"),
             Err(ErrorKind::UnknownRegister {
                 name: "x0".into(),
-                bank: RegisterType::Ctrl,
+                file: RegisterType::Ctrl,
             }
             .add_span(&(16..18))),
         );
@@ -1772,7 +1772,7 @@ mod test {
             compile(".text\nmain: reg 2, x0, ft1, ft2"),
             Err(ErrorKind::UnknownRegister {
                 name: "2".into(),
-                bank: RegisterType::Ctrl,
+                file: RegisterType::Ctrl,
             }
             .add_span(&(16..17))),
         );
@@ -1781,7 +1781,7 @@ mod test {
             compile(".text\nmain: reg pc, x0, ft1, ft2"),
             Err(ErrorKind::UnknownRegister {
                 name: "pc".into(),
-                bank: RegisterType::Ctrl,
+                file: RegisterType::Ctrl,
             }
             .add_span(&(16..18))),
         );
@@ -1789,7 +1789,7 @@ mod test {
             compile(".text\nmain: reg PC, PC, ft1, ft2"),
             Err(ErrorKind::UnknownRegister {
                 name: "PC".into(),
-                bank: RegisterType::Int,
+                file: RegisterType::Int,
             }
             .add_span(&(20..22))),
         );
@@ -1797,7 +1797,7 @@ mod test {
             compile(".text\nmain: reg PC, x0, x0, ft2"),
             Err(ErrorKind::UnknownRegister {
                 name: "x0".into(),
-                bank: RegisterType::Float(FloatType::Float),
+                file: RegisterType::Float(FloatType::Float),
             }
             .add_span(&(24..26))),
         );
@@ -1805,7 +1805,7 @@ mod test {
             compile(".text\nmain: reg PC, x0, FD1, ft2"),
             Err(ErrorKind::UnknownRegister {
                 name: "FD1".into(),
-                bank: RegisterType::Float(FloatType::Float),
+                file: RegisterType::Float(FloatType::Float),
             }
             .add_span(&(24..27))),
         );
@@ -1813,7 +1813,7 @@ mod test {
             compile(".text\nmain: reg PC, x0, ft1, fs2"),
             Err(ErrorKind::UnknownRegister {
                 name: "fs2".into(),
-                bank: RegisterType::Float(FloatType::Double),
+                file: RegisterType::Float(FloatType::Double),
             }
             .add_span(&(29..32))),
         );

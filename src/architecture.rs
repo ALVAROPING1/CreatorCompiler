@@ -42,8 +42,8 @@ pub struct Architecture<'a> {
     /// name
     #[serde(borrow)]
     pub arch_conf: Config<'a>,
-    /// Components (register banks) of the architecture. It's assumed that the first register of
-    /// the first bank will contain the program counter
+    /// Components (register files) of the architecture. It's assumed that the first register of
+    /// the first file will contain the program counter
     pub components: Vec<Component<'a>>,
     /// Instructions allowed
     pub instructions: Vec<Instruction<'a>>,
@@ -93,10 +93,10 @@ pub enum DataFormat {
     LittleEndian,
 }
 
-/// Register bank
+/// Register file
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
 pub struct Component<'a> {
-    /// Name of the register bank
+    /// Name of the register file
     pub name: &'a str,
     /// Type of the registers
     r#type: ComponentType,
@@ -104,11 +104,11 @@ pub struct Component<'a> {
     double_precision: bool,
     /// If the registers have double the word size, how this size is achieved
     double_precision_type: Option<PrecisionType>,
-    /// Registers in this bank
+    /// Registers in this file
     pub elements: Vec<Register<'a>>,
 }
 
-/// Types of register banks allowed
+/// Types of register files allowed
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ComponentType {
     /// Control registers
@@ -626,21 +626,21 @@ impl<'a> Architecture<'a> {
             .filter(move |instruction| instruction.name == name)
     }
 
-    /// Gets the register banks with registers of the given type
+    /// Gets the register files with registers of the given type
     ///
     /// # Parameters
     ///
-    /// * `type`: type of the bank wanted
-    pub fn find_banks(&self, r#type: RegisterType) -> impl Iterator<Item = &Component> {
-        let eq = move |bank: &&Component| match r#type {
-            RegisterType::Int => matches!(bank.r#type, ComponentType::Int),
-            RegisterType::Ctrl => matches!(bank.r#type, ComponentType::Ctrl),
+    /// * `type`: type of the file wanted
+    pub fn find_reg_files(&self, r#type: RegisterType) -> impl Iterator<Item = &Component> {
+        let eq = move |file: &&Component| match r#type {
+            RegisterType::Int => matches!(file.r#type, ComponentType::Int),
+            RegisterType::Ctrl => matches!(file.r#type, ComponentType::Ctrl),
             RegisterType::Float(FloatType::Float) => matches!(
-                (bank.r#type, bank.double_precision_type),
+                (file.r#type, file.double_precision_type),
                 (ComponentType::Float, None | Some(PrecisionType::Extended))
             ),
             RegisterType::Float(FloatType::Double) => {
-                matches!(bank.r#type, ComponentType::Float) && bank.double_precision_type.is_some()
+                matches!(file.r#type, ComponentType::Float) && file.double_precision_type.is_some()
             }
         };
         self.components.iter().filter(eq)

@@ -207,8 +207,8 @@ pub fn expand<'b, 'a: 'b>(
         })?;
         let name = reg_name(&name.value)?;
         let i: usize = num(i);
-        for bank in arch.find_banks(RegisterType::Float(FloatType::Double)) {
-            if let Some((_, reg)) = bank.find_register(name) {
+        for file in arch.find_reg_files(RegisterType::Float(FloatType::Double)) {
+            if let Some((_, reg)) = file.find_register(name) {
                 let name = reg
                     .simple_reg
                     .and_then(|regs| regs.get(i).copied())

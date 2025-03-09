@@ -59,10 +59,10 @@ pub enum Kind {
     UnknownDirective(String),
     UnknownInstruction(String),
     UnknownLabel(String),
-    UnknownRegisterBank(RegisterType),
+    UnknownRegisterFile(RegisterType),
     UnknownRegister {
         name: String,
-        bank: RegisterType,
+        file: RegisterType,
     },
     IncorrectInstructionSyntax(Vec<(String, ParseError)>),
     DuplicateLabel(String, Option<Span>),
@@ -138,7 +138,7 @@ impl Kind {
             Self::UnknownDirective(..) => 1,
             Self::UnknownInstruction(..) => 2,
             Self::UnknownLabel(..) => 3,
-            Self::UnknownRegisterBank(..) => 4,
+            Self::UnknownRegisterFile(..) => 4,
             Self::UnknownRegister { .. } => 5,
             Self::IncorrectInstructionSyntax(..) => 6,
             Self::DuplicateLabel(..) => 7,
@@ -218,7 +218,7 @@ impl Kind {
             Self::UnknownInstruction(..) => "Unknown instruction".into(),
             Self::UnknownLabel(..) => "Unknown label".into(),
             // TODO: this error should be detected at architecture creattion
-            Self::UnknownRegisterBank(..) => "TODO: unknown register bank".into(),
+            Self::UnknownRegisterFile(..) => "TODO: unknown register file".into(),
             Self::UnknownRegister { .. } => "Unknown register".into(),
             Self::IncorrectInstructionSyntax(..) => "Incorrect syntax".into(),
             Self::DuplicateLabel(..) => "Duplicate label".into(),
@@ -292,9 +292,9 @@ impl fmt::Display for Kind {
             Self::UnknownDirective(s) => write!(f, "Directive `{s}` isn't defined"),
             Self::UnknownInstruction(s) => write!(f, "Instruction `{s}` isn't defined"),
             Self::UnknownLabel(s) => write!(f, "Label `{s}` isn't defined"),
-            Self::UnknownRegisterBank(s) => write!(f, "Register bank of type {s} isn't defined"),
-            Self::UnknownRegister { name, bank } => {
-                write!(f, "Register `{name}` isn't defined in bank type {bank}")
+            Self::UnknownRegisterFile(s) => write!(f, "Register file of type {s} isn't defined"),
+            Self::UnknownRegister { name, file } => {
+                write!(f, "Register `{name}` isn't defined in file type {file}")
             }
             Self::IncorrectInstructionSyntax(..) => write!(f, "Incorrect instruction syntax"),
             Self::DuplicateLabel(s, _) => write!(f, "Label `{s}` is already defined"),
