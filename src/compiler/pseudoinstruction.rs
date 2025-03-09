@@ -90,12 +90,40 @@ mod js {
         fn string(x: JsValue) -> js_sys::JsString;
     }
 
+    // Function
+    // NOTE: Modification of [`js_sys::Function`] to add `catch` to the constructor
+    #[wasm_bindgen]
+    extern "C" {
+        #[wasm_bindgen(extends = js_sys::Object, is_type_of = JsValue::is_function, typescript_type = "Function")]
+        #[derive(Clone, Debug, PartialEq, Eq)]
+        type Function;
+
+        /// The `Function` constructor creates a new `Function` object. Calling the
+        /// constructor directly can create functions dynamically, but suffers from
+        /// security and similar (but far less significant) performance issues
+        /// similar to `eval`. However, unlike `eval`, the `Function` constructor
+        /// allows executing code in the global scope, prompting better programming
+        /// habits and allowing for more efficient code minification.
+        ///
+        /// [MDN documentation](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function)
+        #[wasm_bindgen(constructor, catch)]
+        fn new_no_args(body: &str) -> Result<Function, JsValue>;
+
+        /// The `call()` method calls a function with a given this value and
+        /// arguments provided individually.
+        ///
+        /// [MDN documentation](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function/call)
+        #[wasm_bindgen(method, catch, js_name = call)]
+        fn call0(this: &Function, context: &JsValue) -> Result<JsValue, JsValue>;
+    }
+
     pub fn eval_expr(src: &str) -> Result<JsValue, String> {
         js_sys::eval(src).map_err(to_string)
     }
 
     pub fn eval_fn(src: &str) -> Result<JsValue, String> {
-        js_sys::Function::new_no_args(src)
+        Function::new_no_args(src)
+            .map_err(to_string)?
             .call0(&JsValue::TRUE)
             .map_err(to_string)
     }
