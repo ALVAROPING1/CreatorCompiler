@@ -529,20 +529,6 @@ impl<'a> Architecture<'a> {
         serde_json::from_str(src)
     }
 
-    /// Find the directive name that switches to the given segment
-    ///
-    /// # Parameters
-    ///
-    /// * `segment`: action to search for
-    #[must_use]
-    pub fn get_directive_segment(&self, segment: DirectiveSegment) -> &str {
-        self.directives
-            .iter()
-            .find(|&directive| directive.action == DirectiveAction::Segment(segment))
-            .expect("There should be a directive defined for all segment types")
-            .name
-    }
-
     /// Finds the action associated with the directive with the given name
     ///
     /// # Parameters
