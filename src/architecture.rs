@@ -41,23 +41,23 @@ pub struct Architecture<'a> {
     /// memory alignment, main function, passing convention, and sensitive register
     /// name
     #[serde(borrow)]
-    arch_conf: Config<'a>,
+    pub arch_conf: Config<'a>,
     /// Components (register banks) of the architecture. It's assumed that the first register of
     /// the first bank will contain the program counter
-    components: Vec<Component<'a>>,
+    pub components: Vec<Component<'a>>,
     /// Instructions allowed
-    instructions: Vec<Instruction<'a>>,
+    pub instructions: Vec<Instruction<'a>>,
     /// Pseudoinstructions allowed
-    pseudoinstructions: Vec<Pseudoinstruction<'a>>,
+    pub pseudoinstructions: Vec<Pseudoinstruction<'a>>,
     /// Directives allowed
-    directives: Vec<Directive<'a>>,
+    pub directives: Vec<Directive<'a>>,
     /// Memory layout of the architecture. Order of elements is assumed to be optionally ktext
     /// start/end and kdata start/end, followed by text start/end, data start/end, and stack
     /// start/end
-    memory_layout: MemoryLayout,
+    pub memory_layout: MemoryLayout,
     /// Interrupt configuration
     #[serde(default)]
-    interrupts: Option<Interrupts<'a>>,
+    pub interrupts: Option<Interrupts<'a>>,
 }
 
 /// Architecture metadata attributes
@@ -65,23 +65,23 @@ pub struct Architecture<'a> {
 #[serde(try_from = "[json::Config<'a>; 9]")]
 pub struct Config<'a> {
     /// Name of the architecture
-    name: &'a str,
+    pub name: &'a str,
     /// Word size in bits
-    word_size: usize,
+    pub word_size: usize,
     /// Description of the architecture
-    description: &'a str,
+    pub description: &'a str,
     /// Storage format of the architecture (big/little endian)
-    data_format: DataFormat,
+    pub data_format: DataFormat,
     /// Whether to enable memory alignment
-    memory_alignment: bool,
+    pub memory_alignment: bool,
     /// Name of the `main` function of the program
-    main_function: &'a str,
+    pub main_function: &'a str,
     /// Whether to enable function parameter passing convention checks
-    passing_convention: bool,
-    /// Whether the register names should be case sensitive (true) or not
-    sensitive_register_name: bool,
+    pub passing_convention: bool,
+    /// Whether the register names should be case sensitive (`true`) or not (`false`)
+    pub sensitive_register_name: bool,
     /// String to use as line comment prefix
-    comment_prefix: &'a str,
+    pub comment_prefix: &'a str,
 }
 utils::schema_from!(Config<'a>, [json::Config<'a>; 9]);
 
@@ -97,15 +97,15 @@ pub enum DataFormat {
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
 pub struct Component<'a> {
     /// Name of the register bank
-    name: &'a str,
+    pub name: &'a str,
     /// Type of the registers
     r#type: ComponentType,
     /// Whether the registers have double the word size
-    pub double_precision: bool,
+    double_precision: bool,
     /// If the registers have double the word size, how this size is achieved
-    pub double_precision_type: Option<PrecisionType>,
+    double_precision_type: Option<PrecisionType>,
     /// Registers in this bank
-    elements: Vec<Register<'a>>,
+    pub elements: Vec<Register<'a>>,
 }
 
 /// Types of register banks allowed
@@ -148,22 +148,22 @@ pub enum PrecisionType {
 pub struct Register<'a> {
     /// List of aliases
     #[serde(borrow)]
-    name: Vec<&'a str>,
+    pub name: Vec<&'a str>,
     /// Size
     #[serde(deserialize_with = "utils::from_str")]
     #[schemars(with = "utils::StringOrT<Integer>")]
-    nbits: Integer,
+    pub nbits: Integer,
     /// Current value of the register
     #[serde(deserialize_with = "utils::from_str")]
     #[schemars(with = "utils::StringOrT<Number>")]
-    value: Number,
+    pub value: Number,
     /// Default value of the register
     #[serde(deserialize_with = "utils::optional_from_str")]
     #[serde(default)]
     #[schemars(with = "Option<utils::StringOrT<Number>>")]
-    default_value: Option<Number>,
+    pub default_value: Option<Number>,
     /// Properties of this register
-    properties: Vec<RegisterProperty>,
+    pub properties: Vec<RegisterProperty>,
     /// Smaller registers that make up this register when the double precision mode is `Linked`
     pub simple_reg: Option<[&'a str; 2]>,
 }
@@ -202,7 +202,7 @@ pub struct Instruction<'a> {
     /// Name of the instruction
     pub name: &'a str,
     /// Type of the instruction
-    r#type: InstructionType,
+    pub r#type: InstructionType,
     /// Syntax of the instruction
     #[serde(flatten)]
     pub syntax: InstructionSyntax<'a, BitRange>,
@@ -211,17 +211,17 @@ pub struct Instruction<'a> {
     /// Size of the instruction
     pub nwords: usize,
     /// Execution time of the instruction
-    clk_cycles: Option<Integer>,
+    pub clk_cycles: Option<Integer>,
     /// Code to execute for the instruction
     // Can't be a reference because there might be escape sequences, which require
     // modifying the data on deserialization
     pub definition: String,
     /// Determines whether the field `i` is separated in the resulting binary instruction
-    separated: Option<Vec<bool>>,
+    pub separated: Option<Vec<bool>>,
     /// Help information of the instruction
-    help: &'a str,
+    pub help: &'a str,
     /// Properties of the instruction
-    properties: Option<Vec<InstructionProperties>>,
+    pub properties: Option<Vec<InstructionProperties>>,
 }
 
 /// Allowed instruction types
@@ -352,9 +352,9 @@ pub struct Pseudoinstruction<'a> {
     // modifying the data on deserialization
     pub definition: String,
     /// Help information of the instruction
-    help: &'a str,
+    pub help: &'a str,
     /// Properties of the instruction
-    properties: Option<Vec<InstructionProperties>>,
+    pub properties: Option<Vec<InstructionProperties>>,
 }
 
 /// Directive specification
@@ -486,23 +486,23 @@ utils::schema_from!(MemoryLayout, Vec<Pair<json::MemoryLayoutKeys, BaseN<16>>>);
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Interrupts<'a> {
     /// Controls whether interrupts are enabled by default (`true`) or not (`false`)
-    enabled: bool,
+    pub enabled: bool,
     /// JS code to be executed in order to check whether an interrupt happened.
     /// It must return an `InterruptType` (if an interrupt happened) or `null` (if it didn't)
-    interrupt_check: &'a str,
+    pub interrupt_check: &'a str,
     /// JS code to be executed in order to check whether interrupts are enabled
-    enable_check: &'a str,
+    pub enable_check: &'a str,
     /// JS code to be executed in order to enable interrupts
-    interrupt_enable: &'a str,
+    pub interrupt_enable: &'a str,
     /// JS code to be executed in order to disable interrupts
-    interrupt_disable: &'a str,
+    pub interrupt_disable: &'a str,
     /// JS code to be executed in order to obtain the interrupt handler address
-    get_handler_addr: &'a str,
+    pub get_handler_addr: &'a str,
     /// JS code to be executed in order to clear an interrupt
-    clear_interrupt: &'a str,
+    pub clear_interrupt: &'a str,
     /// JS arrow (lambda) function to be executed in order to set an interrupt given an interrupt
     /// type
-    set_interrupt_cause: &'a str,
+    pub set_interrupt_cause: &'a str,
 }
 
 impl<'a> Architecture<'a> {
