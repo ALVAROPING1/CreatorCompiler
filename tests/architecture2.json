@@ -68,7 +68,7 @@
       "clk_cycles": 1,
       "fields": [
         {
-          "name": "nop",
+          "name": "float",
           "type": "co",
           "startbit": 6,
           "stopbit": 0
@@ -79,6 +79,90 @@
           "startbit": 31,
           "stopbit": 28,
           "valueField": "1111"
+        }
+      ],
+      "definition": "",
+      "separated": [],
+      "help": ""
+    },
+    {
+      "name": "ctrl",
+      "type": "Arithmetic floating point",
+      "signature_definition": "F0 F1",
+      "signature": "ctrl,Ctrl-Reg",
+      "signatureRaw": "ctrl reg",
+      "co": "1111111",
+      "cop": "0000000000",
+      "nwords": 1,
+      "clk_cycles": 1,
+      "fields": [
+        {
+          "name": "ctrl",
+          "type": "co",
+          "startbit": 6,
+          "stopbit": 0
+        },
+        {
+          "name": "reg",
+          "type": "Ctrl-Reg",
+          "startbit": 31,
+          "stopbit": 28
+        }
+      ],
+      "definition": "",
+      "separated": [],
+      "help": ""
+    },
+    {
+      "name": "float",
+      "type": "Arithmetic floating point",
+      "signature_definition": "F0 F1",
+      "signature": "float,SFP-Reg",
+      "signatureRaw": "float reg",
+      "co": "1111111",
+      "cop": "0000000000",
+      "nwords": 1,
+      "clk_cycles": 1,
+      "fields": [
+        {
+          "name": "float",
+          "type": "co",
+          "startbit": 6,
+          "stopbit": 0
+        },
+        {
+          "name": "reg",
+          "type": "SFP-Reg",
+          "startbit": 31,
+          "stopbit": 28
+        }
+      ],
+      "definition": "",
+      "separated": [],
+      "help": ""
+    },
+    {
+      "name": "double",
+      "type": "Arithmetic floating point",
+      "signature_definition": "F0 F1",
+      "signature": "double,DFP-Reg",
+      "signatureRaw": "double reg",
+      "co": "1111111",
+      "cop": "0000000000",
+      "nwords": 1,
+      "clk_cycles": 1,
+      "fields": [
+        {
+          "name": "double",
+          "type": "co",
+          "startbit": 6,
+          "stopbit": 0
+        },
+        {
+          "name": "reg",
+          "type": "DFP-Reg",
+          "startbit": 31,
+          "stopbit": 28
         }
       ],
       "definition": "",

@@ -1759,6 +1759,29 @@ mod test {
     }
 
     #[test]
+    fn unknown_register_file() {
+        let arch = include_str!("../tests/architecture2.json");
+        assert_eq!(
+            compile_arch(".text\nmain: ctrl pc", arch),
+            Err(ErrorKind::UnknownRegisterFile(RegisterType::Ctrl).add_span(&(17..19))),
+        );
+        assert_eq!(
+            compile_arch(".text\nmain: float ft0", arch),
+            Err(
+                ErrorKind::UnknownRegisterFile(RegisterType::Float(FloatType::Float))
+                    .add_span(&(18..21))
+            ),
+        );
+        assert_eq!(
+            compile_arch(".text\nmain: double ft0", arch),
+            Err(
+                ErrorKind::UnknownRegisterFile(RegisterType::Float(FloatType::Double))
+                    .add_span(&(19..22))
+            ),
+        );
+    }
+
+    #[test]
     fn unknown_register() {
         assert_eq!(
             compile(".text\nmain: reg x0, x0, ft1, ft2"),

@@ -217,8 +217,7 @@ impl Kind {
             Self::UnknownDirective(..) => "Unknown directive".into(),
             Self::UnknownInstruction(..) => "Unknown instruction".into(),
             Self::UnknownLabel(..) => "Unknown label".into(),
-            // TODO: this error should be detected at architecture creattion
-            Self::UnknownRegisterFile(..) => "TODO: unknown register file".into(),
+            Self::UnknownRegisterFile(..) => "Unknown register file".into(),
             Self::UnknownRegister { .. } => "Unknown register".into(),
             Self::IncorrectInstructionSyntax(..) => "Incorrect syntax".into(),
             Self::DuplicateLabel(..) => "Duplicate label".into(),
@@ -292,7 +291,7 @@ impl fmt::Display for Kind {
             Self::UnknownDirective(s) => write!(f, "Directive `{s}` isn't defined"),
             Self::UnknownInstruction(s) => write!(f, "Instruction `{s}` isn't defined"),
             Self::UnknownLabel(s) => write!(f, "Label `{s}` isn't defined"),
-            Self::UnknownRegisterFile(s) => write!(f, "Register file of type {s} isn't defined"),
+            Self::UnknownRegisterFile(s) => write!(f, "Register file of type `{s}` isn't defined"),
             Self::UnknownRegister { name, file } => {
                 write!(f, "Register `{name}` isn't defined in file type {file}")
             }
