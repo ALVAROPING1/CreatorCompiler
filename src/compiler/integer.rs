@@ -49,7 +49,7 @@ impl Integer {
     ///
     /// # Errors
     ///
-    /// Returns a [`ErrorKind::IntegerTooBig`] if the value doesn't fit in the specified size
+    /// Returns a [`ErrorKind::IntegerOutOfRange`] if the value doesn't fit in the specified size
     pub fn build(
         value: BigInt,
         size: usize,
