@@ -172,8 +172,15 @@ fn parse_with<T>(
     comment_prefix: &str,
     src: &str,
 ) -> Result<T, ParseError> {
-    let tokens = lexer::lexer(comment_prefix).parse(src)?; // Tokenize the input
-    let len = src.chars().count(); // Count the amount of chars in the input to calculate the end span
+    let len = src.len();
+    // Lexer
+    // Create `Stream` manually to use byte spans instead of the default character spans
+    let src_iter = src.char_indices().map(|(i, c)| (c, i..i + c.len_utf8()));
+    #[allow(clippy::range_plus_one)] // Chumsky requires an inclusive range to avoid type errors
+    let stream = chumsky::stream::Stream::from_iter(len..len + 1, src_iter);
+    let tokens = lexer::lexer(comment_prefix).parse(stream)?; // Tokenize the input
+
+    // Parser
     #[allow(clippy::range_plus_one)] // Chumsky requires an inclusive range to avoid type errors
     let stream = Stream::from_iter(len..len + 1, tokens.into_iter());
     Ok(parser.parse(stream)?)
