@@ -116,10 +116,7 @@ impl Table {
                 e.key().clone(),
                 e.get().definition.clone(),
             )
-            .add_span(
-                data.definition
-                    .expect("New labels should always have a definition"),
-            )),
+            .add_span(data.definition.unwrap_or_default())),
         }
     }
 
