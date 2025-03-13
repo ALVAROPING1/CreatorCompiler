@@ -684,7 +684,7 @@ fn compile_instructions<'a>(
         Section::new("KernelInstructions", arch.kernel_code_section()),
         Vec::with_capacity(size),
     );
-    user.0.try_reserve(reserved_offset).add_span(&(0..0))?;
+    user.0.try_reserve(reserved_offset).add_span(0..0)?;
 
     for mut instruction in instructions {
         let (name, span) = instruction.value.0.name;
@@ -1690,7 +1690,7 @@ mod test {
                 section: Some((DirectiveSegment::Data, 0..5)),
                 found: DirectiveSegment::Code,
             }
-            .add_span(&(6..9))),
+            .add_span(6..9)),
         );
         assert_eq!(
             compile(".kdata\nnop\n.text\nmain: nop"),
@@ -1698,7 +1698,7 @@ mod test {
                 section: Some((DirectiveSegment::KernelData, 0..6)),
                 found: DirectiveSegment::Code,
             }
-            .add_span(&(7..10))),
+            .add_span(7..10)),
         );
         assert_eq!(
             compile(".text\nmain: nop\n.byte 1"),
@@ -1706,7 +1706,7 @@ mod test {
                 section: Some((DirectiveSegment::Code, 0..5)),
                 found: DirectiveSegment::Data,
             }
-            .add_span(&(16..23))),
+            .add_span(16..23)),
         );
         assert_eq!(
             compile(".ktext\nmain: nop\n.byte 1"),
@@ -1714,7 +1714,7 @@ mod test {
                 section: Some((DirectiveSegment::KernelCode, 0..6)),
                 found: DirectiveSegment::Data,
             }
-            .add_span(&(17..24))),
+            .add_span(17..24)),
         );
         assert_eq!(
             compile("nop\n.text\nmain: nop"),
@@ -1722,7 +1722,7 @@ mod test {
                 section: None,
                 found: DirectiveSegment::Code,
             }
-            .add_span(&(0..3))),
+            .add_span(0..3)),
         );
         assert_eq!(
             compile(".byte 1\n.text\nmain: nop"),
@@ -1730,7 +1730,7 @@ mod test {
                 section: None,
                 found: DirectiveSegment::Data,
             }
-            .add_span(&(0..7))),
+            .add_span(0..7)),
         );
     }
 
@@ -1738,7 +1738,7 @@ mod test {
     fn unknown_directive() {
         assert_eq!(
             compile(".test\n.text\nmain: nop"),
-            Err(ErrorKind::UnknownDirective(".test".into()).add_span(&(0..5))),
+            Err(ErrorKind::UnknownDirective(".test".into()).add_span(0..5)),
         );
     }
 
@@ -1746,7 +1746,7 @@ mod test {
     fn unknown_instruction() {
         assert_eq!(
             compile(".text\nmain: test"),
-            Err(ErrorKind::UnknownInstruction("test".into()).add_span(&(12..16))),
+            Err(ErrorKind::UnknownInstruction("test".into()).add_span(12..16)),
         );
     }
 
@@ -1754,7 +1754,7 @@ mod test {
     fn unknown_label() {
         assert_eq!(
             compile(".text\nmain: imm 0, 0, test"),
-            Err(ErrorKind::UnknownLabel("test".into()).add_span(&(22..26))),
+            Err(ErrorKind::UnknownLabel("test".into()).add_span(22..26)),
         );
     }
 
@@ -1763,20 +1763,20 @@ mod test {
         let arch = include_str!("../tests/architecture2.json");
         assert_eq!(
             compile_arch(".text\nmain: ctrl pc", arch),
-            Err(ErrorKind::UnknownRegisterFile(RegisterType::Ctrl).add_span(&(17..19))),
+            Err(ErrorKind::UnknownRegisterFile(RegisterType::Ctrl).add_span(17..19)),
         );
         assert_eq!(
             compile_arch(".text\nmain: float ft0", arch),
             Err(
                 ErrorKind::UnknownRegisterFile(RegisterType::Float(FloatType::Float))
-                    .add_span(&(18..21))
+                    .add_span(18..21)
             ),
         );
         assert_eq!(
             compile_arch(".text\nmain: double ft0", arch),
             Err(
                 ErrorKind::UnknownRegisterFile(RegisterType::Float(FloatType::Double))
-                    .add_span(&(19..22))
+                    .add_span(19..22)
             ),
         );
     }
@@ -1789,7 +1789,7 @@ mod test {
                 name: "x0".into(),
                 file: RegisterType::Ctrl,
             }
-            .add_span(&(16..18))),
+            .add_span(16..18)),
         );
         assert_eq!(
             compile(".text\nmain: reg 2, x0, ft1, ft2"),
@@ -1797,7 +1797,7 @@ mod test {
                 name: "2".into(),
                 file: RegisterType::Ctrl,
             }
-            .add_span(&(16..17))),
+            .add_span(16..17)),
         );
         // Register names should be case sensitive
         assert_eq!(
@@ -1806,7 +1806,7 @@ mod test {
                 name: "pc".into(),
                 file: RegisterType::Ctrl,
             }
-            .add_span(&(16..18))),
+            .add_span(16..18)),
         );
         assert_eq!(
             compile(".text\nmain: reg PC, PC, ft1, ft2"),
@@ -1814,7 +1814,7 @@ mod test {
                 name: "PC".into(),
                 file: RegisterType::Int,
             }
-            .add_span(&(20..22))),
+            .add_span(20..22)),
         );
         assert_eq!(
             compile(".text\nmain: reg PC, x0, x0, ft2"),
@@ -1822,7 +1822,7 @@ mod test {
                 name: "x0".into(),
                 file: RegisterType::Float(FloatType::Float),
             }
-            .add_span(&(24..26))),
+            .add_span(24..26)),
         );
         assert_eq!(
             compile(".text\nmain: reg PC, x0, FD1, ft2"),
@@ -1830,7 +1830,7 @@ mod test {
                 name: "FD1".into(),
                 file: RegisterType::Float(FloatType::Float),
             }
-            .add_span(&(24..27))),
+            .add_span(24..27)),
         );
         assert_eq!(
             compile(".text\nmain: reg PC, x0, ft1, fs2"),
@@ -1838,7 +1838,7 @@ mod test {
                 name: "fs2".into(),
                 file: RegisterType::Float(FloatType::Double),
             }
-            .add_span(&(29..32))),
+            .add_span(29..32)),
         );
     }
 
@@ -1850,7 +1850,7 @@ mod test {
                 expected: ArgumentNumber::new(0, false),
                 found: 1
             }
-            .add_span(&(6..7))),
+            .add_span(6..7)),
         );
     }
 
@@ -1863,7 +1863,7 @@ mod test {
                     expected: ArgumentNumber::new(1, false),
                     found: 0
                 }
-                .add_span(&(13..14))),
+                .add_span(13..14)),
                 "{directive}"
             );
             assert_eq!(
@@ -1872,7 +1872,7 @@ mod test {
                     expected: ArgumentNumber::new(1, false),
                     found: 2
                 }
-                .add_span(&(14..18))),
+                .add_span(14..18)),
                 "{directive}"
             );
         }
@@ -1883,7 +1883,7 @@ mod test {
         for directive in ["zero  ", "align ", "balign"] {
             assert_eq!(
                 compile(&format!(".data\n.{directive} -1\n.text\nmain: nop")),
-                Err(ErrorKind::UnallowedNegativeValue((-1).into()).add_span(&(14..16))),
+                Err(ErrorKind::UnallowedNegativeValue((-1).into()).add_span(14..16)),
                 "{directive}"
             );
         }
@@ -1900,18 +1900,18 @@ mod test {
                     expected: ArgumentType::Expression,
                     found: ArgumentType::String
                 }
-                .add_span(&(14..17))),
+                .add_span(14..17)),
                 "{directive}"
             );
             assert_eq!(
                 compile(&format!(".data\n.{directive} 1.0\n.text\nmain: nop")),
-                Err(ErrorKind::UnallowedFloat.add_span(&(14..17))),
+                Err(ErrorKind::UnallowedFloat.add_span(14..17)),
                 "{directive}"
             );
         }
         assert_eq!(
             compile(".text\nmain: imm 0, 0, 1.0"),
-            Err(ErrorKind::UnallowedFloat.add_span(&(22..25))),
+            Err(ErrorKind::UnallowedFloat.add_span(22..25)),
         );
         assert_eq!(
             compile(".text\nmain: reg PC, 0+2, ft1, ft2"),
@@ -1919,7 +1919,7 @@ mod test {
                 expected: ArgumentType::RegisterName,
                 found: ArgumentType::Expression,
             }
-            .add_span(&(20..23))),
+            .add_span(20..23)),
         );
     }
 
@@ -1932,7 +1932,7 @@ mod test {
                     expected: ArgumentNumber::new(1, true),
                     found: 0
                 }
-                .add_span(&(13..14))),
+                .add_span(13..14)),
                 "{directive}"
             );
         }
@@ -1954,7 +1954,7 @@ mod test {
                     alignment: size.into(),
                     word_size: 4,
                 }
-                .add_span(&(22..23))),
+                .add_span(22..23)),
                 "{directive}",
             );
         }
@@ -1967,39 +1967,36 @@ mod test {
         // Data directives
         assert_eq!(
             compile(".data\n.byte 256\n.text\nmain: nop"),
-            Err(ErrorKind::IntegerOutOfRange(256.into(), range(-128..256)).add_span(&(12..15))),
+            Err(ErrorKind::IntegerOutOfRange(256.into(), range(-128..256)).add_span(12..15)),
         );
         assert_eq!(
             compile(".data\n.byte -129\n.text\nmain: nop"),
-            Err(ErrorKind::IntegerOutOfRange((-129).into(), range(-128..256)).add_span(&(12..16))),
+            Err(ErrorKind::IntegerOutOfRange((-129).into(), range(-128..256)).add_span(12..16)),
         );
         assert_eq!(
             compile(".data\n.half 65536\n.text\nmain: nop"),
-            Err(
-                ErrorKind::IntegerOutOfRange(65536.into(), range(-32768..65536))
-                    .add_span(&(12..17))
-            ),
+            Err(ErrorKind::IntegerOutOfRange(65536.into(), range(-32768..65536)).add_span(12..17)),
         );
         // Instruction arguments
         assert_eq!(
             compile(".text\nmain: imm 8, 0, 0"),
-            Err(ErrorKind::IntegerOutOfRange(8.into(), range(-8..8)).add_span(&(16..17))),
+            Err(ErrorKind::IntegerOutOfRange(8.into(), range(-8..8)).add_span(16..17)),
         );
         assert_eq!(
             compile(".text\nmain: imm -9, 0, 0"),
-            Err(ErrorKind::IntegerOutOfRange((-9).into(), range(-8..8)).add_span(&(16..18))),
+            Err(ErrorKind::IntegerOutOfRange((-9).into(), range(-8..8)).add_span(16..18)),
         );
         assert_eq!(
             compile(".text\nmain: imm 0, 256, 0"),
-            Err(ErrorKind::IntegerOutOfRange(256.into(), range(0..256)).add_span(&(19..22))),
+            Err(ErrorKind::IntegerOutOfRange(256.into(), range(0..256)).add_span(19..22)),
         );
         assert_eq!(
             compile(".text\nmain: imm 0, -1, 0"),
-            Err(ErrorKind::IntegerOutOfRange((-1).into(), range(0..256)).add_span(&(19..21))),
+            Err(ErrorKind::IntegerOutOfRange((-1).into(), range(0..256)).add_span(19..21)),
         );
         assert_eq!(
             compile(".text\nmain: imm 0, 0, 20"),
-            Err(ErrorKind::IntegerOutOfRange(20.into(), range(0..16)).add_span(&(22..24))),
+            Err(ErrorKind::IntegerOutOfRange(20.into(), range(0..16)).add_span(22..24)),
         );
     }
 
@@ -2011,7 +2008,7 @@ mod test {
                 expected: ArgumentType::Expression,
                 found: ArgumentType::String
             }
-            .add_span(&(13..16))),
+            .add_span(13..16)),
         );
     }
 
@@ -2023,7 +2020,7 @@ mod test {
                 expected: ArgumentType::String,
                 found: ArgumentType::Expression
             }
-            .add_span(&(14..15))),
+            .add_span(14..15)),
         );
     }
 
@@ -2035,7 +2032,7 @@ mod test {
                 expected: ArgumentType::Identifier,
                 found: ArgumentType::String
             }
-            .add_span(&(8..14))),
+            .add_span(8..14)),
         );
         assert_eq!(
             compile(".global 123\n.text\nmain: nop"),
@@ -2043,7 +2040,7 @@ mod test {
                 expected: ArgumentType::Identifier,
                 found: ArgumentType::Expression
             }
-            .add_span(&(8..11))),
+            .add_span(8..11)),
         );
     }
 
@@ -2073,17 +2070,17 @@ mod test {
     fn expr_eval() {
         assert_eq!(
             compile(".data\n.byte 1/0\n.text\nmain: nop"),
-            Err(ErrorKind::DivisionBy0.add_span(&(14..15))),
+            Err(ErrorKind::DivisionBy0.add_span(14..15)),
         );
         assert_eq!(
             compile(".text\nmain: imm 0, 0, 1/0"),
-            Err(ErrorKind::DivisionBy0.add_span(&(24..25))),
+            Err(ErrorKind::DivisionBy0.add_span(24..25)),
         );
         assert_eq!(
             compile(".data\n.float ~1.0\n.text\nmain: nop"),
             Err(
                 ErrorKind::UnallowedFloatOperation(error::OperationKind::Complement)
-                    .add_span(&(13..14))
+                    .add_span(13..14)
             ),
         );
         for (op, c) in [
@@ -2093,7 +2090,7 @@ mod test {
         ] {
             assert_eq!(
                 compile(&format!(".data\n.float 1.0 {c} 2.0\n.text\nmain: nop")),
-                Err(ErrorKind::UnallowedFloatOperation(op).add_span(&(17..18))),
+                Err(ErrorKind::UnallowedFloatOperation(op).add_span(17..18)),
             );
         }
     }
@@ -2102,11 +2099,11 @@ mod test {
     fn missing_main() {
         assert_eq!(
             compile(".text\nnop"),
-            Err(ErrorKind::MissingMainLabel("main".into()).add_span(&(9..10))),
+            Err(ErrorKind::MissingMainLabel("main".into()).add_span(9..10)),
         );
         assert_eq!(
             compile(".text\nnop\n.data"),
-            Err(ErrorKind::MissingMainLabel("main".into()).add_span(&(9..10))),
+            Err(ErrorKind::MissingMainLabel("main".into()).add_span(9..10)),
         );
     }
 
@@ -2114,15 +2111,15 @@ mod test {
     fn main_outside_code() {
         assert_eq!(
             compile(".data\nmain: .byte 1\n.text\nnop"),
-            Err(ErrorKind::MainOutsideCode("main".into()).add_span(&(6..11))),
+            Err(ErrorKind::MainOutsideCode("main".into()).add_span(6..11)),
         );
         assert_eq!(
             compile(".kdata\nmain: .byte 1\n.text\nnop"),
-            Err(ErrorKind::MainOutsideCode("main".into()).add_span(&(7..12))),
+            Err(ErrorKind::MainOutsideCode("main".into()).add_span(7..12)),
         );
         assert_eq!(
             compile(".ktext\nmain: nop\n.text\nnop"),
-            Err(ErrorKind::MainOutsideCode("main".into()).add_span(&(7..12))),
+            Err(ErrorKind::MainOutsideCode("main".into()).add_span(7..12)),
         );
     }
 
@@ -2130,11 +2127,11 @@ mod test {
     fn duplicate_label() {
         assert_eq!(
             compile(".text\nmain: nop\nmain: nop"),
-            Err(ErrorKind::DuplicateLabel("main".into(), Some(6..11)).add_span(&(16..21))),
+            Err(ErrorKind::DuplicateLabel("main".into(), Some(6..11)).add_span(16..21)),
         );
         assert_eq!(
             compile(".text\nmain: nop\nlabel:\nlabel: nop"),
-            Err(ErrorKind::DuplicateLabel("label".into(), Some(16..22)).add_span(&(23..29))),
+            Err(ErrorKind::DuplicateLabel("label".into(), Some(16..22)).add_span(23..29)),
         );
     }
 
@@ -2143,11 +2140,11 @@ mod test {
         // Instructions
         assert_eq!(
             compile(".text\nmain: nop\nnop\nnop\nnop\nimm 0, 0, 0"),
-            Err(ErrorKind::MemorySectionFull("Instructions").add_span(&(28..39))),
+            Err(ErrorKind::MemorySectionFull("Instructions").add_span(28..39)),
         );
         assert_eq!(
             compile(".text\nmain: nop\nnop\nnop\nnop2"),
-            Err(ErrorKind::MemorySectionFull("Instructions").add_span(&(24..28))),
+            Err(ErrorKind::MemorySectionFull("Instructions").add_span(24..28)),
         );
         // Data directives
         for (directive, span) in [
@@ -2172,11 +2169,11 @@ mod test {
         let compile = |src| compile_arch(src, include_str!("../tests/architecture_no_kernel.json"));
         assert_eq!(
             compile(".ktext\nfoo: nop\n.text\nmain: nop"),
-            Err(ErrorKind::MemorySectionFull("KernelInstructions").add_span(&(12..15))),
+            Err(ErrorKind::MemorySectionFull("KernelInstructions").add_span(12..15)),
         );
         assert_eq!(
             compile(".kdata\n.zero 1\n.text\nmain: nop"),
-            Err(ErrorKind::MemorySectionFull("KernelData").add_span(&(13..14))),
+            Err(ErrorKind::MemorySectionFull("KernelData").add_span(13..14)),
         );
     }
 
@@ -2228,12 +2225,12 @@ mod test {
     fn main_in_library() {
         assert_eq!(
             compile_with(".text\nmain: nop", &BigUint::ZERO, HashMap::new(), true),
-            Err(ErrorKind::MainInLibrary("main".into()).add_span(&(6..11)))
+            Err(ErrorKind::MainInLibrary("main".into()).add_span(6..11))
         );
         let labels = HashMap::from([("main".into(), 4u8.into())]);
         assert_eq!(
             compile_with(".text\ntest: nop", &BigUint::ZERO, labels, true),
-            Err(ErrorKind::MainInLibrary("main".into()).add_span(&(0..0)))
+            Err(ErrorKind::MainInLibrary("main".into()).add_span(0..0))
         );
     }
 }

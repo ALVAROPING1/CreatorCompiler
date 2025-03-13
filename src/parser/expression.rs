@@ -350,28 +350,28 @@ mod test {
             (
                 "a",
                 Expr::Identifier(("a".into(), 0..1)),
-                (Ok(5), Err(ErrorKind::UnallowedLabel.add_span(&(0..1)))),
+                (Ok(5), Err(ErrorKind::UnallowedLabel.add_span(0..1))),
             ),
             (
                 "test",
                 Expr::Identifier(("test".into(), 0..4)),
                 (
-                    Err(ErrorKind::UnknownLabel("test".into()).add_span(&(0..4))),
-                    Err(ErrorKind::UnallowedLabel.add_span(&(0..4))),
+                    Err(ErrorKind::UnknownLabel("test".into()).add_span(0..4)),
+                    Err(ErrorKind::UnallowedLabel.add_span(0..4)),
                 ),
             ),
             (
                 ".test",
                 Expr::Identifier((".test".into(), 0..5)),
                 (
-                    Err(ErrorKind::UnknownLabel(".test".into()).add_span(&(0..5))),
-                    Err(ErrorKind::UnallowedLabel.add_span(&(0..5))),
+                    Err(ErrorKind::UnknownLabel(".test".into()).add_span(0..5)),
+                    Err(ErrorKind::UnallowedLabel.add_span(0..5)),
                 ),
             ),
             (
                 "1.0",
                 Expr::Float((1.0, 0..3)),
-                (Err(ErrorKind::UnallowedFloat.add_span(&(0..3))), Ok(1.0)),
+                (Err(ErrorKind::UnallowedFloat.add_span(0..3)), Ok(1.0)),
             ),
         ]);
     }
@@ -450,12 +450,12 @@ mod test {
             (
                 "2.5 + 7",
                 bin_op((BinaryOp::Add, 4..5), float(2.5, 0..3), int(7, 6..7)),
-                (Err(ErrorKind::UnallowedFloat.add_span(&(0..3))), Ok(9.5)),
+                (Err(ErrorKind::UnallowedFloat.add_span(0..3)), Ok(9.5)),
             ),
             (
                 "2.5 + 7.25",
                 bin_op((BinaryOp::Add, 4..5), float(2.5, 0..3), float(7.25, 6..10)),
-                (Err(ErrorKind::UnallowedFloat.add_span(&(0..3))), Ok(9.75)),
+                (Err(ErrorKind::UnallowedFloat.add_span(0..3)), Ok(9.75)),
             ),
         ]);
     }
@@ -479,7 +479,7 @@ mod test {
                     (Expr::Identifier(("d".into(), 0..1)), 0..1),
                     (Expr::Identifier(("a".into(), 4..5)), 4..5),
                 ),
-                (Ok(3), Err(ErrorKind::UnallowedLabel.add_span(&(0..1)))),
+                (Ok(3), Err(ErrorKind::UnallowedLabel.add_span(0..1))),
             ),
         ]);
     }
@@ -524,7 +524,7 @@ mod test {
                 "10 / 0",
                 bin_op((BinaryOp::Div, 3..4), int(10, 0..2), int(0, 5..6)),
                 (
-                    Err(ErrorKind::DivisionBy0.add_span(&(5..6))),
+                    Err(ErrorKind::DivisionBy0.add_span(5..6)),
                     Ok(f64::INFINITY),
                 ),
             ),

@@ -499,6 +499,6 @@ pub(crate) trait SpannedErr {
 impl<T> SpannedErr for Result<T, Kind> {
     type T = T;
     fn add_span(self, span: impl Into<SpanList>) -> Result<T, Error> {
-        self.map_err(|e| e.add_span(span.into()))
+        self.map_err(|e| e.add_span(span))
     }
 }

@@ -117,8 +117,7 @@ impl Table {
                 e.get().definition.clone(),
             )
             .add_span(
-                data
-                    .definition
+                data.definition
                     .expect("New labels should always have a definition"),
             )),
         }
@@ -170,11 +169,11 @@ mod test {
         );
         assert_eq!(
             table.insert("test".to_string(), Label::new(4u8.into(), 13..17)),
-            Err(ErrorKind::DuplicateLabel("test".to_string(), Some(0..2)).add_span(&(13..17)))
+            Err(ErrorKind::DuplicateLabel("test".to_string(), Some(0..2)).add_span(13..17))
         );
         assert_eq!(
             table.insert("test2".to_string(), Label::new(128u8.into(), 20..22)),
-            Err(ErrorKind::DuplicateLabel("test2".to_string(), Some(6..10)).add_span(&(20..22)))
+            Err(ErrorKind::DuplicateLabel("test2".to_string(), Some(6..10)).add_span(20..22))
         );
     }
 
