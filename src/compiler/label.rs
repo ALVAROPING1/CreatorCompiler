@@ -23,7 +23,7 @@
 use num_bigint::BigUint;
 use std::collections::{hash_map::Entry, HashMap};
 
-use super::{CompileError, ErrorKind};
+use super::{ErrorData, ErrorKind};
 use crate::span::Span;
 
 /// Assembly label semantic data
@@ -106,7 +106,7 @@ impl Table {
     /// # Errors
     ///
     /// Errors with [`ErrorKind::DuplicateLabel`] if the label has already been inserted
-    pub fn insert(&mut self, label: String, data: Label) -> Result<(), CompileError> {
+    pub fn insert(&mut self, label: String, data: Label) -> Result<(), ErrorData> {
         match self.0.entry(label) {
             Entry::Vacant(e) => {
                 e.insert(data);
@@ -128,6 +128,11 @@ impl Table {
     #[must_use]
     pub fn get(&self, label: &str) -> Option<&Label> {
         self.0.get(label)
+    }
+
+    /// An iterator visiting all key-value pairs in arbitrary order
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &Label)> {
+        self.0.iter()
     }
 }
 

@@ -29,7 +29,7 @@ use num_traits::cast::ToPrimitive;
 
 use super::{Parser, Span, Spanned, Token};
 use crate::compiler::error::{OperationKind, SpannedErr};
-use crate::compiler::{CompileError, ErrorKind};
+use crate::compiler::{ErrorData, ErrorKind};
 
 /// Allowed unary operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,7 +91,7 @@ impl Expr {
     pub fn int(
         &self,
         ident_eval: impl Copy + Fn(&str) -> Result<BigInt, ErrorKind>,
-    ) -> Result<BigInt, CompileError> {
+    ) -> Result<BigInt, ErrorData> {
         Ok(match self {
             Self::Integer(value) => value.clone().into(),
             Self::Float((_, span)) => return Err(ErrorKind::UnallowedFloat.add_span(span)),
@@ -128,7 +128,7 @@ impl Expr {
     ///
     /// Returns a [`ErrorKind::UnallowedFloatOperation`] if an operation that's undefined with
     /// floats is attempted
-    pub fn float(&self) -> Result<f64, CompileError> {
+    pub fn float(&self) -> Result<f64, ErrorData> {
         let err = |op, s| ErrorKind::UnallowedFloatOperation(op).add_span(s);
         Ok(match self {
             Self::Integer(value) => biguint_to_f64(value),
@@ -301,7 +301,7 @@ mod test {
         super::super::parse_with(super::parser(), "#", code).map_err(|_| ())
     }
 
-    type ExprResult<T> = (Result<T, CompileError>, Result<f64, CompileError>);
+    type ExprResult<T> = (Result<T, ErrorData>, Result<f64, ErrorData>);
 
     fn test_bigint(test_cases: impl IntoIterator<Item = (&'static str, Expr, ExprResult<BigInt>)>) {
         let ident_eval = |ident: &str| {
@@ -327,7 +327,7 @@ mod test {
         );
     }
 
-    fn float_op(op: OperationKind, s: Span) -> CompileError {
+    fn float_op(op: OperationKind, s: Span) -> ErrorData {
         ErrorKind::UnallowedFloatOperation(op).add_span(&s)
     }
 

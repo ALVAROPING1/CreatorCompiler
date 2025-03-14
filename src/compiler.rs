@@ -44,7 +44,7 @@ pub use label::{Label, Table as LabelTable};
 
 pub mod error;
 use error::{ArgumentType, SpannedErr as _};
-pub use error::{Error as CompileError, Kind as ErrorKind};
+pub use error::{Data as ErrorData, Error as CompileError, Kind as ErrorKind};
 
 mod bit_field;
 use bit_field::BitField;
@@ -92,7 +92,7 @@ fn parse_instruction<'a>(
     arch: &'a Architecture,
     name: Spanned<String>,
     args: &Spanned<Vec<Spanned<Token>>>,
-) -> Result<(InstructionDefinition<'a>, ParsedArgs), CompileError> {
+) -> Result<(InstructionDefinition<'a>, ParsedArgs), ErrorData> {
     let mut possible_def = None;
     // Errors produced on each of the attempted parses
     let mut errs = Vec::new();
@@ -194,7 +194,7 @@ fn process_instruction<'arch>(
     pending_instructions: &mut Vec<PendingInstruction<'arch>>,
     instruction: (InstructionDefinition<'arch>, ParsedArgs),
     span: (Span, SpanList),
-) -> Result<(), CompileError> {
+) -> Result<(), ErrorData> {
     let (user_span, span) = span;
     match instruction.0 {
         // Base case: we have a real instruction => push it to the parsed instructions normally
@@ -324,7 +324,7 @@ impl DataToken {
     /// # Parameters
     ///
     /// * `span`: span of the value in the assembly code
-    fn into_string(self, span: &Span) -> Result<String, CompileError> {
+    fn into_string(self, span: &Span) -> Result<String, ErrorData> {
         match self {
             Self::String(s) => Ok(s),
             Self::Number(_) => Err(ErrorKind::IncorrectArgumentType {
@@ -340,7 +340,7 @@ impl DataToken {
     /// # Parameters
     ///
     /// * `span`: span of the value in the assembly code
-    fn to_expr(&self, span: &Span) -> Result<&Expr, CompileError> {
+    fn to_expr(&self, span: &Span) -> Result<&Expr, ErrorData> {
         match self {
             Self::Number(expr) => Ok(expr),
             Self::String(_) => Err(ErrorKind::IncorrectArgumentType {
@@ -400,7 +400,7 @@ pub type GlobalSymbols = HashSet<String>;
 fn split_statements(
     arch: &Architecture,
     ast: Vec<ASTNode>,
-) -> Result<(Instructions, DataDirectives, GlobalSymbols), CompileError> {
+) -> Result<(Instructions, DataDirectives, GlobalSymbols), ErrorData> {
     let mut current_section: Option<Spanned<DirectiveSegment>> = None;
     let mut data_directives = Vec::new();
     let mut instructions = Vec::new();
@@ -506,7 +506,7 @@ impl ArgumentNumber {
     /// # Errors
     ///
     /// Errors if the amount of arguments doesn't match the specified amount
-    fn check<T>(self, args: &Spanned<Vec<T>>) -> Result<(), CompileError> {
+    fn check<T>(self, args: &Spanned<Vec<T>>) -> Result<(), ErrorData> {
         let len = args.0.len();
         if len < self.amount || (!self.at_least && len != self.amount) {
             return Err(ErrorKind::IncorrectDirectiveArgumentNumber {
@@ -537,7 +537,7 @@ fn compile_data(
     arch: &Architecture,
     label_table: &mut LabelTable,
     elements: Vec<Statement<DataValue>>,
-) -> Result<Vec<PendingData>, CompileError> {
+) -> Result<Vec<PendingData>, ErrorData> {
     let size = elements.len();
     let mut user = (
         Section::new("Data", Some(arch.data_section())),
@@ -674,7 +674,7 @@ fn compile_instructions<'a>(
     label_table: &mut LabelTable,
     instructions: Vec<Statement<InstructionNode>>,
     reserved_offset: &BigUint,
-) -> Result<Vec<PendingInstruction<'a>>, CompileError> {
+) -> Result<Vec<PendingInstruction<'a>>, ErrorData> {
     let size = instructions.len();
     let mut user = (
         Section::new("Instructions", Some(arch.code_section())),
@@ -721,23 +721,22 @@ fn compile_instructions<'a>(
 }
 
 #[allow(clippy::too_many_lines)]
-pub fn compile<S: std::hash::BuildHasher>(
+fn compile_inner(
     arch: &Architecture,
     ast: Vec<ASTNode>,
+    label_table: &mut LabelTable,
     reserved_offset: &BigUint,
-    labels: HashMap<String, BigUint, S>,
     library: bool,
-) -> Result<CompiledCode, CompileError> {
-    let mut label_table = LabelTable::from(labels);
+) -> Result<(GlobalSymbols, Vec<Instruction>, Vec<Data>), ErrorData> {
     let word_size_bits = arch.word_size();
     let word_size_bytes = arch.word_size().div_ceil(8);
 
     let (instructions, data_directives, global_symbols) = split_statements(arch, ast)?;
 
     let instruction_eof = instructions.last().map_or(0, |inst| inst.value.1.end);
-    let pending_data = compile_data(arch, &mut label_table, data_directives)?;
+    let pending_data = compile_data(arch, label_table, data_directives)?;
     let pending_instructions =
-        compile_instructions(arch, &mut label_table, instructions, reserved_offset)?;
+        compile_instructions(arch, label_table, instructions, reserved_offset)?;
 
     let main_label = || arch.main_label().to_owned();
     let add_main_span = |e: ErrorKind, main: &Label| e.add_span(main.span().unwrap_or(&(0..0)));
@@ -921,12 +920,30 @@ pub fn compile<S: std::hash::BuildHasher>(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(CompiledCode {
-        label_table,
-        global_symbols,
-        instructions,
-        data_memory,
-    })
+    Ok((global_symbols, instructions, data_memory))
+}
+
+pub fn compile<'arch, S: std::hash::BuildHasher>(
+    arch: &'arch Architecture,
+    ast: Vec<ASTNode>,
+    reserved_offset: &BigUint,
+    labels: HashMap<String, BigUint, S>,
+    library: bool,
+) -> Result<CompiledCode, CompileError<'arch>> {
+    let mut label_table = LabelTable::from(labels);
+    match compile_inner(arch, ast, &mut label_table, reserved_offset, library) {
+        Ok((global_symbols, instructions, data_memory)) => Ok(CompiledCode {
+            label_table,
+            global_symbols,
+            instructions,
+            data_memory,
+        }),
+        Err(error) => Err(CompileError {
+            arch,
+            label_table,
+            error,
+        }),
+    }
 }
 
 #[allow(clippy::unwrap_used)]
@@ -940,19 +957,19 @@ mod test {
         reserved_offset: &BigUint,
         labels: HashMap<String, BigUint>,
         library: bool,
-    ) -> Result<CompiledCode, CompileError> {
+    ) -> Result<CompiledCode, ErrorData> {
         let arch = Architecture::from_json(include_str!("../tests/architecture.json")).unwrap();
         let ast = crate::parser::parse(arch.comment_prefix(), src).unwrap();
-        super::compile(&arch, ast, reserved_offset, labels, library)
+        super::compile(&arch, ast, reserved_offset, labels, library).map_err(|e| e.error)
     }
 
-    fn compile_arch(src: &str, arch: &str) -> Result<CompiledCode, CompileError> {
+    fn compile_arch(src: &str, arch: &str) -> Result<CompiledCode, ErrorData> {
         let arch = Architecture::from_json(arch).unwrap();
         let ast = crate::parser::parse(arch.comment_prefix(), src).unwrap();
-        super::compile(&arch, ast, &BigUint::ZERO, HashMap::new(), false)
+        super::compile(&arch, ast, &BigUint::ZERO, HashMap::new(), false).map_err(|e| e.error)
     }
 
-    fn compile(src: &str) -> Result<CompiledCode, CompileError> {
+    fn compile(src: &str) -> Result<CompiledCode, ErrorData> {
         compile_with(src, &BigUint::ZERO, HashMap::new(), false)
     }
 
@@ -2047,7 +2064,7 @@ mod test {
     #[test]
     fn incorrect_instruction_syntax() {
         let assert = |err, syntaxes: &[&str], expected_span: Span| match err {
-            Err(CompileError { span, kind }) => match *kind {
+            Err(ErrorData { span, kind }) => match *kind {
                 ErrorKind::IncorrectInstructionSyntax(s) => {
                     assert_eq!(span, expected_span.into());
                     assert_eq!(s.into_iter().map(|x| x.0).collect::<Vec<_>>(), syntaxes);

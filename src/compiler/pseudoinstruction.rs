@@ -28,7 +28,7 @@ use std::rc::Rc;
 use crate::architecture::{Architecture, FloatType, Pseudoinstruction, RegisterType};
 use crate::parser::ParseError;
 
-use super::{ArgumentType, CompileError, ErrorKind, InstructionDefinition, LabelTable};
+use super::{ArgumentType, ErrorData, ErrorKind, InstructionDefinition, LabelTable};
 use super::{Expr, ParsedArgs};
 use super::{Source, Span, SpanList, Spanned};
 
@@ -52,7 +52,7 @@ pub struct Error {
 }
 
 impl Error {
-    fn compile_error(self, def: &Pseudoinstruction, span: impl Into<SpanList>) -> CompileError {
+    fn compile_error(self, def: &Pseudoinstruction, span: impl Into<SpanList>) -> ErrorData {
         ErrorKind::PseudoinstructionError {
             name: def.name.to_owned(),
             error: Box::new(self),
@@ -133,7 +133,7 @@ mod js {
     }
 }
 
-fn reg_name(arg: &Spanned<Expr>) -> Result<&str, CompileError> {
+fn reg_name(arg: &Spanned<Expr>) -> Result<&str, ErrorData> {
     match &arg.0 {
         Expr::Identifier((name, _)) => Ok(name),
         _ => Err(ErrorKind::IncorrectArgumentType {
@@ -161,7 +161,7 @@ pub fn expand<'b, 'a: 'b>(
     address: &BigUint,
     instruction: (&'b Pseudoinstruction, SpanList),
     args: &ParsedArgs,
-) -> Result<ExpandedInstructions<'a>, CompileError> {
+) -> Result<ExpandedInstructions<'a>, ErrorData> {
     // Regex used
     static ALIAS_DOUBLE: Lazy<Regex> = crate::regex!(r"aliasDouble\(([^;]+);(\d+)\)");
     static FIELD_VALUE: Lazy<Regex> = crate::regex!(r"Field\.(\d+)\.\((\d+),(\d+)\)\.(\w+)");
