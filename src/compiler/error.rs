@@ -138,9 +138,9 @@ pub enum Kind {
     },
     IncorrectInstructionSyntax(Vec<(String, ParseError)>),
     DuplicateLabel(String, Option<Span>),
-    MissingMainLabel(String),
-    MainInLibrary(String),
-    MainOutsideCode(String),
+    MissingMainLabel,
+    MainInLibrary,
+    MainOutsideCode,
     IntegerOutOfRange(BigInt, RangeInclusive<BigInt>),
     MemorySectionFull(&'static str),
     DataUnaligned {
@@ -214,9 +214,9 @@ impl Kind {
             Self::UnknownRegister { .. } => 5,
             Self::IncorrectInstructionSyntax(..) => 6,
             Self::DuplicateLabel(..) => 7,
-            Self::MissingMainLabel(..) => 8,
-            Self::MainInLibrary(..) => 22,
-            Self::MainOutsideCode(..) => 9,
+            Self::MissingMainLabel => 8,
+            Self::MainInLibrary => 22,
+            Self::MainOutsideCode => 9,
             Self::IntegerOutOfRange(..) => 10,
             Self::MemorySectionFull(..) => 11,
             Self::DataUnaligned { .. } => 12,
@@ -278,10 +278,10 @@ impl Kind {
                 format!("Did you mean {}?", NameList::non_empty(names)?)
             }
             Self::DuplicateLabel(.., Some(_)) => "Consider renaming either of the labels".into(),
-            Self::DuplicateLabel(.., None) | Self::MainInLibrary(..) => {
+            Self::DuplicateLabel(.., None) | Self::MainInLibrary => {
                 "Consider renaming the label".into()
             }
-            Self::MainOutsideCode(..) => "Consider moving the label to a user instruction".into(),
+            Self::MainOutsideCode => "Consider moving the label to a user instruction".into(),
             Self::IncorrectDirectiveArgumentNumber { expected, found } => {
                 let expected = expected.amount;
                 let (msg, n) = if expected > *found {
@@ -308,7 +308,7 @@ impl Kind {
     }
 
     /// Gets the label text describing the error
-    fn label(&self) -> String {
+    fn label(&self, arch: &Architecture) -> String {
         match self {
             Self::UnknownDirective(..) => "Unknown directive".into(),
             Self::UnknownInstruction(..) => "Unknown instruction".into(),
@@ -317,10 +317,11 @@ impl Kind {
             Self::UnknownRegister { .. } => "Unknown register".into(),
             Self::IncorrectInstructionSyntax(..) => "Incorrect syntax".into(),
             Self::DuplicateLabel(..) => "Duplicate label".into(),
-            Self::MissingMainLabel(main) => {
+            Self::MissingMainLabel => {
+                let main = arch.main_label();
                 format!("Consider adding a label called `{main}` to an instruction")
             }
-            Self::MainOutsideCode(..) | Self::MainInLibrary(..) => "Label defined here".into(),
+            Self::MainOutsideCode | Self::MainInLibrary => "Label defined here".into(),
             Self::IntegerOutOfRange(val, _) | Self::UnallowedNegativeValue(val) => {
                 format!("This expression has value {val}")
             }
@@ -381,54 +382,55 @@ impl fmt::Display for RegisterType {
     }
 }
 
-impl fmt::Display for Kind {
+impl<'arch> fmt::Display for Error<'arch> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::UnknownDirective(s) => write!(f, "Directive `{s}` isn't defined"),
-            Self::UnknownInstruction(s) => write!(f, "Instruction `{s}` isn't defined"),
-            Self::UnknownLabel(s) => write!(f, "Label `{s}` isn't defined"),
-            Self::UnknownRegisterFile(s) => write!(f, "Register file of type `{s}` isn't defined"),
-            Self::UnknownRegister { name, file } => {
+        let main = self.arch.main_label();
+        match self.error.kind.as_ref() {
+            Kind::UnknownDirective(s) => write!(f, "Directive `{s}` isn't defined"),
+            Kind::UnknownInstruction(s) => write!(f, "Instruction `{s}` isn't defined"),
+            Kind::UnknownLabel(s) => write!(f, "Label `{s}` isn't defined"),
+            Kind::UnknownRegisterFile(s) => write!(f, "Register file of type `{s}` isn't defined"),
+            Kind::UnknownRegister { name, file } => {
                 write!(f, "Register `{name}` isn't defined in file type {file}")
             }
-            Self::IncorrectInstructionSyntax(..) => write!(f, "Incorrect instruction syntax"),
-            Self::DuplicateLabel(s, _) => write!(f, "Label `{s}` is already defined"),
-            Self::MissingMainLabel(s) => write!(f, "Main label `{s}` not found"),
-            Self::MainInLibrary(s) => write!(f, "Main label `{s}` can't be used in libraries"),
-            Self::MainOutsideCode(s) => {
-                write!(f, "Main label `{s}` defined outside of the text segment")
+            Kind::IncorrectInstructionSyntax(..) => write!(f, "Incorrect instruction syntax"),
+            Kind::DuplicateLabel(s, _) => write!(f, "Label `{s}` is already defined"),
+            Kind::MissingMainLabel => write!(f, "Main label `{main}` not found"),
+            Kind::MainInLibrary => write!(f, "Main label `{main}` can't be used in libraries"),
+            Kind::MainOutsideCode => {
+                write!(f, "Main label `{main}` defined outside of the text segment")
             }
-            Self::IntegerOutOfRange(val, _) => {
+            Kind::IntegerOutOfRange(val, _) => {
                 write!(f, "Value `{val}` is outside of the valid range of the field")
             }
-            Self::MemorySectionFull(name) => write!(f, "{name} memory segment is full"),
-            Self::DataUnaligned { address, alignment, word_size } => write!(
+            Kind::MemorySectionFull(name) => write!(f, "{name} memory segment is full"),
+            Kind::DataUnaligned { address, alignment, word_size } => write!(
                 f,
                 "Data at address {address:#X} isn't aligned to size {alignment} nor word size {word_size}"
             ),
-            Self::UnallowedNegativeValue(_) => write!(f, "Negative values aren't allowed"),
-            Self::IncorrectDirectiveArgumentNumber { expected, found } => write!(
+            Kind::UnallowedNegativeValue(_) => write!(f, "Negative values aren't allowed"),
+            Kind::IncorrectDirectiveArgumentNumber { expected, found } => write!(
                 f,
                 "Incorrect amount of arguments, expected {}{} but found {found}",
                 if expected.at_least { "at least " } else { "" },
                 expected.amount
             ),
-            Self::IncorrectArgumentType { expected, found } => write!(
+            Kind::IncorrectArgumentType { expected, found } => write!(
                 f,
                 "Incorrect argument type, expected `{expected:?}` but found `{found:?}`"
             ),
-            Self::DivisionBy0 => write!(f, "Can't divide by 0"),
-            Self::UnallowedFloat => {
+            Kind::DivisionBy0 => write!(f, "Can't divide by 0"),
+            Kind::UnallowedFloat => {
                 write!(f, "Can't use floating point values in integer expressions")
             }
-            Self::UnallowedLabel => {
+            Kind::UnallowedLabel => {
                 write!(f, "Can't use labels in literal expressions")
             }
-            Self::UnallowedFloatOperation(op) => write!(
+            Kind::UnallowedFloatOperation(op) => write!(
                 f,
                 "Can't perform the {op} operation with floating point numbers"
             ),
-            Self::UnallowedStatementType { section, found } => {
+            Kind::UnallowedStatementType { section, found } => {
                 write!(
                     f,
                     "Can't use `{}` statements while in section `{}`",
@@ -440,7 +442,7 @@ impl fmt::Display for Kind {
                     }
                 )
             }
-            Self::PseudoinstructionError {name, ..} => write!(f, "Error while evaluating pseudoinstruction `{name}`"),
+            Kind::PseudoinstructionError {name, ..} => write!(f, "Error while evaluating pseudoinstruction `{name}`"),
         }
     }
 }
@@ -469,31 +471,31 @@ impl SpanList {
 
 impl<'arch> crate::RenderError for Error<'arch> {
     fn format(self, filename: &str, src: &str, mut buffer: &mut Vec<u8>, color: bool) {
-        let data = self.error;
         let (filename_user, src_user) = (filename, src);
-        let (filename, src) = data.span.source.as_ref().map_or((filename, src), |origin| {
+        let source = self.error.span.source.as_ref();
+        let (filename, src) = source.map_or((filename, src), |origin| {
             ("<pseudoinstruction expansion>", origin.code.as_str())
         });
         let note_color = color.then_some(Color::BrightBlue);
-        let mut report = Report::build(ReportKind::Error, (filename, data.span.span.clone()))
+        let mut report = Report::build(ReportKind::Error, (filename, self.error.span.span.clone()))
             .with_config(Config::default().with_color(color))
-            .with_code(format!("E{:02}", data.kind.error_code()))
-            .with_message(data.kind.to_string())
+            .with_code(format!("E{:02}", self.error.kind.error_code()))
+            .with_message(&self)
             .with_label(
-                Label::new((filename, data.span.span))
-                    .with_message(data.kind.label())
+                Label::new((filename, self.error.span.span.clone()))
+                    .with_message(self.error.kind.label(self.arch))
                     .with_color(Color::Red),
             )
-            .with_labels(data.kind.context().into_iter().map(|label| {
+            .with_labels(self.error.kind.context().into_iter().map(|label| {
                 Label::new((filename, label.0.clone()))
                     .with_message(format!("{} {}", "Note:".fg(note_color), label.1))
                     .with_color(Color::BrightBlue)
                     .with_order(10)
             }));
-        if let Some(note) = data.kind.note() {
+        if let Some(note) = self.error.kind.note() {
             report.set_note(note);
         }
-        if let Some(hint) = data.kind.hint(self.arch, &self.label_table) {
+        if let Some(hint) = self.error.kind.hint(self.arch, &self.label_table) {
             report.set_help(hint);
         }
 
@@ -502,7 +504,7 @@ impl<'arch> crate::RenderError for Error<'arch> {
             .write((filename, Source::from(src)), &mut buffer)
             .expect("Writing to an in-memory vector shouldn't fail");
 
-        match *data.kind {
+        match *self.error.kind {
             Kind::IncorrectInstructionSyntax(errs) => {
                 for (syntax, err) in errs {
                     writeln!(
@@ -520,7 +522,7 @@ impl<'arch> crate::RenderError for Error<'arch> {
             _ => {}
         }
 
-        if let Some(origin) = &data.span.source {
+        if let Some(origin) = self.error.span.source {
             origin.span.format(filename_user, src_user, buffer, color);
         }
     }

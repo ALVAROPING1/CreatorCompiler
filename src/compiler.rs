@@ -738,22 +738,17 @@ fn compile_inner(
     let pending_instructions =
         compile_instructions(arch, label_table, instructions, reserved_offset)?;
 
-    let main_label = || arch.main_label().to_owned();
     let add_main_span = |e: ErrorKind, main: &Label| e.add_span(main.span().unwrap_or(&(0..0)));
     match (label_table.get(arch.main_label()), library) {
         (None, false) => {
             #[allow(clippy::range_plus_one)] // Ariadne works with exclusive ranges
-            return Err(ErrorKind::MissingMainLabel(main_label())
-                .add_span(&(instruction_eof..instruction_eof + 1)));
+            return Err(
+                ErrorKind::MissingMainLabel.add_span(&(instruction_eof..instruction_eof + 1))
+            );
         }
-        (Some(main), true) => {
-            return Err(add_main_span(ErrorKind::MainInLibrary(main_label()), main))
-        }
+        (Some(main), true) => return Err(add_main_span(ErrorKind::MainInLibrary, main)),
         (Some(main), false) if !arch.code_section().contains(main.address()) => {
-            return Err(add_main_span(
-                ErrorKind::MainOutsideCode(main_label()),
-                main,
-            ));
+            return Err(add_main_span(ErrorKind::MainOutsideCode, main));
         }
         _ => {}
     }
@@ -2116,11 +2111,11 @@ mod test {
     fn missing_main() {
         assert_eq!(
             compile(".text\nnop"),
-            Err(ErrorKind::MissingMainLabel("main".into()).add_span(9..10)),
+            Err(ErrorKind::MissingMainLabel.add_span(9..10)),
         );
         assert_eq!(
             compile(".text\nnop\n.data"),
-            Err(ErrorKind::MissingMainLabel("main".into()).add_span(9..10)),
+            Err(ErrorKind::MissingMainLabel.add_span(9..10)),
         );
     }
 
@@ -2128,15 +2123,15 @@ mod test {
     fn main_outside_code() {
         assert_eq!(
             compile(".data\nmain: .byte 1\n.text\nnop"),
-            Err(ErrorKind::MainOutsideCode("main".into()).add_span(6..11)),
+            Err(ErrorKind::MainOutsideCode.add_span(6..11)),
         );
         assert_eq!(
             compile(".kdata\nmain: .byte 1\n.text\nnop"),
-            Err(ErrorKind::MainOutsideCode("main".into()).add_span(7..12)),
+            Err(ErrorKind::MainOutsideCode.add_span(7..12)),
         );
         assert_eq!(
             compile(".ktext\nmain: nop\n.text\nnop"),
-            Err(ErrorKind::MainOutsideCode("main".into()).add_span(7..12)),
+            Err(ErrorKind::MainOutsideCode.add_span(7..12)),
         );
     }
 
@@ -2242,12 +2237,12 @@ mod test {
     fn main_in_library() {
         assert_eq!(
             compile_with(".text\nmain: nop", &BigUint::ZERO, HashMap::new(), true),
-            Err(ErrorKind::MainInLibrary("main".into()).add_span(6..11))
+            Err(ErrorKind::MainInLibrary.add_span(6..11))
         );
         let labels = HashMap::from([("main".into(), 4u8.into())]);
         assert_eq!(
             compile_with(".text\ntest: nop", &BigUint::ZERO, labels, true),
-            Err(ErrorKind::MainInLibrary("main".into()).add_span(0..0))
+            Err(ErrorKind::MainInLibrary.add_span(0..0))
         );
     }
 }
