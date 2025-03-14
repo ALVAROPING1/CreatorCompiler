@@ -97,6 +97,16 @@ fn get_similar<'a>(target: &str, names: impl Iterator<Item = &'a str>) -> Vec<&'
         .collect()
 }
 
+/// Wrapper to display an amount of arguments
+struct ArgNum(usize);
+
+impl fmt::Display for ArgNum {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = if self.0 == 1 { "" } else { "s" };
+        write!(f, "{} argument{}", self.0, s)
+    }
+}
+
 /// Type of arguments for directives/instructions
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArgumentType {
@@ -178,16 +188,6 @@ pub struct Error<'arch> {
     pub label_table: LabelTable,
     /// Information about the error
     pub error: Data,
-}
-
-macro_rules! plural {
-    ($x:expr) => {
-        if $x != 1 {
-            "s"
-        } else {
-            ""
-        }
-    };
 }
 
 impl Kind {
@@ -289,12 +289,7 @@ impl Kind {
                 } else {
                     ("removing the extra", found - expected)
                 };
-                let n_str = if n == 1 {
-                    String::new()
-                } else {
-                    format!(" {n}")
-                };
-                format!("Consider {msg}{n_str} argument{}", plural!(n))
+                format!("Consider {msg} {}", ArgNum(n))
             }
             Self::UnallowedStatementType { found, .. } => {
                 let names: Vec<_> = arch.directives.iter()
@@ -332,7 +327,7 @@ impl Kind {
             Self::MemorySectionFull(..) => "This element doesn't fit in the available space".into(),
             Self::DataUnaligned { .. } => "This value isn't aligned".into(),
             Self::IncorrectDirectiveArgumentNumber { found, .. } => {
-                format!("This directive has {found} argument{}", plural!(*found))
+                format!("This directive has {}", ArgNum(*found))
             }
             Self::IncorrectArgumentType { found, .. } => {
                 format!("This argument has type `{found:?}`")
