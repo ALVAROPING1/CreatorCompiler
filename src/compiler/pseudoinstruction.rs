@@ -36,7 +36,7 @@ use super::{Source, Span, SpanList, Spanned};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Kind {
     UnknownFieldName(String),
-    UnknownFieldNumber(usize),
+    UnknownFieldNumber { idx: usize, size: usize },
     UnknownFieldType(String),
     EmptyBitRange,
     BitRangeOutOfBounds { upper_bound: usize, msb: usize },
@@ -229,7 +229,10 @@ pub fn expand<'b, 'a: 'b>(
                 Error {
                     definition: def.clone(),
                     span: capture_span(&x, 1),
-                    kind: Kind::UnknownFieldNumber(arg_num + 1),
+                    kind: Kind::UnknownFieldNumber {
+                        idx: arg_num + 1,
+                        size: args.len(),
+                    },
                 }
                 .compile_error(instruction, span.clone())
             })?
@@ -305,7 +308,10 @@ pub fn expand<'b, 'a: 'b>(
                 Error {
                     definition: def.clone(),
                     span: capture_span(&x, 1),
-                    kind: Kind::UnknownFieldNumber(arg_num + 1),
+                    kind: Kind::UnknownFieldNumber {
+                        idx: arg_num + 1,
+                        size: args.len(),
+                    },
                 }
                 .compile_error(instruction, span.clone())
             })?

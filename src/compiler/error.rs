@@ -584,7 +584,7 @@ impl PseudoinstructionErrorKind {
     const fn label(&self) -> &'static str {
         match self {
             Self::UnknownFieldName(..) => "Unknown field name",
-            Self::UnknownFieldNumber(..) => "Field index out of bounds",
+            Self::UnknownFieldNumber { .. } => "Field index out of bounds",
             Self::UnknownFieldType(..) => "Unknown field type",
             Self::EmptyBitRange => "Empty bit range",
             Self::BitRangeOutOfBounds { .. } => "Bit range out of bounds",
@@ -598,8 +598,8 @@ impl PseudoinstructionErrorKind {
         let red = color.then_some(Color::Red);
         match self {
             Self::UnknownFieldName(s) => format!("Field {} isn't defined", Colored(s, red)),
-            Self::UnknownFieldNumber(x) => {
-                format!("Field index {} is out of bounds", Colored(x, red))
+            Self::UnknownFieldNumber { idx, .. } => {
+                format!("Field index {} is out of bounds", Colored(idx, red))
             }
             Self::UnknownFieldType(s) => format!("Unknown field type {}", Colored(s, red)),
             Self::EmptyBitRange => "Bit range is empty".into(),
@@ -612,20 +612,37 @@ impl PseudoinstructionErrorKind {
             Self::ParseError(_) => "Error parsing instruction".into(),
         }
     }
+
+    /// Gets a note with extra information about the error if available
+    fn note(&self, color: bool) -> Option<String> {
+        Some(match self {
+            Self::UnknownFieldNumber { size, .. } => {
+                format!(
+                    "The pseudoinstruction has {}",
+                    ArgNum(*size, color.then_some(Color::BrightBlue))
+                )
+            }
+            _ => return None,
+        })
+    }
 }
 
 impl crate::RenderError for PseudoinstructionError {
     fn format(self, _: &str, _: &str, mut buffer: &mut Vec<u8>, color: bool) {
         static FILENAME: &str = "<pseudoinstruction expansion>";
         let src = &self.definition;
-        Report::build(ReportKind::Error, (FILENAME, self.span.clone()))
+        let mut report = Report::build(ReportKind::Error, (FILENAME, self.span.clone()))
             .with_config(Config::default().with_color(color))
             .with_message(self.kind.msg(color))
             .with_label(
                 Label::new((FILENAME, self.span.clone()))
                     .with_message(self.kind.label())
                     .with_color(Color::Red),
-            )
+            );
+        if let Some(note) = self.kind.note(color) {
+            report.set_note(note);
+        }
+        report
             .finish()
             .write((FILENAME, Source::from(src)), &mut buffer)
             .expect("Writing to an in-memory vector shouldn't fail");
