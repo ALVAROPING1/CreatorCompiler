@@ -163,7 +163,6 @@ pub enum Kind {
     DataUnaligned {
         address: BigUint,
         alignment: BigUint,
-        word_size: usize,
     },
     UnallowedNegativeValue(BigInt),
     IncorrectDirectiveArgumentNumber {
@@ -419,15 +418,11 @@ impl Kind {
             Self::MemorySectionFull(name) => {
                 format!("{name} memory segment is full")
             }
-            Self::DataUnaligned {
-                address,
-                alignment,
-                word_size,
-            } => format!(
+            Self::DataUnaligned { address, alignment } => format!(
                 "Data at address {} isn't aligned to size {} nor word size {}",
                 Colored(format!("{address:#X}"), red),
                 Colored(alignment, blue),
-                Colored(word_size, blue),
+                Colored(arch.word_size().div_ceil(8), blue),
             ),
             Self::UnallowedNegativeValue(_) => "Negative values aren't allowed here".into(),
             Self::IncorrectDirectiveArgumentNumber { expected, found } => format!(

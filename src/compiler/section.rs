@@ -129,7 +129,6 @@ impl Section {
             return Err(ErrorKind::DataUnaligned {
                 address: self.address.clone(),
                 alignment: size.clone(),
-                word_size,
             });
         }
         self.try_reserve(size)
@@ -288,7 +287,6 @@ mod test {
             Err(ErrorKind::DataUnaligned {
                 address: 1u8.into(),
                 alignment: 2u8.into(),
-                word_size: 3
             })
         );
     }

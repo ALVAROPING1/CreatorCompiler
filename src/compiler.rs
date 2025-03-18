@@ -1964,7 +1964,6 @@ mod test {
                 Err(ErrorKind::DataUnaligned {
                     address: 17u8.into(),
                     alignment: size.into(),
-                    word_size: 4,
                 }
                 .add_span(22..23)),
                 "{directive}",
