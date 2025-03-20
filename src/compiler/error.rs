@@ -37,92 +37,8 @@ use crate::span::{Span, SpanList, Spanned};
 
 use super::{ArgumentNumber, LabelTable, PseudoinstructionError, PseudoinstructionErrorKind};
 
-/// Wrapper to display elements with an optional color
-struct Colored<T>(pub T, Option<Color>);
-
-impl<T: fmt::Display> fmt::Display for Colored<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(color) = self.1 {
-            write!(f, "{}", (&self.0).fg(color))
-        } else {
-            write!(f, "`{}`", self.0)
-        }
-    }
-}
-
-/// Wrapper for a vector to display it as a list of names
-struct NameList<T> {
-    /// List of names to display
-    pub names: Vec<T>,
-    /// Whether to display the names with colors or not
-    pub color: bool,
-}
-
-impl<T: std::cmp::Ord> NameList<T> {
-    /// Creates a new [`NameList`], checking that it isn't empty
-    fn non_empty(names: Vec<T>, color: bool) -> Option<Self> {
-        (!names.is_empty()).then_some(Self::new(names, color))
-    }
-
-    /// Creates a new [`NameList`]
-    fn new(mut names: Vec<T>, color: bool) -> Self {
-        names.sort_unstable();
-        Self { names, color }
-    }
-}
-
-impl<T: fmt::Display> fmt::Display for NameList<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Some(last) = self.names.last() else {
-            return Ok(());
-        };
-        let color = self.color.then_some(Color::Green);
-        for i in 0..self.names.len() - 1 {
-            let val = Colored(&self.names[i], color);
-            write!(f, "{}{} ", val, if self.names.len() > 2 { "," } else { "" })?;
-        }
-        if self.names.len() > 1 {
-            write!(f, "or ")?;
-        }
-        write!(f, "{}", Colored(last, color))
-    }
-}
-
-/// Gets the names from a list that are the most similar to the given name
-///
-/// # Parameters
-///
-/// * `target`: target name to match against
-/// * `names`: iterator of possible names
-fn get_similar<'a>(target: &str, names: impl Iterator<Item = &'a str>) -> Vec<&'a str> {
-    let mut distances = std::collections::HashMap::new();
-    for name in names {
-        distances
-            .entry(name)
-            .or_insert_with(|| edit_distance::edit_distance(name, target));
-    }
-    let Some(min) = distances.iter().min_by_key(|(_, &d)| d).map(|(_, x)| *x) else {
-        return vec![];
-    };
-    if min > std::cmp::max(target.len() / 3, 1) {
-        return vec![];
-    }
-    distances
-        .into_iter()
-        .filter(|(_, d)| *d == min)
-        .map(|(name, _)| name)
-        .collect()
-}
-
-/// Wrapper to display an amount of arguments
-struct ArgNum(usize, Option<Color>);
-
-impl fmt::Display for ArgNum {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = if self.0 == 1 { "" } else { "s" };
-        write!(f, "{} argument{}", Colored(self.0, self.1), s)
-    }
-}
+mod utils;
+use utils::{ArgNum, Colored, DisplayList};
 
 /// Type of arguments for directives/instructions
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -206,6 +122,40 @@ pub struct Error<'arch> {
     pub error: Data,
 }
 
+impl fmt::Display for ArgumentType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        <Self as fmt::Debug>::fmt(self, f)
+    }
+}
+
+impl fmt::Display for OperationKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Complement => write!(f, "complement"),
+            Self::BitwiseOR => write!(f, "bitwise OR"),
+            Self::BitwiseAND => write!(f, "bitwise AND"),
+            Self::BitwiseXOR => write!(f, "bitwise XOR"),
+        }
+    }
+}
+
+impl fmt::Display for RegisterType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Ctrl => write!(f, "Control"),
+            Self::Int => write!(f, "Integer"),
+            Self::Float(FloatType::Float) => write!(f, "SingleFloatingPoint"),
+            Self::Float(FloatType::Double) => write!(f, "DoubleFloatingPoint"),
+        }
+    }
+}
+
+impl fmt::Display for DirectiveSegment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", if self.is_code() { "Text" } else { "Data" })
+    }
+}
+
 impl Kind {
     /// Adds a span to the error kind, promoting it to an [`Data`]
     ///
@@ -273,18 +223,18 @@ impl Kind {
     fn hint(&self, arch: &Architecture, labels: &LabelTable, color: bool) -> Option<String> {
         Some(match self {
             Self::UnknownDirective(s) => {
-                let names = get_similar(s, arch.directives.iter().map(|d| d.name));
-                format!("Did you mean {}?", NameList::non_empty(names, color)?)
+                let names = utils::get_similar(s, arch.directives.iter().map(|d| d.name));
+                format!("Did you mean {}?", DisplayList::non_empty(names, color)?)
             }
             Self::UnknownInstruction(s) => {
                 let inst_names = arch.instructions.iter().map(|i| i.name);
                 let pseudo_names = arch.pseudoinstructions.iter().map(|i| i.name);
-                let names = get_similar(s, inst_names.chain(pseudo_names));
-                format!("Did you mean {}?", NameList::non_empty(names, color)?)
+                let names = utils::get_similar(s, inst_names.chain(pseudo_names));
+                format!("Did you mean {}?", DisplayList::non_empty(names, color)?)
             }
             Self::UnknownLabel(s) => {
-                let names = get_similar(s, labels.iter().map(|(n, _)| n.as_str()));
-                format!("Did you mean {}?", NameList::non_empty(names, color)?)
+                let names = utils::get_similar(s, labels.iter().map(|(n, _)| n.as_str()));
+                format!("Did you mean {}?", DisplayList::non_empty(names, color)?)
             }
             Self::UnknownRegister { name, file } => {
                 let files = arch.find_reg_files(*file);
@@ -293,8 +243,8 @@ impl Kind {
                         .iter()
                         .flat_map(|reg| reg.name.iter().copied())
                 });
-                let names = get_similar(name, registers);
-                format!("Did you mean {}?", NameList::non_empty(names, color)?)
+                let names = utils::get_similar(name, registers);
+                format!("Did you mean {}?", DisplayList::non_empty(names, color)?)
             }
             Self::DuplicateLabel(.., Some(_)) => "Consider renaming either of the labels".into(),
             Self::DuplicateLabel(.., None) | Self::MainInLibrary => {
@@ -321,7 +271,7 @@ impl Kind {
                     "Consider changing the section to {}{}{}",
                     section_type,
                     if names.is_empty() { "" } else { ", using " },
-                    NameList::new(names, color)
+                    DisplayList::new(names, color)
                 )
             }
             _ => return None,
@@ -464,40 +414,6 @@ impl Kind {
     }
 }
 
-impl fmt::Display for ArgumentType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        <Self as fmt::Debug>::fmt(self, f)
-    }
-}
-
-impl fmt::Display for OperationKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Complement => write!(f, "complement"),
-            Self::BitwiseOR => write!(f, "bitwise OR"),
-            Self::BitwiseAND => write!(f, "bitwise AND"),
-            Self::BitwiseXOR => write!(f, "bitwise XOR"),
-        }
-    }
-}
-
-impl fmt::Display for RegisterType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Ctrl => write!(f, "Control"),
-            Self::Int => write!(f, "Integer"),
-            Self::Float(FloatType::Float) => write!(f, "SingleFloatingPoint"),
-            Self::Float(FloatType::Double) => write!(f, "DoubleFloatingPoint"),
-        }
-    }
-}
-
-impl fmt::Display for DirectiveSegment {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", if self.is_code() { "Text" } else { "Data" })
-    }
-}
-
 impl SpanList {
     fn format(&self, filename: &str, src: &str, mut buffer: &mut Vec<u8>, color: bool) {
         let (filename, src) = self.source.as_ref().map_or((filename, src), |origin| {
@@ -593,6 +509,19 @@ impl PseudoinstructionErrorKind {
         }
     }
 
+    /// Gets a note with extra information about the error if available
+    fn note(&self, color: bool) -> Option<String> {
+        Some(match self {
+            Self::UnknownFieldNumber { size, .. } => {
+                format!(
+                    "The pseudoinstruction has {}",
+                    ArgNum(*size, color.then_some(Color::BrightBlue))
+                )
+            }
+            _ => return None,
+        })
+    }
+
     /// Gets the error message of this error
     fn msg(&self, color: bool) -> String {
         let red = color.then_some(Color::Red);
@@ -611,19 +540,6 @@ impl PseudoinstructionErrorKind {
             Self::EvaluationError(s) => format!("Error evaluating JS code:\n{s}"),
             Self::ParseError(_) => "Error parsing instruction".into(),
         }
-    }
-
-    /// Gets a note with extra information about the error if available
-    fn note(&self, color: bool) -> Option<String> {
-        Some(match self {
-            Self::UnknownFieldNumber { size, .. } => {
-                format!(
-                    "The pseudoinstruction has {}",
-                    ArgNum(*size, color.then_some(Color::BrightBlue))
-                )
-            }
-            _ => return None,
-        })
     }
 }
 
