@@ -169,75 +169,123 @@ impl Kind {
             kind: Box::new(self),
         }
     }
+}
 
-    /// Gets the numeric error code of this error
-    const fn error_code(&self) -> u32 {
-        match self {
-            Self::UnknownDirective(..) => 1,
-            Self::UnknownInstruction(..) => 2,
-            Self::UnknownLabel(..) => 3,
-            Self::UnknownRegisterFile(..) => 4,
-            Self::UnknownRegister { .. } => 5,
-            Self::IncorrectInstructionSyntax(..) => 6,
-            Self::DuplicateLabel(..) => 7,
-            Self::MissingMainLabel => 8,
-            Self::MainInLibrary => 22,
-            Self::MainOutsideCode => 9,
-            Self::IntegerOutOfRange(..) => 10,
-            Self::MemorySectionFull(..) => 11,
-            Self::DataUnaligned { .. } => 12,
-            Self::UnallowedNegativeValue(..) => 13,
-            Self::IncorrectDirectiveArgumentNumber { .. } => 14,
-            Self::IncorrectArgumentType { .. } => 15,
-            Self::DivisionBy0 => 16,
-            Self::UnallowedFloat => 17,
-            Self::UnallowedLabel => 21,
-            Self::UnallowedFloatOperation(..) => 18,
-            Self::UnallowedStatementType { .. } => 19,
-            Self::PseudoinstructionError { .. } => 20,
-        }
+#[allow(unused_variables)]
+trait ErrorInfo {
+    /// Gets the numeric error code of the error
+    fn code(&self) -> u32 {
+        0
     }
 
     /// Gets a note with extra information about the error if available
-    fn note(&self) -> Option<String> {
-        Some(match self {
-            Self::IntegerOutOfRange(_, bounds) => {
+    ///
+    /// # Parameters
+    ///
+    /// * `color`: whether the message should be formatted (`true`) or plain text (`false`)
+    fn note(&self, color: bool) -> Option<String> {
+        None
+    }
+
+    /// Gets a hint about how to fix the error if available
+    ///
+    /// # Parameters
+    ///
+    /// * `color`: whether the message should be formatted (`true`) or plain text (`false`)
+    fn hint(&self, color: bool) -> Option<String> {
+        None
+    }
+
+    /// Gets a list of extra context labels related to the error
+    ///
+    /// # Parameters
+    ///
+    /// * `color`: whether the message should be formatted (`true`) or plain text (`false`)
+    fn context(&self, color: bool) -> Vec<(&Span, &'static str)> {
+        vec![]
+    }
+
+    /// Gets the label text describing the error
+    ///
+    /// # Parameters
+    ///
+    /// * `color`: whether the message should be formatted (`true`) or plain text (`false`)
+    fn label(&self, color: bool) -> String;
+
+    /// Gets the error message of the error
+    ///
+    /// # Parameters
+    ///
+    /// * `color`: whether the message should be formatted (`true`) or plain text (`false`)
+    fn msg(&self, color: bool) -> String;
+}
+
+impl<'arch> ErrorInfo for Error<'arch> {
+    fn code(&self) -> u32 {
+        match self.error.kind.as_ref() {
+            Kind::UnknownDirective(..) => 1,
+            Kind::UnknownInstruction(..) => 2,
+            Kind::UnknownLabel(..) => 3,
+            Kind::UnknownRegisterFile(..) => 4,
+            Kind::UnknownRegister { .. } => 5,
+            Kind::IncorrectInstructionSyntax(..) => 6,
+            Kind::DuplicateLabel(..) => 7,
+            Kind::MissingMainLabel => 8,
+            Kind::MainInLibrary => 22,
+            Kind::MainOutsideCode => 9,
+            Kind::IntegerOutOfRange(..) => 10,
+            Kind::MemorySectionFull(..) => 11,
+            Kind::DataUnaligned { .. } => 12,
+            Kind::UnallowedNegativeValue(..) => 13,
+            Kind::IncorrectDirectiveArgumentNumber { .. } => 14,
+            Kind::IncorrectArgumentType { .. } => 15,
+            Kind::DivisionBy0 => 16,
+            Kind::UnallowedFloat => 17,
+            Kind::UnallowedLabel => 21,
+            Kind::UnallowedFloatOperation(..) => 18,
+            Kind::UnallowedStatementType { .. } => 19,
+            Kind::PseudoinstructionError { .. } => 20,
+        }
+    }
+
+    fn note(&self, _: bool) -> Option<String> {
+        Some(match self.error.kind.as_ref() {
+            Kind::IntegerOutOfRange(_, bounds) => {
                 format!("Allowed range is [{}, {}]", bounds.start(), bounds.end())
             }
-            Self::IncorrectInstructionSyntax(errs) => {
+            Kind::IncorrectInstructionSyntax(errs) => {
                 let mut res = "Allowed formats:".to_string();
                 for (syntax, _) in errs {
                     write!(res, "\n{syntax}").expect("The write macro can't fail for `String`s");
                 }
                 res
             }
-            Self::DuplicateLabel(_, None) => "Label also defined in library".into(),
-            Self::UnallowedStatementType { section: None, .. } => {
+            Kind::DuplicateLabel(_, None) => "Label also defined in library".into(),
+            Kind::UnallowedStatementType { section: None, .. } => {
                 "No section previously started".into()
             }
             _ => return None,
         })
     }
 
-    /// Gets a hint about how to fix the error if available
-    fn hint(&self, arch: &Architecture, labels: &LabelTable, color: bool) -> Option<String> {
-        Some(match self {
-            Self::UnknownDirective(s) => {
-                let names = utils::get_similar(s, arch.directives.iter().map(|d| d.name));
+    fn hint(&self, color: bool) -> Option<String> {
+        Some(match self.error.kind.as_ref() {
+            Kind::UnknownDirective(s) => {
+                let names = utils::get_similar(s, self.arch.directives.iter().map(|d| d.name));
                 format!("Did you mean {}?", DisplayList::non_empty(names, color)?)
             }
-            Self::UnknownInstruction(s) => {
-                let inst_names = arch.instructions.iter().map(|i| i.name);
-                let pseudo_names = arch.pseudoinstructions.iter().map(|i| i.name);
+            Kind::UnknownInstruction(s) => {
+                let inst_names = self.arch.instructions.iter().map(|i| i.name);
+                let pseudo_names = self.arch.pseudoinstructions.iter().map(|i| i.name);
                 let names = utils::get_similar(s, inst_names.chain(pseudo_names));
                 format!("Did you mean {}?", DisplayList::non_empty(names, color)?)
             }
-            Self::UnknownLabel(s) => {
-                let names = utils::get_similar(s, labels.iter().map(|(n, _)| n.as_str()));
+            Kind::UnknownLabel(s) => {
+                let names = utils::get_similar(s, self.label_table.iter().map(|(n, _)| n.as_str()));
                 format!("Did you mean {}?", DisplayList::non_empty(names, color)?)
             }
-            Self::UnknownRegister { name, file } => {
-                let files = arch.find_reg_files(*file);
+            Kind::UnknownRegister { name, file } => {
+                let files = self.arch.find_reg_files(*file);
                 let registers = files.flat_map(|file| {
                     file.elements
                         .iter()
@@ -246,12 +294,12 @@ impl Kind {
                 let names = utils::get_similar(name, registers);
                 format!("Did you mean {}?", DisplayList::non_empty(names, color)?)
             }
-            Self::DuplicateLabel(.., Some(_)) => "Consider renaming either of the labels".into(),
-            Self::DuplicateLabel(.., None) | Self::MainInLibrary => {
+            Kind::DuplicateLabel(.., Some(_)) => "Consider renaming either of the labels".into(),
+            Kind::DuplicateLabel(.., None) | Kind::MainInLibrary => {
                 "Consider renaming the label".into()
             }
-            Self::MainOutsideCode => "Consider moving the label to a user instruction".into(),
-            Self::IncorrectDirectiveArgumentNumber { expected, found } => {
+            Kind::MainOutsideCode => "Consider moving the label to a user instruction".into(),
+            Kind::IncorrectDirectiveArgumentNumber { expected, found } => {
                 let expected = expected.amount;
                 let (msg, n) = if expected > *found {
                     ("adding the missing", expected - found)
@@ -261,8 +309,8 @@ impl Kind {
                 let color = color.then_some(Color::Green);
                 format!("Consider {msg} {}", ArgNum(n, color))
             }
-            Self::UnallowedStatementType { found, .. } => {
-                let names: Vec<_> = arch.directives.iter()
+            Kind::UnallowedStatementType { found, .. } => {
+                let names: Vec<_> = self.arch.directives.iter()
                     .filter(|dir| matches!(dir.action, DirectiveAction::Segment(s) if s.is_code() == found.is_code()))
                     .map(|dir| dir.name)
                     .collect();
@@ -278,50 +326,13 @@ impl Kind {
         })
     }
 
-    /// Gets the label text describing the error
-    fn label(&self, arch: &Architecture, color: bool) -> String {
-        let red = color.then_some(Color::Red);
-        match self {
-            Self::UnknownDirective(..) => "Unknown directive".into(),
-            Self::UnknownInstruction(..) => "Unknown instruction".into(),
-            Self::UnknownLabel(..) => "Unknown label".into(),
-            Self::UnknownRegisterFile(..) => "Unknown register file".into(),
-            Self::UnknownRegister { .. } => "Unknown register".into(),
-            Self::IncorrectInstructionSyntax(..) => "Incorrect syntax".into(),
-            Self::DuplicateLabel(..) => "Duplicate label".into(),
-            Self::MissingMainLabel => {
-                let main = Colored(arch.main_label(), color.then_some(Color::Green));
-                format!("Consider adding a label called {main} to an instruction")
-            }
-            Self::MainOutsideCode | Self::MainInLibrary => "Label defined here".into(),
-            Self::IntegerOutOfRange(val, _) | Self::UnallowedNegativeValue(val) => {
-                format!("This expression has value {}", Colored(val, red))
-            }
-            Self::MemorySectionFull(..) => "This element doesn't fit in the available space".into(),
-            Self::DataUnaligned { .. } => "This value isn't aligned".into(),
-            Self::IncorrectDirectiveArgumentNumber { found, .. } => {
-                format!("This directive has {}", ArgNum(*found, red))
-            }
-            Self::IncorrectArgumentType { found, .. } => {
-                format!("This argument has type {}", Colored(found, red))
-            }
-            Self::DivisionBy0 => format!("This expression has value {}", Colored(0, red)),
-            Self::UnallowedFloat | Self::UnallowedLabel => "This value can't be used".into(),
-            Self::UnallowedFloatOperation(..) => "This operation can't be performed".into(),
-            Self::UnallowedStatementType { .. } => {
-                "This statement can't be used in the current section".into()
-            }
-            Self::PseudoinstructionError { .. } => "While expanding this pseudoinstruction".into(),
-        }
-    }
-
     /// Gets a list of extra context labels related to the error
-    fn context(&self) -> Vec<(&Span, &'static str)> {
-        match self {
-            Self::DuplicateLabel(_, Some(span)) => {
+    fn context(&self, _: bool) -> Vec<(&Span, &'static str)> {
+        match self.error.kind.as_ref() {
+            Kind::DuplicateLabel(_, Some(span)) => {
                 vec![(span, "Label also defined here")]
             }
-            Self::UnallowedStatementType {
+            Kind::UnallowedStatementType {
                 section: Some(section),
                 ..
             } => {
@@ -331,69 +342,104 @@ impl Kind {
         }
     }
 
-    /// Gets the error message of this error
-    fn msg(&self, arch: &Architecture, color: bool) -> String {
+    fn label(&self, color: bool) -> String {
+        let red = color.then_some(Color::Red);
+        match self.error.kind.as_ref() {
+            Kind::UnknownDirective(..) => "Unknown directive".into(),
+            Kind::UnknownInstruction(..) => "Unknown instruction".into(),
+            Kind::UnknownLabel(..) => "Unknown label".into(),
+            Kind::UnknownRegisterFile(..) => "Unknown register file".into(),
+            Kind::UnknownRegister { .. } => "Unknown register".into(),
+            Kind::IncorrectInstructionSyntax(..) => "Incorrect syntax".into(),
+            Kind::DuplicateLabel(..) => "Duplicate label".into(),
+            Kind::MissingMainLabel => {
+                let main = Colored(self.arch.main_label(), color.then_some(Color::Green));
+                format!("Consider adding a label called {main} to an instruction")
+            }
+            Kind::MainOutsideCode | Kind::MainInLibrary => "Label defined here".into(),
+            Kind::IntegerOutOfRange(val, _) | Kind::UnallowedNegativeValue(val) => {
+                format!("This expression has value {}", Colored(val, red))
+            }
+            Kind::MemorySectionFull(..) => "This element doesn't fit in the available space".into(),
+            Kind::DataUnaligned { .. } => "This value isn't aligned".into(),
+            Kind::IncorrectDirectiveArgumentNumber { found, .. } => {
+                format!("This directive has {}", ArgNum(*found, red))
+            }
+            Kind::IncorrectArgumentType { found, .. } => {
+                format!("This argument has type {}", Colored(found, red))
+            }
+            Kind::DivisionBy0 => format!("This expression has value {}", Colored(0, red)),
+            Kind::UnallowedFloat | Kind::UnallowedLabel => "This value can't be used".into(),
+            Kind::UnallowedFloatOperation(..) => "This operation can't be performed".into(),
+            Kind::UnallowedStatementType { .. } => {
+                "This statement can't be used in the current section".into()
+            }
+            Kind::PseudoinstructionError { .. } => "While expanding this pseudoinstruction".into(),
+        }
+    }
+
+    fn msg(&self, color: bool) -> String {
         let red = color.then_some(Color::Red);
         let blue = color.then_some(Color::BrightBlue);
-        let main = Colored(arch.main_label(), red);
-        match self {
-            Self::UnknownDirective(s) => {
+        let main = Colored(self.arch.main_label(), red);
+        match self.error.kind.as_ref() {
+            Kind::UnknownDirective(s) => {
                 format!("Directive {} isn't defined", Colored(s, red))
             }
-            Self::UnknownInstruction(s) => {
+            Kind::UnknownInstruction(s) => {
                 format!("Instruction {} isn't defined", Colored(s, red))
             }
-            Self::UnknownLabel(s) => format!("Label {} isn't defined", Colored(s, red)),
-            Self::UnknownRegisterFile(s) => {
+            Kind::UnknownLabel(s) => format!("Label {} isn't defined", Colored(s, red)),
+            Kind::UnknownRegisterFile(s) => {
                 format!("Register file of type {} isn't defined", Colored(s, red))
             }
-            Self::UnknownRegister { name, file } => format!(
+            Kind::UnknownRegister { name, file } => format!(
                 "Register {} isn't defined in file type {}",
                 Colored(name, red),
                 Colored(file, blue)
             ),
-            Self::IncorrectInstructionSyntax(..) => "Incorrect instruction syntax".into(),
-            Self::DuplicateLabel(s, _) => {
+            Kind::IncorrectInstructionSyntax(..) => "Incorrect instruction syntax".into(),
+            Kind::DuplicateLabel(s, _) => {
                 format!("Label {} is already defined", Colored(s, red))
             }
-            Self::MissingMainLabel => format!("Main label {main} not found"),
-            Self::MainInLibrary => format!("Main label {main} can't be used in libraries"),
-            Self::MainOutsideCode => {
+            Kind::MissingMainLabel => format!("Main label {main} not found"),
+            Kind::MainInLibrary => format!("Main label {main} can't be used in libraries"),
+            Kind::MainOutsideCode => {
                 format!("Main label {main} defined outside of the text segment")
             }
-            Self::IntegerOutOfRange(val, _) => format!(
+            Kind::IntegerOutOfRange(val, _) => format!(
                 "Value {} is outside of the valid range of the field",
                 Colored(val, red)
             ),
-            Self::MemorySectionFull(name) => {
+            Kind::MemorySectionFull(name) => {
                 format!("{name} memory segment is full")
             }
-            Self::DataUnaligned { address, alignment } => format!(
+            Kind::DataUnaligned { address, alignment } => format!(
                 "Data at address {} isn't aligned to size {} nor word size {}",
                 Colored(format!("{address:#X}"), red),
                 Colored(alignment, blue),
-                Colored(arch.word_size().div_ceil(8), blue),
+                Colored(self.arch.word_size().div_ceil(8), blue),
             ),
-            Self::UnallowedNegativeValue(_) => "Negative values aren't allowed here".into(),
-            Self::IncorrectDirectiveArgumentNumber { expected, found } => format!(
+            Kind::UnallowedNegativeValue(_) => "Negative values aren't allowed here".into(),
+            Kind::IncorrectDirectiveArgumentNumber { expected, found } => format!(
                 "Incorrect amount of arguments, expected {}{} but found {}",
                 if expected.at_least { "at least " } else { "" },
                 Colored(expected.amount, blue),
                 Colored(found, red),
             ),
-            Self::IncorrectArgumentType { expected, found } => format!(
+            Kind::IncorrectArgumentType { expected, found } => format!(
                 "Incorrect argument type, expected {} but found {}",
                 Colored(expected, blue),
                 Colored(found, red),
             ),
-            Self::DivisionBy0 => "Can't divide by 0".into(),
-            Self::UnallowedFloat => "Can't use floating point values in integer expressions".into(),
-            Self::UnallowedLabel => "Can't use labels in literal expressions".into(),
-            Self::UnallowedFloatOperation(op) => format!(
+            Kind::DivisionBy0 => "Can't divide by 0".into(),
+            Kind::UnallowedFloat => "Can't use floating point values in integer expressions".into(),
+            Kind::UnallowedLabel => "Can't use labels in literal expressions".into(),
+            Kind::UnallowedFloatOperation(op) => format!(
                 "Can't perform the {} operation with floating point numbers",
                 Colored(op, red),
             ),
-            Self::UnallowedStatementType { section, found } => {
+            Kind::UnallowedStatementType { section, found } => {
                 let found = if found.is_code() {
                     "instruction"
                 } else {
@@ -406,7 +452,7 @@ impl Kind {
                 let section = Colored(section, blue);
                 format!("Can't use {found} statements while in section {section}",)
             }
-            Self::PseudoinstructionError { name, .. } => {
+            Kind::PseudoinstructionError { name, .. } => {
                 let name = Colored(name, red);
                 format!("Error while expanding pseudoinstruction {name}")
             }
@@ -446,23 +492,23 @@ impl<'arch> crate::RenderError for Error<'arch> {
         let note_color = color.then_some(Color::BrightBlue);
         let mut report = Report::build(ReportKind::Error, (filename, self.error.span.span.clone()))
             .with_config(Config::default().with_color(color))
-            .with_code(format!("E{:02}", self.error.kind.error_code()))
-            .with_message(self.error.kind.msg(self.arch, color))
+            .with_code(format!("E{:02}", self.code()))
+            .with_message(self.msg(color))
             .with_label(
                 Label::new((filename, self.error.span.span.clone()))
-                    .with_message(self.error.kind.label(self.arch, color))
+                    .with_message(self.label(color))
                     .with_color(Color::Red),
             )
-            .with_labels(self.error.kind.context().into_iter().map(|label| {
+            .with_labels(self.context(color).into_iter().map(|label| {
                 Label::new((filename, label.0.clone()))
                     .with_message(format!("{} {}", "Note:".fg(note_color), label.1))
                     .with_color(Color::BrightBlue)
                     .with_order(10)
             }));
-        if let Some(note) = self.error.kind.note() {
+        if let Some(note) = self.note(color) {
             report.set_note(note);
         }
-        if let Some(hint) = self.error.kind.hint(self.arch, &self.label_table, color) {
+        if let Some(hint) = self.hint(color) {
             report.set_help(hint);
         }
 
@@ -495,24 +541,11 @@ impl<'arch> crate::RenderError for Error<'arch> {
     }
 }
 
-impl PseudoinstructionErrorKind {
-    /// Gets the label text describing the error
-    const fn label(&self) -> &'static str {
-        match self {
-            Self::UnknownFieldName(..) => "Unknown field name",
-            Self::UnknownFieldNumber { .. } => "Field index out of bounds",
-            Self::UnknownFieldType(..) => "Unknown field type",
-            Self::EmptyBitRange => "Empty bit range",
-            Self::BitRangeOutOfBounds { .. } => "Bit range out of bounds",
-            Self::EvaluationError(..) => "While evaluating this code",
-            Self::ParseError { .. } => "While parsing this instruction",
-        }
-    }
-
-    /// Gets a note with extra information about the error if available
+impl ErrorInfo for PseudoinstructionError {
     fn note(&self, color: bool) -> Option<String> {
-        Some(match self {
-            Self::UnknownFieldNumber { size, .. } => {
+        use PseudoinstructionErrorKind as Kind;
+        Some(match &self.kind {
+            Kind::UnknownFieldNumber { size, .. } => {
                 format!(
                     "The pseudoinstruction has {}",
                     ArgNum(*size, color.then_some(Color::BrightBlue))
@@ -522,23 +555,37 @@ impl PseudoinstructionErrorKind {
         })
     }
 
-    /// Gets the error message of this error
+    fn label(&self, _: bool) -> String {
+        use PseudoinstructionErrorKind as Kind;
+        match &self.kind {
+            Kind::UnknownFieldName(..) => "Unknown field name",
+            Kind::UnknownFieldNumber { .. } => "Field index out of bounds",
+            Kind::UnknownFieldType(..) => "Unknown field type",
+            Kind::EmptyBitRange => "Empty bit range",
+            Kind::BitRangeOutOfBounds { .. } => "Bit range out of bounds",
+            Kind::EvaluationError(..) => "While evaluating this code",
+            Kind::ParseError { .. } => "While parsing this instruction",
+        }
+        .into()
+    }
+
     fn msg(&self, color: bool) -> String {
+        use PseudoinstructionErrorKind as Kind;
         let red = color.then_some(Color::Red);
-        match self {
-            Self::UnknownFieldName(s) => format!("Field {} isn't defined", Colored(s, red)),
-            Self::UnknownFieldNumber { idx, .. } => {
+        match &self.kind {
+            Kind::UnknownFieldName(s) => format!("Field {} isn't defined", Colored(s, red)),
+            Kind::UnknownFieldNumber { idx, .. } => {
                 format!("Field index {} is out of bounds", Colored(idx, red))
             }
-            Self::UnknownFieldType(s) => format!("Unknown field type {}", Colored(s, red)),
-            Self::EmptyBitRange => "Bit range is empty".into(),
-            Self::BitRangeOutOfBounds { upper_bound, msb } => format!(
+            Kind::UnknownFieldType(s) => format!("Unknown field type {}", Colored(s, red)),
+            Kind::EmptyBitRange => "Bit range is empty".into(),
+            Kind::BitRangeOutOfBounds { upper_bound, msb } => format!(
                 "Bit range is of bounds, upper bound is {} but the MSB is {}",
                 Colored(upper_bound, red),
                 Colored(msb, color.then_some(Color::BrightBlue)),
             ),
-            Self::EvaluationError(s) => format!("Error evaluating JS code:\n{s}"),
-            Self::ParseError(_) => "Error parsing instruction".into(),
+            Kind::EvaluationError(s) => format!("Error evaluating JS code:\n{s}"),
+            Kind::ParseError(_) => "Error parsing instruction".into(),
         }
     }
 }
@@ -549,13 +596,13 @@ impl crate::RenderError for PseudoinstructionError {
         let src = &self.definition;
         let mut report = Report::build(ReportKind::Error, (FILENAME, self.span.clone()))
             .with_config(Config::default().with_color(color))
-            .with_message(self.kind.msg(color))
+            .with_message(self.msg(color))
             .with_label(
                 Label::new((FILENAME, self.span.clone()))
-                    .with_message(self.kind.label())
+                    .with_message(self.label(color))
                     .with_color(Color::Red),
             );
-        if let Some(note) = self.kind.note(color) {
+        if let Some(note) = self.note(color) {
             report.set_note(note);
         }
         report
