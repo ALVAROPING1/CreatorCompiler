@@ -27,6 +27,8 @@ use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
 use serde_json::Number;
 
+use std::collections::HashMap;
+
 mod utils;
 pub use utils::NonEmptyRangeInclusive;
 pub use utils::{BaseN, Integer, Pair};
@@ -58,7 +60,12 @@ pub struct Architecture<'a> {
     /// Interrupt configuration
     #[serde(default)]
     pub interrupts: Option<Interrupts<'a>>,
+    /// Definitions of possible enumerated instruction fields
+    #[serde(default)]
+    pub enums: HashMap<&'a str, EnumDefinition<'a>>,
 }
+
+pub type EnumDefinition<'a> = HashMap<&'a str, Integer>;
 
 /// Architecture metadata attributes
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
@@ -283,7 +290,7 @@ pub struct InstructionField<'a, BitRange> {
     pub name: &'a str,
     /// Type of the field
     #[serde(flatten)]
-    pub r#type: FieldType,
+    pub r#type: FieldType<'a>,
     /// Range of bits of the field. Ignored for pseudoinstructions
     #[serde(flatten)]
     pub range: BitRange,
@@ -302,7 +309,7 @@ utils::schema_from!(BitRange, json::BitRange);
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
-pub enum FieldType {
+pub enum FieldType<'a> {
     /// Opcode of the instruction
     Co,
     /// Extended operation code
@@ -337,6 +344,11 @@ pub enum FieldType {
     SingleFPReg,
     /// Immediate address, equivalent to `ImmUnsigned`
     Address,
+    /// Enumerated field that only allows a predefined set of names to be used
+    Enum {
+        /// Name of the enumeration, defined in [`Architecture::enums`]
+        enum_name: &'a str,
+    },
 }
 
 /// Pseudoinstruction specification

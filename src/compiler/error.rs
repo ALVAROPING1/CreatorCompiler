@@ -25,6 +25,7 @@
 use ariadne::{Color, Config, Fmt, Label, Report, ReportKind, Source};
 use num_bigint::{BigInt, BigUint};
 
+use std::collections::HashMap;
 use std::fmt;
 use std::ops::RangeInclusive;
 use std::{fmt::Write as _, io::Write as _};
@@ -68,6 +69,11 @@ pub enum Kind {
     UnknownRegister {
         name: String,
         file: RegisterType,
+    },
+    UnknownEnumType(String),
+    UnknownEnumValue {
+        value: String,
+        enum_name: String,
     },
     IncorrectInstructionSyntax(Vec<(String, ParseError)>),
     DuplicateLabel(String, Option<Span>),
@@ -228,6 +234,8 @@ impl<'arch> ErrorInfo for Error<'arch> {
             Kind::UnknownLabel(..) => 3,
             Kind::UnknownRegisterFile(..) => 4,
             Kind::UnknownRegister { .. } => 5,
+            Kind::UnknownEnumType { .. } => 23,
+            Kind::UnknownEnumValue { .. } => 24,
             Kind::IncorrectInstructionSyntax(..) => 6,
             Kind::DuplicateLabel(..) => 7,
             Kind::MissingMainLabel => 8,
@@ -294,6 +302,13 @@ impl<'arch> ErrorInfo for Error<'arch> {
                 let names = utils::get_similar(name, registers);
                 format!("Did you mean {}?", DisplayList::non_empty(names, color)?)
             }
+            Kind::UnknownEnumValue { value, enum_name } => {
+                let enums = &self.arch.enums;
+                let default = HashMap::default();
+                let enum_def = enums.get(enum_name.as_str()).unwrap_or(&default);
+                let names = utils::get_similar(value, enum_def.keys().copied());
+                format!("Did you mean {}?", DisplayList::non_empty(names, color)?)
+            }
             Kind::DuplicateLabel(.., Some(_)) => "Consider renaming either of the labels".into(),
             Kind::DuplicateLabel(.., None) | Kind::MainInLibrary => {
                 "Consider renaming the label".into()
@@ -350,6 +365,8 @@ impl<'arch> ErrorInfo for Error<'arch> {
             Kind::UnknownLabel(..) => "Unknown label".into(),
             Kind::UnknownRegisterFile(..) => "Unknown register file".into(),
             Kind::UnknownRegister { .. } => "Unknown register".into(),
+            Kind::UnknownEnumType { .. } => "Unknown enum type".into(),
+            Kind::UnknownEnumValue { .. } => "Unknown enum value".into(),
             Kind::IncorrectInstructionSyntax(..) => "Incorrect syntax".into(),
             Kind::DuplicateLabel(..) => "Duplicate label".into(),
             Kind::MissingMainLabel => {
@@ -397,6 +414,12 @@ impl<'arch> ErrorInfo for Error<'arch> {
                 "Register {} isn't defined in file type {}",
                 Colored(name, red),
                 Colored(file, blue)
+            ),
+            Kind::UnknownEnumType(t) => format!("Enum type {} isn't defined", Colored(t, red)),
+            Kind::UnknownEnumValue { value, enum_name } => format!(
+                "Value {} isn't defined in enum type {}",
+                Colored(value, red),
+                Colored(enum_name, blue)
             ),
             Kind::IncorrectInstructionSyntax(..) => "Incorrect instruction syntax".into(),
             Kind::DuplicateLabel(s, _) => {

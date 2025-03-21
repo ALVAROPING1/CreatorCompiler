@@ -838,6 +838,29 @@ fn compile_inner(
                             })?;
                         (i.into(), name)
                     }
+                    FieldType::Enum { enum_name } => {
+                        let span = (&arg.value.1, &inst.span);
+                        let enum_definition = arch
+                            .enums
+                            .get(enum_name)
+                            .ok_or_else(|| ErrorKind::UnknownEnumType((*enum_name).to_string()))
+                            .add_span(span)?;
+                        let Expr::Identifier((name, _)) = arg.value.0 else {
+                            return Err(ErrorKind::IncorrectArgumentType {
+                                expected: ArgumentType::Identifier,
+                                found: ArgumentType::Expression,
+                            }
+                            .add_span(span));
+                        };
+                        let Some(value) = enum_definition.get(name.as_str()) else {
+                            return Err(ErrorKind::UnknownEnumValue {
+                                value: name,
+                                enum_name: (*enum_name).to_string(),
+                            })
+                            .add_span(span);
+                        };
+                        (value.0.clone().into(), name)
+                    }
                 };
                 binary_instruction
                     .replace(
@@ -1249,6 +1272,19 @@ mod test {
                 data(17, &["a"], Value::Space(1u8.into()))
             ]
         );
+        assert_eq!(x.global_symbols, HashSet::new());
+    }
+
+    #[test]
+    fn instruction_fields_enums() {
+        let x = compile(".text\nmain: enum a, b, value, last").unwrap();
+        let binary = "01010000000000011111110110000101";
+        assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
+        assert_eq!(
+            x.instructions,
+            vec![inst(0, &["main"], "enum a b value last", binary, 12..34)]
+        );
+        assert_eq!(x.data_memory, vec![]);
         assert_eq!(x.global_symbols, HashSet::new());
     }
 
@@ -1855,6 +1891,43 @@ mod test {
     }
 
     #[test]
+    fn unknown_enum_value() {
+        assert_eq!(
+            compile(".text\nmain: enum a, b, value, wrong"),
+            Err(ErrorKind::UnknownEnumValue {
+                value: "wrong".into(),
+                enum_name: "test".into(),
+            }
+            .add_span(30..35)),
+        );
+        assert_eq!(
+            compile(".text\nmain: enum a, b, value, a"),
+            Err(ErrorKind::UnknownEnumValue {
+                value: "a".into(),
+                enum_name: "test".into(),
+            }
+            .add_span(30..31)),
+        );
+        assert_eq!(
+            compile(".text\nmain: enum a, c, value, last"),
+            Err(ErrorKind::UnknownEnumValue {
+                value: "c".into(),
+                enum_name: "enum1".into(),
+            }
+            .add_span(20..21)),
+        );
+        // Enum names should be case sensitive
+        assert_eq!(
+            compile(".text\nmain: enum a, b, value, OTHER"),
+            Err(ErrorKind::UnknownEnumValue {
+                value: "OTHER".into(),
+                enum_name: "test".into(),
+            }
+            .add_span(30..35)),
+        );
+    }
+
+    #[test]
     fn section_args() {
         assert_eq!(
             compile(".data 1\n.text\nmain: nop"),
@@ -1932,6 +2005,14 @@ mod test {
                 found: ArgumentType::Expression,
             }
             .add_span(20..23)),
+        );
+        assert_eq!(
+            compile(".text\nmain: enum a, b, value, 0"),
+            Err(ErrorKind::IncorrectArgumentType {
+                expected: ArgumentType::Identifier,
+                found: ArgumentType::Expression,
+            }
+            .add_span(30..31)),
         );
     }
 

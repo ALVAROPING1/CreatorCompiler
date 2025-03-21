@@ -519,6 +519,56 @@
       "definition": "",
       "separated": [],
       "help": ""
+    },
+    {
+      "name": "enum",
+      "type": "Arithmetic integer",
+      "signature_definition": "F0 F1 F2 F3 F4",
+      "signature": "enum,enum,enum,enum,enum",
+      "signatureRaw": "enum enum1 enum2 enum3 enum4",
+      "co": "1111111",
+      "cop": "0000000000",
+      "nwords": 1,
+      "clk_cycles": 1,
+      "fields": [
+        {
+          "name": "enum",
+          "type": "co",
+          "startbit": 16,
+          "stopbit": 10
+        },
+        {
+          "name": "enum1",
+          "type": "enum",
+          "startbit": 31,
+          "stopbit": 30,
+          "enum_name": "enum1"
+        },
+        {
+          "name": "enum2",
+          "type": "enum",
+          "startbit": 28,
+          "stopbit": 27,
+          "enum_name": "enum1"
+        },
+        {
+          "name": "enum3",
+          "type": "enum",
+          "startbit": 3,
+          "stopbit": 0,
+          "enum_name": "test"
+        },
+        {
+          "name": "enum4",
+          "type": "enum",
+          "startbit": 8,
+          "stopbit": 5,
+          "enum_name": "test"
+        }
+      ],
+      "definition": "",
+      "separated": [],
+      "help": ""
     }
   ],
   "pseudoinstructions": [],
@@ -645,5 +695,16 @@
       "name": "stack end",
       "value": "0x0FFFFFFF"
     }
-  ]
+  ],
+  "enums": {
+    "enum1": {
+      "a": 1,
+      "b": 2
+    },
+    "test": {
+      "value": 5,
+      "other": 3,
+      "last": 12
+    }
+  }
 }
