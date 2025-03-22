@@ -271,6 +271,15 @@ mod test {
                     0..9,
                 )],
             ),
+            (".name \"󰉀\"\n", {
+                let len = 8 + '󰉀'.len_utf8();
+                vec![directive(
+                    vec![],
+                    (".name", 0..5),
+                    (vec![(Data::String("󰉀".into()), 6..len)], 6..len),
+                    0..len,
+                )]
+            }),
             (
                 ".name \"a\", 1, b\n",
                 vec![directive(

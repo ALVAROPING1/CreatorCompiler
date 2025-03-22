@@ -279,7 +279,11 @@ mod test {
     use super::*;
 
     fn lex(code: &str) -> Result<Vec<Spanned<Token>>, ()> {
-        lexer("#").parse(code).map_err(|e| eprintln!("{e:?}"))
+        let len = code.len();
+        let code_iter = code.char_indices().map(|(i, c)| (c, i..i + c.len_utf8()));
+        #[allow(clippy::range_plus_one)] // Chumsky requires an inclusive range to avoid type errors
+        let stream = chumsky::stream::Stream::from_iter(len..len + 1, code_iter);
+        lexer("#").parse(stream).map_err(|e| eprintln!("{e:?}"))
     }
 
     #[test]
@@ -346,7 +350,7 @@ mod test {
     #[test]
     fn string() {
         // normal strings
-        for s in ["", "a", "test", "TEST", "0a"] {
+        for s in ["", "a", "test", "TEST", "0a", "π √  🅐 󰸞"] {
             assert_eq!(
                 lex(&format!("\"{s}\"")),
                 Ok(vec![(Token::String(s.into()), 0..s.len() + 2)])
@@ -368,10 +372,25 @@ mod test {
     #[test]
     fn char() {
         // normal characters
-        for c in ('!'..='~').filter(|c| !"\\\'".contains(*c)) {
+        let ascii = ('!'..='~').filter(|c| !"\\\'".contains(*c));
+        let chars = ascii
+            .chain('¡'..='±')
+            .chain('Σ'..='ω')
+            .chain('ᴀ'..='ᴊ')
+            .chain('←'..='↙')
+            .chain('⎛'..='⎿')
+            .chain('─'..='⎮')
+            .chain('龱'..='龺')
+            .chain('Ꭓ'..='ꞷ')
+            .chain(''..='')
+            .chain('𐝈'..='𐝌')
+            .chain('𛰙'..='𛰜')
+            .chain('🮤'..='🮧')
+            .chain('󰀁'..='󰀘');
+        for c in chars {
             assert_eq!(
                 lex(&format!("'{c}'")),
-                Ok(vec![(Token::Character(c), 0..3)])
+                Ok(vec![(Token::Character(c), 0..c.len_utf8() + 2)])
             );
         }
         for (s, res) in ESCAPE_SEQUENCES {
@@ -473,6 +492,7 @@ mod test {
 
     #[test]
     fn padding() {
+        let utf8_len = "/* π √  🅐 󰸞 */".len();
         let test_cases = [
             ("  a", 2..3),
             ("a  ", 0..1),
@@ -485,6 +505,10 @@ mod test {
             ("/* inline comment */ test", 21..25),
             ("test /* inline comment */", 0..4),
             ("/* inline comment */ test  /* inline comment */", 21..25),
+            (
+                "/* π √  🅐 󰸞 */ test  /* inline comment */",
+                utf8_len + 1..utf8_len + 5,
+            ),
             ("test # asd", 0..4),
             ("test #asd", 0..4),
         ];
