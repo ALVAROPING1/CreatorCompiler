@@ -753,6 +753,7 @@ fn compile_inner(
         _ => {}
     }
 
+    let case = arch.arch_conf.sensitive_register_name;
     let instructions = pending_instructions
         .into_iter()
         .map(|inst| {
@@ -827,16 +828,16 @@ fn compile_inner(
                             ErrorKind::UnknownRegisterFile(file_type)
                                 .add_span((&arg.value.1, &inst.span))
                         })?;
-                        let (i, _) = files
-                            .find_map(|file| file.find_register(&name))
+                        let (i, _, name) = files
+                            .find_map(|file| file.find_register(&name, case))
                             .ok_or_else(|| {
-                                ErrorKind::UnknownRegister {
-                                    name: name.clone(),
-                                    file: file_type,
-                                }
-                                .add_span((&arg.value.1, &inst.span))
-                            })?;
-                        (i.into(), name)
+                            ErrorKind::UnknownRegister {
+                                name: name.clone(),
+                                file: file_type,
+                            }
+                            .add_span((&arg.value.1, &inst.span))
+                        })?;
+                        (i.into(), name.to_string())
                     }
                     FieldType::Enum { enum_name } => {
                         let span = (&arg.value.1, &inst.span);
@@ -1151,6 +1152,20 @@ mod test {
         assert_eq!(
             x.instructions,
             vec![inst(0, &["main"], "reg ctrl1 x2 fs1 FD2", binary, 12..35)]
+        );
+        assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.global_symbols, HashSet::new());
+        // Case insensitive names (when disabled in the architecture) get replaced with the name
+        // defined in the architecture
+        let arch = include_str!("../tests/architecture2.json");
+        let x = compile_arch(".text\nmain: int zero", arch).unwrap();
+        let binary = "00000000000000000000000001111111";
+        assert_eq!(x, compile_arch(".text\nmain: int ZERO", arch).unwrap());
+        assert_eq!(x, compile_arch(".text\nmain: int zErO", arch).unwrap());
+        assert_eq!(x.label_table, label_table([("main", 32, 6..11)]));
+        assert_eq!(
+            x.instructions,
+            vec![inst(32, &["main"], "int ZeRo", binary, 12..20)]
         );
         assert_eq!(x.data_memory, vec![]);
         assert_eq!(x.global_symbols, HashSet::new());
@@ -1847,7 +1862,7 @@ mod test {
             }
             .add_span(16..17)),
         );
-        // Register names should be case sensitive
+        // Register names should be case sensitive if enabled in the architecture
         assert_eq!(
             compile(".text\nmain: reg pc, x0, ft1, ft2"),
             Err(ErrorKind::UnknownRegister {

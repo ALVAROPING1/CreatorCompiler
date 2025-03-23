@@ -646,17 +646,25 @@ impl<'a> Architecture<'a> {
 }
 
 impl<'a> Component<'a> {
-    /// Finds the register with the given name
+    /// Finds the register with the given name, returning its index in its register file, the
+    /// register definition, and the name that matched
     ///
     /// # Parameters
     ///
     /// * `name`: name of the register to search for
+    /// * `match_case`: whether the find should be case sensitive (`true`) or not (`false`)
     #[must_use]
-    pub fn find_register(&self, name: &str) -> Option<(usize, &Register)> {
-        self.elements
-            .iter()
-            .enumerate()
-            .find(|(_, reg)| reg.name.contains(&name))
+    pub fn find_register(&self, name: &str, match_case: bool) -> Option<(usize, &Register, &str)> {
+        self.elements.iter().enumerate().find_map(|(i, reg)| {
+            let name = reg.name.iter().find(|&&n| {
+                if match_case {
+                    n == name
+                } else {
+                    n.eq_ignore_ascii_case(name)
+                }
+            });
+            name.map(|&n| (i, reg, n))
+        })
     }
 }
 

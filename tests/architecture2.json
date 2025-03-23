@@ -30,7 +30,7 @@
     },
     {
       "name": "Sensitive Register Name",
-      "value": "1"
+      "value": "0"
     },
     {
       "name": "CommentPrefix",
@@ -45,7 +45,8 @@
       "elements": [
         {
           "name": [
-            "x0"
+            "x0",
+            "ZeRo"
           ],
           "nbits": "32",
           "value": 0,
@@ -105,6 +106,34 @@
         {
           "name": "reg",
           "type": "Ctrl-Reg",
+          "startbit": 31,
+          "stopbit": 28
+        }
+      ],
+      "definition": "",
+      "separated": [],
+      "help": ""
+    },
+    {
+      "name": "int",
+      "type": "Arithmetic integer",
+      "signature_definition": "F0 F1",
+      "signature": "int,INT-Reg",
+      "signatureRaw": "int reg",
+      "co": "1111111",
+      "cop": "0000000000",
+      "nwords": 1,
+      "clk_cycles": 1,
+      "fields": [
+        {
+          "name": "double",
+          "type": "co",
+          "startbit": 6,
+          "stopbit": 0
+        },
+        {
+          "name": "reg",
+          "type": "INT-Reg",
           "startbit": 31,
           "stopbit": 28
         }

@@ -193,6 +193,7 @@ pub fn expand<'b, 'a: 'b>(
 
     // Expansion
     let mut def = instruction.definition.replace('\n', "");
+    let case = arch.arch_conf.sensitive_register_name;
 
     // Replace occurrences of `AliasDouble()`
     while let Some(x) = ALIAS_DOUBLE.captures(&def) {
@@ -208,7 +209,7 @@ pub fn expand<'b, 'a: 'b>(
         let name = reg_name(&name.value)?;
         let i: usize = num(i);
         for file in arch.find_reg_files(RegisterType::Float(FloatType::Double)) {
-            if let Some((_, reg)) = file.find_register(name) {
+            if let Some((_, reg, _)) = file.find_register(name, case) {
                 let name = reg
                     .simple_reg
                     .and_then(|regs| regs.get(i).copied())
