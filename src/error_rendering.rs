@@ -49,11 +49,13 @@ pub struct DisplayList<T> {
 
 impl<T: std::cmp::Ord> DisplayList<T> {
     /// Creates a new [`DisplayList`], checking that it isn't empty
+    #[must_use]
     pub fn non_empty(names: Vec<T>, color: bool) -> Option<Self> {
         (!names.is_empty()).then_some(Self::new(names, color))
     }
 
     /// Creates a new [`DisplayList`]
+    #[must_use]
     pub fn new(mut values: Vec<T>, color: bool) -> Self {
         values.sort_unstable();
         Self { values, color }
@@ -94,6 +96,7 @@ impl fmt::Display for ArgNum {
 ///
 /// * `target`: target name to match against
 /// * `names`: iterator of possible names
+#[must_use]
 pub fn get_similar<'a>(target: &str, names: impl IntoIterator<Item = &'a str>) -> Vec<&'a str> {
     let mut distances = std::collections::HashMap::new();
     for name in names {
