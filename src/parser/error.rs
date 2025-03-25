@@ -23,6 +23,8 @@
 use ariadne::{Color, Config, Label, Report, ReportKind, Source};
 use chumsky::error::{Simple, SimpleReason};
 
+use crate::error_rendering::{Colored, DisplayList};
+
 use super::Token;
 
 /// Error representing a syntax error during parsing
@@ -55,7 +57,20 @@ impl<T: ToString + std::hash::Hash + std::cmp::Eq> crate::RenderError for Vec<Si
                     .with_config(Config::default().with_color(color))
                     .with_message(match e.reason() {
                         SimpleReason::Custom(msg) => msg.clone(),
-                        _ => e.to_string(),
+                        SimpleReason::Unexpected => {
+                            let fmt = |x: Option<&String>| {
+                                x.map_or_else(|| "end of input".into(), ToString::to_string)
+                            };
+                            format!(
+                                "found {} but expected one of {}",
+                                Colored(fmt(e.found()), color.then_some(Color::Red)),
+                                DisplayList::new(
+                                    e.expected().map(|x| fmt(x.as_ref())).collect(),
+                                    color
+                                )
+                            )
+                        }
+                        SimpleReason::Unclosed { .. } => unreachable!("We don't use this error"),
                     })
                     .with_label(
                         Label::new((filename, e.span()))

@@ -33,13 +33,12 @@ use std::{fmt::Write as _, io::Write as _};
 use crate::architecture::{
     Architecture, DirectiveAction, DirectiveSegment, FloatType, RegisterType,
 };
+use crate::error_rendering as utils;
+use crate::error_rendering::{ArgNum, Colored, DisplayList};
 use crate::parser::ParseError;
 use crate::span::{Span, SpanList, Spanned};
 
 use super::{ArgumentNumber, LabelTable, PseudoinstructionError, PseudoinstructionErrorKind};
-
-mod utils;
-use utils::{ArgNum, Colored, DisplayList};
 
 /// Type of arguments for directives/instructions
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

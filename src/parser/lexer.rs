@@ -75,13 +75,15 @@ pub enum Token {
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::Integer(n) => write!(f, "{n}"),
-            Self::Float(n) => write!(f, "{}", f64::from(*n)),
-            Self::String(s) => write!(f, "\"{s}\""),
-            Self::Character(s) => write!(f, "'{s}'"),
-            Self::Identifier(i) | Self::Label(i) | Self::Directive(i) => write!(f, "{i}"),
+            Self::Integer(n) => write!(f, "integer ({n})"),
+            Self::Float(x) => write!(f, "floating-point number ({})", f64::from(*x)),
+            Self::String(s) => write!(f, "string ({s:?})"),
+            Self::Character(c) => write!(f, "character literal ({c:?})"),
+            Self::Identifier(i) => write!(f, "identifier ({i})"),
+            Self::Label(l) => write!(f, "label ({l})"),
+            Self::Directive(d) => write!(f, "directive ({d})"),
             Self::Ctrl(c) | Self::Operator(c) | Self::Literal(c) => {
-                write!(f, "{c}")
+                write!(f, "{}", c.escape_debug())
             }
         }
     }
