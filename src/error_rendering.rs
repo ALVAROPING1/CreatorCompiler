@@ -38,10 +38,10 @@ impl<T: fmt::Display> fmt::Display for Colored<T> {
     }
 }
 
-/// Wrapper for a vector to display it as a list of names
+/// Wrapper for a vector to display it as a list of values
 #[derive(Debug, PartialEq, Eq)]
 pub struct DisplayList<T> {
-    /// List of names to display
+    /// List of values to display
     pub values: Vec<T>,
     /// Whether to display the names with colors or not
     pub color: bool,
