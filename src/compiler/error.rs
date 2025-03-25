@@ -22,7 +22,7 @@
 //!
 //! The main type is [`Error`]
 
-use ariadne::{Color, Config, Fmt, Label, Report, ReportKind, Source};
+use ariadne::{Color, Config, Fmt, IndexType, Label, Report, ReportKind, Source};
 use num_bigint::{BigInt, BigUint};
 
 use std::collections::HashMap;
@@ -490,8 +490,11 @@ impl SpanList {
         });
         writeln!(&mut buffer).expect("Writing to an in-memory vector can't fail");
         let kind = ReportKind::Custom("Note", Color::BrightBlue);
+        let config = Config::default()
+            .with_color(color)
+            .with_index_type(IndexType::Byte);
         Report::build(kind, (filename, self.span.clone()))
-            .with_config(Config::default().with_color(color))
+            .with_config(config)
             .with_message("Instruction generated from this pseudoinstruction")
             .with_label(
                 Label::new((filename, self.span.clone()))
@@ -512,8 +515,11 @@ impl<'arch> crate::RenderError for Error<'arch> {
             ("<pseudoinstruction expansion>", origin.code.as_str())
         });
         let note_color = color.then_some(Color::BrightBlue);
+        let config = Config::default()
+            .with_color(color)
+            .with_index_type(IndexType::Byte);
         let mut report = Report::build(ReportKind::Error, (filename, self.error.span.span.clone()))
-            .with_config(Config::default().with_color(color))
+            .with_config(config)
             .with_code(format!("E{:02}", self.code()))
             .with_message(self.msg(color))
             .with_label(
@@ -616,8 +622,11 @@ impl crate::RenderError for PseudoinstructionError {
     fn format(self, _: &str, _: &str, mut buffer: &mut Vec<u8>, color: bool) {
         static FILENAME: &str = "<pseudoinstruction expansion>";
         let src = &self.definition;
+        let config = Config::default()
+            .with_color(color)
+            .with_index_type(IndexType::Byte);
         let mut report = Report::build(ReportKind::Error, (FILENAME, self.span.clone()))
-            .with_config(Config::default().with_color(color))
+            .with_config(config)
             .with_message(self.msg(color))
             .with_label(
                 Label::new((FILENAME, self.span.clone()))

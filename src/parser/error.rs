@@ -20,7 +20,7 @@
 
 //! Module containing the definition of the error type used by syntax errors
 
-use ariadne::{Color, Config, Label, Report, ReportKind, Source};
+use ariadne::{Color, Config, IndexType, Label, Report, ReportKind, Source};
 use chumsky::error::{Simple, SimpleReason};
 
 use crate::error_rendering::{Colored, DisplayList};
@@ -50,11 +50,14 @@ impl From<Vec<Simple<Token>>> for Error {
 
 impl<T: ToString + std::hash::Hash + std::cmp::Eq> crate::RenderError for Vec<Simple<T>> {
     fn format(self, filename: &str, src: &str, mut buffer: &mut Vec<u8>, color: bool) {
+        let config = Config::default()
+            .with_color(color)
+            .with_index_type(IndexType::Byte);
         self.into_iter()
             .map(|e| e.map(|c| c.to_string()))
             .for_each(|e| {
                 Report::build(ReportKind::Error, (filename, e.span()))
-                    .with_config(Config::default().with_color(color))
+                    .with_config(config)
                     .with_message(match e.reason() {
                         SimpleReason::Custom(msg) => msg.clone(),
                         SimpleReason::Unexpected => {
