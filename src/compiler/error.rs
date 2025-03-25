@@ -76,17 +76,6 @@ pub enum Kind {
         enum_name: String,
     },
     IncorrectInstructionSyntax(Vec<(String, ParseError)>),
-    DuplicateLabel(String, Option<Span>),
-    MissingMainLabel,
-    MainInLibrary,
-    MainOutsideCode,
-    IntegerOutOfRange(BigInt, RangeInclusive<BigInt>),
-    MemorySectionFull(&'static str),
-    DataUnaligned {
-        address: BigUint,
-        alignment: BigUint,
-    },
-    UnallowedNegativeValue(BigInt),
     IncorrectDirectiveArgumentNumber {
         expected: ArgumentNumber,
         found: usize,
@@ -95,14 +84,25 @@ pub enum Kind {
         expected: ArgumentType,
         found: ArgumentType,
     },
-    DivisionBy0,
-    UnallowedFloat,
-    UnallowedLabel,
-    UnallowedFloatOperation(OperationKind),
+    DuplicateLabel(String, Option<Span>),
+    MissingMainLabel,
+    MainInLibrary,
+    MainOutsideCode,
+    MemorySectionFull(&'static str),
+    DataUnaligned {
+        address: BigUint,
+        alignment: BigUint,
+    },
     UnallowedStatementType {
         section: Option<Spanned<DirectiveSegment>>,
         found: DirectiveSegment,
     },
+    UnallowedLabel,
+    UnallowedFloat,
+    UnallowedFloatOperation(OperationKind),
+    UnallowedNegativeValue(BigInt),
+    IntegerOutOfRange(BigInt, RangeInclusive<BigInt>),
+    DivisionBy0,
     PseudoinstructionError {
         name: String,
         error: Box<PseudoinstructionError>,
@@ -234,25 +234,25 @@ impl<'arch> ErrorInfo for Error<'arch> {
             Kind::UnknownLabel(..) => 3,
             Kind::UnknownRegisterFile(..) => 4,
             Kind::UnknownRegister { .. } => 5,
-            Kind::UnknownEnumType { .. } => 23,
-            Kind::UnknownEnumValue { .. } => 24,
-            Kind::IncorrectInstructionSyntax(..) => 6,
-            Kind::DuplicateLabel(..) => 7,
-            Kind::MissingMainLabel => 8,
-            Kind::MainInLibrary => 22,
-            Kind::MainOutsideCode => 9,
-            Kind::IntegerOutOfRange(..) => 10,
-            Kind::MemorySectionFull(..) => 11,
-            Kind::DataUnaligned { .. } => 12,
-            Kind::UnallowedNegativeValue(..) => 13,
-            Kind::IncorrectDirectiveArgumentNumber { .. } => 14,
-            Kind::IncorrectArgumentType { .. } => 15,
-            Kind::DivisionBy0 => 16,
-            Kind::UnallowedFloat => 17,
-            Kind::UnallowedLabel => 21,
-            Kind::UnallowedFloatOperation(..) => 18,
-            Kind::UnallowedStatementType { .. } => 19,
-            Kind::PseudoinstructionError { .. } => 20,
+            Kind::UnknownEnumType { .. } => 6,
+            Kind::UnknownEnumValue { .. } => 7,
+            Kind::IncorrectInstructionSyntax(..) => 8,
+            Kind::IncorrectDirectiveArgumentNumber { .. } => 9,
+            Kind::IncorrectArgumentType { .. } => 10,
+            Kind::DuplicateLabel(..) => 11,
+            Kind::MissingMainLabel => 12,
+            Kind::MainInLibrary => 13,
+            Kind::MainOutsideCode => 14,
+            Kind::MemorySectionFull(..) => 15,
+            Kind::DataUnaligned { .. } => 16,
+            Kind::UnallowedStatementType { .. } => 17,
+            Kind::UnallowedLabel => 18,
+            Kind::UnallowedFloat => 19,
+            Kind::UnallowedFloatOperation(..) => 20,
+            Kind::UnallowedNegativeValue(..) => 21,
+            Kind::IntegerOutOfRange(..) => 22,
+            Kind::DivisionBy0 => 23,
+            Kind::PseudoinstructionError { .. } => 24,
         }
     }
 
@@ -368,29 +368,29 @@ impl<'arch> ErrorInfo for Error<'arch> {
             Kind::UnknownEnumType { .. } => "Unknown enum type".into(),
             Kind::UnknownEnumValue { .. } => "Unknown enum value".into(),
             Kind::IncorrectInstructionSyntax(..) => "Incorrect syntax".into(),
-            Kind::DuplicateLabel(..) => "Duplicate label".into(),
-            Kind::MissingMainLabel => {
-                let main = Colored(self.arch.main_label(), color.then_some(Color::Green));
-                format!("Consider adding a label called {main} to an instruction")
-            }
-            Kind::MainOutsideCode | Kind::MainInLibrary => "Label defined here".into(),
-            Kind::IntegerOutOfRange(val, _) | Kind::UnallowedNegativeValue(val) => {
-                format!("This expression has value {}", Colored(val, red))
-            }
-            Kind::MemorySectionFull(..) => "This element doesn't fit in the available space".into(),
-            Kind::DataUnaligned { .. } => "This value isn't aligned".into(),
             Kind::IncorrectDirectiveArgumentNumber { found, .. } => {
                 format!("This directive has {}", ArgNum(*found, red))
             }
             Kind::IncorrectArgumentType { found, .. } => {
                 format!("This argument has type {}", Colored(found, red))
             }
-            Kind::DivisionBy0 => format!("This expression has value {}", Colored(0, red)),
-            Kind::UnallowedFloat | Kind::UnallowedLabel => "This value can't be used".into(),
-            Kind::UnallowedFloatOperation(..) => "This operation can't be performed".into(),
+            Kind::DuplicateLabel(..) => "Duplicate label".into(),
+            Kind::MissingMainLabel => {
+                let main = Colored(self.arch.main_label(), color.then_some(Color::Green));
+                format!("Consider adding a label called {main} to an instruction")
+            }
+            Kind::MainInLibrary | Kind::MainOutsideCode => "Label defined here".into(),
+            Kind::MemorySectionFull(..) => "This element doesn't fit in the available space".into(),
+            Kind::DataUnaligned { .. } => "This value isn't aligned".into(),
             Kind::UnallowedStatementType { .. } => {
                 "This statement can't be used in the current section".into()
             }
+            Kind::UnallowedLabel | Kind::UnallowedFloat => "This value can't be used".into(),
+            Kind::UnallowedFloatOperation(..) => "This operation can't be performed".into(),
+            Kind::UnallowedNegativeValue(val) | Kind::IntegerOutOfRange(val, _) => {
+                format!("This expression has value {}", Colored(val, red))
+            }
+            Kind::DivisionBy0 => format!("This expression has value {}", Colored(0, red)),
             Kind::PseudoinstructionError { .. } => "While expanding this pseudoinstruction".into(),
         }
     }
@@ -422,28 +422,6 @@ impl<'arch> ErrorInfo for Error<'arch> {
                 Colored(enum_name, blue)
             ),
             Kind::IncorrectInstructionSyntax(..) => "Incorrect instruction syntax".into(),
-            Kind::DuplicateLabel(s, _) => {
-                format!("Label {} is already defined", Colored(s, red))
-            }
-            Kind::MissingMainLabel => format!("Main label {main} not found"),
-            Kind::MainInLibrary => format!("Main label {main} can't be used in libraries"),
-            Kind::MainOutsideCode => {
-                format!("Main label {main} defined outside of the text segment")
-            }
-            Kind::IntegerOutOfRange(val, _) => format!(
-                "Value {} is outside of the valid range of the field",
-                Colored(val, red)
-            ),
-            Kind::MemorySectionFull(name) => {
-                format!("{name} memory segment is full")
-            }
-            Kind::DataUnaligned { address, alignment } => format!(
-                "Data at address {} isn't aligned to size {} nor word size {}",
-                Colored(format!("{address:#X}"), red),
-                Colored(alignment, blue),
-                Colored(self.arch.word_size().div_ceil(8), blue),
-            ),
-            Kind::UnallowedNegativeValue(_) => "Negative values aren't allowed here".into(),
             Kind::IncorrectDirectiveArgumentNumber { expected, found } => format!(
                 "Incorrect amount of arguments, expected {}{} but found {}",
                 if expected.at_least { "at least " } else { "" },
@@ -455,12 +433,22 @@ impl<'arch> ErrorInfo for Error<'arch> {
                 Colored(expected, blue),
                 Colored(found, red),
             ),
-            Kind::DivisionBy0 => "Can't divide by 0".into(),
-            Kind::UnallowedFloat => "Can't use floating point values in integer expressions".into(),
-            Kind::UnallowedLabel => "Can't use labels in literal expressions".into(),
-            Kind::UnallowedFloatOperation(op) => format!(
-                "Can't perform the {} operation with floating point numbers",
-                Colored(op, red),
+            Kind::DuplicateLabel(s, _) => {
+                format!("Label {} is already defined", Colored(s, red))
+            }
+            Kind::MissingMainLabel => format!("Main label {main} not found"),
+            Kind::MainInLibrary => format!("Main label {main} can't be used in libraries"),
+            Kind::MainOutsideCode => {
+                format!("Main label {main} defined outside of the text segment")
+            }
+            Kind::MemorySectionFull(name) => {
+                format!("{name} memory segment is full")
+            }
+            Kind::DataUnaligned { address, alignment } => format!(
+                "Data at address {} isn't aligned to size {} nor word size {}",
+                Colored(format!("{address:#X}"), red),
+                Colored(alignment, blue),
+                Colored(self.arch.word_size().div_ceil(8), blue),
             ),
             Kind::UnallowedStatementType { section, found } => {
                 let found = if found.is_code() {
@@ -475,6 +463,18 @@ impl<'arch> ErrorInfo for Error<'arch> {
                 let section = Colored(section, blue);
                 format!("Can't use {found} statements while in section {section}",)
             }
+            Kind::UnallowedLabel => "Can't use labels in literal expressions".into(),
+            Kind::UnallowedFloat => "Can't use floating point values in integer expressions".into(),
+            Kind::UnallowedFloatOperation(op) => format!(
+                "Can't perform the {} operation with floating point numbers",
+                Colored(op, red),
+            ),
+            Kind::UnallowedNegativeValue(_) => "Negative values aren't allowed here".into(),
+            Kind::IntegerOutOfRange(val, _) => format!(
+                "Value {} is outside of the valid range of the field",
+                Colored(val, red)
+            ),
+            Kind::DivisionBy0 => "Can't divide by 0".into(),
             Kind::PseudoinstructionError { name, .. } => {
                 let name = Colored(name, red);
                 format!("Error while expanding pseudoinstruction {name}")
