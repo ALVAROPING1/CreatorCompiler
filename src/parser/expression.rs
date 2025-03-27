@@ -34,21 +34,32 @@ use crate::compiler::{ErrorData, ErrorKind};
 /// Allowed unary operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOp {
+    /// Unary plus, essentially a no-op
     Plus,
+    /// Unary negation
     Minus,
+    /// Unary binary complement
     Complement,
 }
 
 /// Allowed binary operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOp {
+    /// Addition
     Add,
+    /// Subtraction
     Sub,
+    /// Multiplication
     Mul,
+    /// Division
     Div,
+    /// Remainder, with the same sign as the left operand
     Rem,
+    /// Bitwise OR
     BitwiseOR,
+    /// Bitwise AND
     BitwiseAND,
+    /// Bitwise XOR
     BitwiseXOR,
 }
 
@@ -65,13 +76,18 @@ pub enum Expr {
     Identifier(Spanned<String>),
     /// Unary operation on other expressions
     UnaryOp {
+        /// Operation to perform
         op: Spanned<UnaryOp>,
+        /// Operand to perform the operation on
         operand: Box<Spanned<Expr>>,
     },
     /// Binary operation on other expressions
     BinaryOp {
+        /// Operation to perform
         op: Spanned<BinaryOp>,
+        /// Left operand of the operation
         lhs: Box<Spanned<Expr>>,
+        /// Right operand of the operation
         rhs: Box<Spanned<Expr>>,
     },
 }

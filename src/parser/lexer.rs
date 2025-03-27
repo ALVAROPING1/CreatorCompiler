@@ -262,11 +262,13 @@ pub fn lexer(comment_prefix: &str) -> Parser!(char, Vec<Spanned<Token>>, '_) {
         .ignored()
         .labelled("comment");
 
+    // Whitespace that isn't new lines
     let whitespace = filter(|c: &char| c.is_whitespace() && *c != '\n')
         .ignored()
         .labelled("whitespace");
     let padding = comment.or(whitespace).repeated();
 
+    // Definition of a token
     token
         .map_with_span(|tok, span| (tok, span))
         .padded_by(padding)
