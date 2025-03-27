@@ -64,17 +64,22 @@ impl<T: std::cmp::Ord> DisplayList<T> {
 
 impl<T: fmt::Display> fmt::Display for DisplayList<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Get the last value, if we can't the list is empty and we don't have to do anything
         let Some(last) = self.values.last() else {
             return Ok(());
         };
         let color = self.color.then_some(Color::Green);
+        // Only use a comma to separate values if there are more than 2
         let comma = if self.values.len() > 2 { "," } else { "" };
+        // Write each of the values except the last, appending an optional comma
         for x in &self.values[..self.values.len() - 1] {
             write!(f, "{}{comma} ", Colored(x, color))?;
         }
+        // If there are multiple values add an `or` before the last one
         if self.values.len() > 1 {
             write!(f, "or ")?;
         }
+        // Write the last value
         write!(f, "{}", Colored(last, color))
     }
 }
@@ -85,6 +90,7 @@ pub struct ArgNum(pub usize, pub Option<Color>);
 
 impl fmt::Display for ArgNum {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Append an `s` if the amount of arguments isn't 1
         let s = if self.0 == 1 { "" } else { "s" };
         write!(f, "{} argument{}", Colored(self.0, self.1), s)
     }
@@ -99,17 +105,22 @@ impl fmt::Display for ArgNum {
 #[must_use]
 pub fn get_similar<'a>(target: &str, names: impl IntoIterator<Item = &'a str>) -> Vec<&'a str> {
     let mut distances = std::collections::HashMap::new();
+    // For each candidate name, calculate its distance to the target if we haven't processed it yet
     for name in names {
         distances
             .entry(name)
             .or_insert_with(|| edit_distance::edit_distance(name, target));
     }
+    // Get the names with the minimum distance
     distances
         .iter()
         .map(|(_, &d)| d)
         .min()
+        // Only return the names if the minimum distance to the target isn't too big, to remove
+        // false positives
         .filter(|&min| min <= std::cmp::max(target.len() / 3, 1))
         .map(|min| {
+            // Get the names with the minimum distance
             distances
                 .iter()
                 .filter(|(_, &d)| d == min)
