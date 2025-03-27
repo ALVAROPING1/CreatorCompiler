@@ -95,11 +95,13 @@ impl<'a> TryFrom<Directive<'a>> for super::Directive<'a> {
 /// Range of bits of a field in a binary instruction
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
 pub struct BitRange {
-    /// Starting position of the field. Ignored for pseudoinstructions
+    /// Starting position of the field, ignored for pseudoinstructions. Will be applied from the
+    /// MSB of the value to the LSB
     pub startbit: BitPosition,
-    /// End position of the field. Ignored for pseudoinstructions
+    /// End position of the field, ignored for pseudoinstructions. Will be applied from the MSB of
+    /// the value to the LSB
     pub stopbit: BitPosition,
-    /// Amount of least significant bits that should be ignored
+    /// Amount of least significant bits from the value that should be ignored
     #[serde(default)]
     pub padding: usize,
 }
@@ -210,6 +212,7 @@ pub enum Config<'a> {
     CommentPrefix(&'a str),
 }
 
+/// Macro to generate an error message for an incorrect key value
 macro_rules! key_error {
     ($i:expr, $name:ident) => {
         return Err(concat!(
@@ -225,6 +228,7 @@ macro_rules! key_error {
 impl<'a> TryFrom<[Config<'a>; 9]> for super::Config<'a> {
     type Error = &'static str;
     fn try_from(value: [Config<'a>; 9]) -> Result<Self, Self::Error> {
+        /// Macro to unwrap the value of a field, checking that its key is correct
         macro_rules! unwrap_field {
             ($i:expr, $name:ident) => {
                 match value[$i] {
@@ -275,6 +279,7 @@ pub enum MemoryLayoutKeys {
 impl TryFrom<Vec<Pair<MemoryLayoutKeys, BaseN<16>>>> for super::MemoryLayout {
     type Error = &'static str;
     fn try_from(mut value: Vec<Pair<MemoryLayoutKeys, BaseN<16>>>) -> Result<Self, Self::Error> {
+        /// Macro to unwrap the value of a field, checking that its key is correct
         macro_rules! unwrap_field {
             ($i:expr, $name:ident) => {
                 match value[$i].name {
@@ -283,6 +288,7 @@ impl TryFrom<Vec<Pair<MemoryLayoutKeys, BaseN<16>>>> for super::MemoryLayout {
                 }
             };
         }
+        /// Macro to check that two given sections don't overlap
         macro_rules! check_overlap {
             ($a:ident, $b:ident) => {
                 if ($a.contains($b.start()) || $b.contains($a.start())) {

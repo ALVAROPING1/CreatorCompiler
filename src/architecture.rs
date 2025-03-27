@@ -65,6 +65,7 @@ pub struct Architecture<'a> {
     pub enums: HashMap<&'a str, EnumDefinition<'a>>,
 }
 
+/// Definition of an enumerated field
 pub type EnumDefinition<'a> = HashMap<&'a str, Integer>;
 
 /// Architecture metadata attributes
@@ -274,12 +275,10 @@ utils::schema_from!(InstructionSyntax<'a, T>, json::InstructionSyntax<T>);
 
 /// Allowed instruction properties
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
 pub enum InstructionProperties {
-    #[serde(rename = "exit_subrutine")]
     ExitSubrutine,
-    #[serde(rename = "enter_subrutine")]
     EnterSubrutine,
-    #[serde(rename = "privileged")]
     Privileged,
 }
 
@@ -300,7 +299,9 @@ pub struct InstructionField<'a, BitRange> {
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 #[serde(try_from = "json::BitRange")]
 pub struct BitRange {
+    /// Ranges of bits where to place the field, applied from MSB of the value to LSB
     ranges: Vec<NonEmptyRangeInclusive<usize>>,
+    /// Amount of LSB to discard from the value before placing it in the binary instruction
     padding: usize,
 }
 utils::schema_from!(BitRange, json::BitRange);
@@ -705,7 +706,7 @@ impl BitRange {
         Some(Self { ranges, padding })
     }
 
-    /// Gets the amount of least significant bits that should be ignored
+    /// Gets the amount of LSB to discard from the value before placing it in the binary instruction
     #[must_use]
     pub const fn padding(&self) -> usize {
         self.padding

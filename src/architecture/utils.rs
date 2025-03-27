@@ -27,6 +27,8 @@ use serde::{de::Error, Deserialize, Deserializer};
 
 use core::{fmt::Display, str::FromStr};
 
+/// Thin wrapper for big integers that can be deserialized from JSON, either from a JSON integer or
+/// a string representing an integer
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Integer(pub BigUint);
 
@@ -56,7 +58,7 @@ impl FromStr for Integer {
     }
 }
 
-/// Integer stored as a string in base N
+/// Wrapper for integers that can be deserialized from a string representing an integer in base N
 #[derive(Debug, PartialEq, Eq, Clone, PartialOrd, Ord, JsonSchema)]
 pub struct BaseN<const N: u8>(#[schemars(with = "String")] pub BigUint);
 
@@ -146,6 +148,8 @@ pub struct NonEmptyRangeInclusive<Idx> {
     size: Idx,
 }
 
+/// Macro to generate methods for non-empty ranges, taking as input the list of concrete types to
+/// be used as the generic type parameter
 macro_rules! impl_NonEmptyRangeInclusive {
     ($($ty:ty),+) => {
         $(
