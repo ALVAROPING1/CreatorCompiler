@@ -514,7 +514,7 @@ impl<'arch> crate::RenderError for Error<'arch> {
         let (filename, src) = source.map_or((filename, src), |origin| {
             ("<pseudoinstruction expansion>", origin.code.as_str())
         });
-        let note_color = color.then_some(Color::BrightBlue);
+        let blue = color.then_some(Color::BrightBlue);
         let config = Config::default()
             .with_color(color)
             .with_index_type(IndexType::Byte);
@@ -529,7 +529,7 @@ impl<'arch> crate::RenderError for Error<'arch> {
             )
             .with_labels(self.context(color).into_iter().map(|label| {
                 Label::new((filename, label.0.clone()))
-                    .with_message(format!("{} {}", "Note:".fg(note_color), label.1))
+                    .with_message(format!("{} {}", "Note:".fg(blue), label.1))
                     .with_color(Color::BrightBlue)
                     .with_order(10)
             }));
@@ -550,7 +550,8 @@ impl<'arch> crate::RenderError for Error<'arch> {
                 for (syntax, err) in errs {
                     writeln!(
                         &mut buffer,
-                        "\nThe syntax `{syntax}` failed with the following reason:"
+                        "\nThe syntax {} failed with the following reason:",
+                        Colored(syntax, blue)
                     )
                     .expect("Writing to an in-memory vector can't fail");
                     err.format(filename, src, buffer, color);
