@@ -55,12 +55,17 @@ self_cell!(
 );
 
 /// Converts a given string with ANSI escape codes to HTML
+///
+/// # Panics
+///
+/// Panics if the string contains invalid ANSI escape codes
 fn to_html(str: &str) -> String {
     let opts = ansi_to_html::Opts::default().four_bit_var_prefix(Some("err-".into()));
     ansi_to_html::convert_with_opts(str, &opts).expect("we should only generate valid ANSI escapes")
 }
 
-fn to_js_bigint(x: &(impl num_traits::Num + ToString)) -> BigInt {
+/// Converts a number to a `JS` big integer
+fn to_js_bigint<T: num_traits::Num + ToString>(x: &T) -> BigInt {
     BigInt::from_str(&x.to_string())
         .expect("Converting a number to string should always return a valid format")
 }
@@ -69,8 +74,11 @@ fn to_js_bigint(x: &(impl num_traits::Num + ToString)) -> BigInt {
 #[wasm_bindgen]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Color {
+    /// Use HTML tags, intended for display in browsers
     Html,
+    /// Use ANSI escape codes, intended for display in terminals
     Ansi,
+    /// Disable all formatting, using only plain text
     Off,
 }
 
@@ -238,9 +246,13 @@ pub struct DataJS(crate::compiler::Data);
 #[wasm_bindgen]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DataCategoryJS {
+    /// Element represents a number
     Number,
+    /// Element represents a string
     String,
+    /// Element represents a reserved amount of space initialized to 0
     Space,
+    /// Element represents padding that was added to align values
     Padding,
 }
 
