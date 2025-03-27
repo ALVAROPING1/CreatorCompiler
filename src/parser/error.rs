@@ -50,51 +50,51 @@ impl From<Vec<Simple<Token>>> for Error {
 
 impl<T: ToString + std::hash::Hash + std::cmp::Eq> crate::RenderError for Vec<Simple<T>> {
     fn format(self, filename: &str, src: &str, mut buffer: &mut Vec<u8>, color: bool) {
+        // Configure the error reports
         let config = Config::default()
             .with_color(color)
             .with_index_type(IndexType::Byte);
-        self.into_iter()
-            .map(|e| e.map(|c| c.to_string()))
-            .for_each(|e| {
-                Report::build(ReportKind::Error, (filename, e.span()))
-                    .with_config(config)
-                    .with_message(match e.reason() {
-                        SimpleReason::Custom(msg) => msg.clone(),
-                        SimpleReason::Unexpected => {
-                            let fmt = |x: Option<&String>| {
-                                x.map_or_else(|| "end of input".into(), ToString::to_string)
-                            };
-                            format!(
-                                "found {} but expected one of {}",
-                                Colored(fmt(e.found()), color.then_some(Color::Red)),
-                                DisplayList::new(
-                                    e.expected().map(|x| fmt(x.as_ref())).collect(),
-                                    color
-                                )
+        // Generate a report for each error
+        for e in self {
+            Report::build(ReportKind::Error, (filename, e.span()))
+                .with_config(config)
+                .with_message(match e.reason() {
+                    SimpleReason::Custom(msg) => msg.clone(),
+                    SimpleReason::Unexpected => {
+                        let fmt = |x: Option<&T>| {
+                            x.map_or_else(|| "end of input".into(), ToString::to_string)
+                        };
+                        format!(
+                            "found {} but expected one of {}",
+                            Colored(fmt(e.found()), color.then_some(Color::Red)),
+                            DisplayList::new(
+                                e.expected().map(|x| fmt(x.as_ref())).collect(),
+                                color
                             )
-                        }
-                        SimpleReason::Unclosed { .. } => unreachable!("We don't use this error"),
-                    })
-                    .with_label(
-                        Label::new((filename, e.span()))
-                            .with_message(match e.reason() {
-                                SimpleReason::Unexpected => "Unexpected input",
-                                SimpleReason::Custom(_) => "Caused by this",
-                                SimpleReason::Unclosed { .. } => {
-                                    unreachable!("We don't use this error")
-                                }
-                            })
-                            .with_color(Color::Red),
-                    )
-                    .with_labels(e.label().map_or_else(Vec::new, |label| {
-                        vec![Label::new((filename, e.span()))
-                            .with_message(format!("while parsing this {label}"))
-                            .with_color(Color::Yellow)]
-                    }))
-                    .finish()
-                    .write((filename, Source::from(src)), &mut buffer)
-                    .expect("Writing to an in-memory vector can't fail");
-            });
+                        )
+                    }
+                    SimpleReason::Unclosed { .. } => unreachable!("We don't use this error"),
+                })
+                .with_label(
+                    Label::new((filename, e.span()))
+                        .with_message(match e.reason() {
+                            SimpleReason::Unexpected => "Unexpected input",
+                            SimpleReason::Custom(_) => "Caused by this",
+                            SimpleReason::Unclosed { .. } => {
+                                unreachable!("We don't use this error")
+                            }
+                        })
+                        .with_color(Color::Red),
+                )
+                .with_labels(e.label().map_or_else(Vec::new, |label| {
+                    vec![Label::new((filename, e.span()))
+                        .with_message(format!("while parsing this {label}"))
+                        .with_color(Color::Yellow)]
+                }))
+                .finish()
+                .write((filename, Source::from(src)), &mut buffer)
+                .expect("Writing to an in-memory vector can't fail");
+        }
     }
 }
 
