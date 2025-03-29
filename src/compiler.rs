@@ -59,10 +59,11 @@ mod pseudoinstruction;
 pub use pseudoinstruction::{Error as PseudoinstructionError, Kind as PseudoinstructionErrorKind};
 
 /* TODO:
-*  - Refactor code
 *  - Combine `crate::parser::Error` with `crate::compiler::Error`
+*  - Add `Vec<T>` to [`Section`] type
 **/
 
+/// Definition of an instruction, either a real instruction or a pseudoinstruction
 #[derive(Debug)]
 enum InstructionDefinition<'arch> {
     Real(&'arch crate::architecture::Instruction<'arch>),
@@ -96,20 +97,17 @@ fn parse_instruction<'a>(
     let mut possible_def = None;
     // Errors produced on each of the attempted parses
     let mut errs = Vec::new();
-    // Get all instruction definitions with the given name
     for inst in arch.find_instructions(&name.0) {
-        // Try to parse the given arguments according to the syntax of the current definition
         match inst.syntax.parser.parse(args) {
-            // If parsing is successful, assume this definition is the correct one and return it
             Ok(parsed_args) => {
                 // Check if all the arguments fit in the current instruction definition
                 let ok = parsed_args.iter().all(|arg| {
-                    // Get the current field
                     let field = &inst.syntax.fields[arg.field_idx];
-                    // Get the value
                     let value = match field.r#type {
                         // If the field expects a number and the argument value is a number,
-                        // evaluate the number
+                        // evaluate the number. If any forward reference labels are used, we can't
+                        // know the exact value of the expression, so don't try to evaluate
+                        // expressions using labels
                         FieldType::Address
                         | FieldType::ImmSigned
                         | FieldType::ImmUnsigned
@@ -117,7 +115,7 @@ fn parse_instruction<'a>(
                         | FieldType::OffsetWords => match arg.value.0.int(Expr::unallowed_ident) {
                             Ok(val) => val,
                             // If there was any error, assume the argument fits. This should be
-                            // properly handled later when the arguments are fully evaluated
+                            // properly handled later when we can fully evaluate the expressions
                             Err(_) => return true,
                         },
                         // Otherwise, assume the argument fits to avoid circular dependencies
@@ -142,27 +140,23 @@ fn parse_instruction<'a>(
                 // Otherwise, store it in case this is the only matching definition
                 possible_def = Some((inst, parsed_args));
             }
-            // Otherwise, append the produced error to the error vector and try the next definition
             Err(e) => errs.push((inst.syntax.user_syntax.to_string(), e)),
         }
     }
-    // Get all pseudoinstruction definitions with the given name
     for inst in arch.find_pseudoinstructions(&name.0) {
-        // Try to parse the given arguments according to the syntax of the current definition
         match inst.syntax.parser.parse(args) {
             // If parsing is successful, assume this definition is the correct one and return it
             Ok(parsed_args) => return Ok((InstructionDefinition::Pseudo(inst), parsed_args)),
-            // Otherwise, append the produced error to the error vector and try the next definition
             Err(e) => errs.push((inst.syntax.user_syntax.to_string(), e)),
         }
     }
-    // None of the definitions matched perfectly
-    // If there is a matching definition that failed due to argument sizes, use it
+    // None of the definitions matched perfectly. If there is a matching definition that failed due
+    // to argument sizes, use it
     if let Some((def, args)) = possible_def {
         return Ok((InstructionDefinition::Real(def), args));
     }
-    // Otherwise, return the appropriate error
-    // If we didn't get any errors, we didn't find any definitions for the instruction
+    // Otherwise, return the appropriate error. If we didn't get any errors, we didn't find any
+    // definitions for the instruction
     Err(if errs.is_empty() {
         ErrorKind::UnknownInstruction(name.0).add_span(&name.1)
     } else {
@@ -187,10 +181,27 @@ pub struct PendingInstruction<'arch> {
     args: ParsedArgs,
 }
 
+/// Process instruction, recursively expanding it if the selected definition corresponds to a
+/// pseudoinstruction
+///
+/// # Parameters
+///
+/// * `arch`: architecture definition
+/// * `section`: memory section in which the instructions should be stored
+/// * `label_table`: symbol table for labels
+/// * `pending_instructions`: vector in which to append the real instructions
+/// * `instruction`: instruction definition with its arguments
+/// * `span`: span of the instruction, in the user's assembly code and in pseudoinstruction
+///   expansions
+///
+/// # Errors
+///
+/// Errors if there is not enough space for any of the final instructions, or if there is an error
+/// while expanding a pseudoinstruction
 fn process_instruction<'arch>(
     arch: &'arch Architecture,
     section: &mut Section,
-    label_table: &mut LabelTable,
+    label_table: &LabelTable,
     pending_instructions: &mut Vec<PendingInstruction<'arch>>,
     instruction: (InstructionDefinition<'arch>, ParsedArgs),
     span: (Span, SpanList),
@@ -324,6 +335,10 @@ impl DataToken {
     /// # Parameters
     ///
     /// * `span`: span of the value in the assembly code
+    ///
+    /// # Errors
+    ///
+    /// Errors if the value doesn't contain a string
     fn into_string(self, span: &Span) -> Result<String, ErrorData> {
         match self {
             Self::String(s) => Ok(s),
@@ -340,6 +355,10 @@ impl DataToken {
     /// # Parameters
     ///
     /// * `span`: span of the value in the assembly code
+    ///
+    /// # Errors
+    ///
+    /// Errors if the value doesn't contain an expression
     fn to_expr(&self, span: &Span) -> Result<&Expr, ErrorData> {
         match self {
             Self::Number(expr) => Ok(expr),
@@ -393,33 +412,58 @@ struct DataValue {
     values: Spanned<Vec<Spanned<DataToken>>>,
 }
 
+/// Vector of instruction statements
 type Instructions = Vec<Statement<InstructionNode>>;
+/// Vector of data directive statements
 type DataDirectives = Vec<Statement<DataValue>>;
+/// Global symbols table, indicating which symbols are global
 pub type GlobalSymbols = HashSet<String>;
 
+/// Split the vector of statements represented by the AST into a vector of instruction statements,
+/// a vector of data directive statements, and a global symbols table
+///
+/// # Parameters
+///
+/// * `arch`: architecture definition
+/// * `ast`: AST of the assembly code
+///
+/// # Errors
+///
+/// Errors if there is any error while processing any of the statements
 fn split_statements(
     arch: &Architecture,
     ast: Vec<ASTNode>,
 ) -> Result<(Instructions, DataDirectives, GlobalSymbols), ErrorData> {
+    // Section currently being processed
     let mut current_section: Option<Spanned<DirectiveSegment>> = None;
+    // Resulting data directives vector
     let mut data_directives = Vec::new();
+    // Resulting instructions vector
     let mut instructions = Vec::new();
+    // Resulting global symbols table
     let mut global_symbols = HashSet::new();
 
+    // For each statement in the assembly code
     for node in ast {
         match node.statement.0 {
             StatementNode::Directive(directive) => {
                 let action = arch.find_directive(&directive.name.0).ok_or_else(|| {
                     ErrorKind::UnknownDirective(directive.name.0).add_span(&directive.name.1)
                 })?;
+                // Execute the directive
                 match (action, &current_section) {
+                    // No-op, ignore it and its arguments
+                    (DirectiveAction::Nop(_), _) => {}
+                    // Change the current section
                     (DirectiveAction::Segment(new_section), _) => {
                         ArgumentNumber::new(0, false).check(&directive.args)?;
                         current_section = Some((new_section, node.statement.1));
                     }
+                    // Add new global symbols
                     (DirectiveAction::GlobalSymbol(_), _) => {
                         ArgumentNumber::new(1, true).check(&directive.args)?;
                         for (label, span) in directive.args.0 {
+                            // Extract the name from the argument, should be an identifier
                             let label = match label {
                                 DataToken::Number(Expr::Identifier(label)) => label,
                                 DataToken::Number(_) => Err(ErrorKind::IncorrectArgumentType {
@@ -436,7 +480,8 @@ fn split_statements(
                             global_symbols.insert(label.0);
                         }
                     }
-                    (DirectiveAction::Nop(_), _) => {}
+                    // Add new data elements
+                    // TODO: refactor section check to nested match and document
                     (DirectiveAction::Data(data_type), Some((section, _)))
                         if !section.is_code() =>
                     {
@@ -463,11 +508,13 @@ fn split_statements(
                 }
             }
             StatementNode::Instruction(instruction) => match &current_section {
+                // If the current section allows code, add it to the instructions vector
                 Some((section, _)) if section.is_code() => instructions.push(Statement {
                     labels: node.labels,
                     value: (instruction, node.statement.1),
                     kernel: *section == DirectiveSegment::KernelCode,
                 }),
+                // Otherwise, the statement is in the wrong section
                 _ => {
                     return Err(ErrorKind::UnallowedStatementType {
                         section: current_section,
@@ -492,6 +539,11 @@ pub struct ArgumentNumber {
 
 impl ArgumentNumber {
     /// Creates a new [`ArgumentNumber`]
+    ///
+    /// # Parameters
+    ///
+    /// * `amount`: minimum expected amount of arguments
+    /// * `at_least`: whether it's allowed to use more arguments
     #[must_use]
     pub const fn new(amount: usize, at_least: bool) -> Self {
         Self { amount, at_least }
@@ -519,8 +571,13 @@ impl ArgumentNumber {
     }
 }
 
-/// Combines a kernel section with a user section into a single memory vector. The sections
-/// shouldn't overlap
+/// Combines a kernel section with a user section into a single memory vector. It is a logical
+/// error for the sections to overlap
+///
+/// # Parameters
+///
+/// * `kernel`: kernel section with its vector of elements
+/// * `user`: user section with its vector of elements
 fn combine_sections<T>(kernel: (Section, Vec<T>), user: (Section, Vec<T>)) -> Vec<T> {
     // Sort the sections
     let (mem1, mem2) = if kernel.0.get() <= user.0.get() {
@@ -532,6 +589,17 @@ fn combine_sections<T>(kernel: (Section, Vec<T>), user: (Section, Vec<T>)) -> Ve
     mem1.into_iter().chain(mem2).collect()
 }
 
+/// Compiles the data directive statements
+///
+/// # Parameters
+///
+/// * `arch`: architecture definition
+/// * `label_table`: symbol table for labels
+/// * `elements`: data directives to compile
+///
+/// # Errors
+///
+/// Errors if there is any problem processing the data elements
 #[allow(clippy::too_many_lines)]
 fn compile_data(
     arch: &Architecture,
@@ -539,10 +607,12 @@ fn compile_data(
     elements: Vec<Statement<DataValue>>,
 ) -> Result<Vec<PendingData>, ErrorData> {
     let size = elements.len();
+    // User data section
     let mut user = (
         Section::new("Data", Some(arch.data_section())),
         Vec::with_capacity(size),
     );
+    // Kernel data section
     let mut kernel = (
         Section::new("KernelData", arch.kernel_data_section()),
         Vec::with_capacity(size),
@@ -551,11 +621,13 @@ fn compile_data(
 
     for data_directive in elements {
         let mut labels = data_directive.labels;
+        // Get the corresponding section according to where the element should be placed
         let (section, memory) = if data_directive.kernel {
             &mut kernel
         } else {
             &mut user
         };
+        // Add the labels to the label table
         for (label, span) in &labels {
             label_table.insert(
                 label.to_owned(),
@@ -564,6 +636,7 @@ fn compile_data(
         }
         let (statement, statement_span) = data_directive.value;
         let args = statement.values;
+        // Process the directive according to its type
         match statement.data_type {
             DirectiveData::Alignment(align_type) => {
                 ArgumentNumber::new(1, false).check(&args)?;
@@ -572,8 +645,12 @@ fn compile_data(
                 let value = BigUint::try_from(value).map_err(|e| {
                     ErrorKind::UnallowedNegativeValue(e.into_original()).add_span(span)
                 })?;
+                // Calculate the align size in bytes
                 let align = match align_type {
+                    // Calculate 2^argument
                     AlignmentType::Exponential => {
+                        // Convert the input to a fixed sized int, as shifts aren't implemented
+                        // with big ints as the second argument
                         let value = u128::try_from(value).map_err(|e| {
                             ErrorKind::IntegerOutOfRange(
                                 e.into_original().into(),
@@ -583,9 +660,11 @@ fn compile_data(
                         })?;
                         BigUint::from(1u8) << value
                     }
+                    // If the argument is already in bytes, we don't need to do anything
                     AlignmentType::Byte => value,
                 };
                 let (start, size) = section.try_align(&align).add_span(&statement_span)?;
+                // If we needed to add any padding, store it in the result vector
                 if size != BigUint::ZERO {
                     memory.push(PendingData {
                         address: start,
@@ -610,6 +689,10 @@ fn compile_data(
             DirectiveData::Int(size, int_type) => {
                 ArgumentNumber::new(1, true).check(&args)?;
                 for (value, span) in args.0 {
+                    // Extract the argument as an expression without evaluating it. It might have
+                    // labels we haven't processed yet, so we need to wait until the 2nd pass (when
+                    // we have all the defined labels) to be able to evaluate it. We can't use
+                    // `.to_expr()` for this because we need to take ownership of the expression
                     let value = match value {
                         DataToken::Number(expr) => expr,
                         DataToken::String(_) => {
@@ -633,6 +716,8 @@ fn compile_data(
                 ArgumentNumber::new(1, true).check(&args)?;
                 for (value, span) in args.0 {
                     let value = value.to_expr(&span)?.float()?;
+                    // We intentionally want to truncate the number from f64 to f32 if the user
+                    // asked for an f32
                     #[allow(clippy::cast_possible_truncation)]
                     let (value, size) = match float_type {
                         FloatType::Float => (PendingValue::Float(value as f32), 4u8),
@@ -652,10 +737,9 @@ fn compile_data(
                 for (value, span) in args.0 {
                     let data = value.into_string(&span)?;
                     let null_terminated = str_type == StringType::AsciiNullEnd;
+                    let size = BigUint::from(data.len()) + u8::from(null_terminated);
                     memory.push(PendingData {
-                        address: section
-                            .try_reserve(&(BigUint::from(data.len()) + u8::from(null_terminated)))
-                            .add_span(&span)?,
+                        address: section.try_reserve(&size).add_span(&span)?,
                         labels: take_spanned_vec(&mut labels),
                         value: PendingValue::String {
                             data,
@@ -669,6 +753,18 @@ fn compile_data(
     Ok(combine_sections(kernel, user))
 }
 
+/// Compiles the instruction statements
+///
+/// # Parameters
+///
+/// * `arch`: architecture definition
+/// * `label_table`: symbol table for labels
+/// * `elements`: instructions to compile
+/// * `reserved_offset`: amount of addresses reserved by the library
+///
+/// # Errors
+///
+/// Errors if there is any problem processing the data elements
 fn compile_instructions<'a>(
     arch: &'a Architecture,
     label_table: &mut LabelTable,
@@ -676,50 +772,74 @@ fn compile_instructions<'a>(
     reserved_offset: &BigUint,
 ) -> Result<Vec<PendingInstruction<'a>>, ErrorData> {
     let size = instructions.len();
+    // User data section
     let mut user = (
         Section::new("Instructions", Some(arch.code_section())),
         Vec::with_capacity(size),
     );
+    // Kernel data section
     let mut kernel = (
         Section::new("KernelInstructions", arch.kernel_code_section()),
         Vec::with_capacity(size),
     );
+    // Reserve space in the user section for the library instructions
     user.0.try_reserve(reserved_offset).add_span(0..0)?;
 
     for mut instruction in instructions {
         let (name, span) = instruction.value.0.name;
-        let (section, pending_instructions) = if instruction.kernel {
+        // Get the corresponding section according to where the element should be placed
+        let (section, memory) = if instruction.kernel {
             &mut kernel
         } else {
             &mut user
         };
-        let parsed_instruction =
-            parse_instruction(arch, (name, span.clone()), &instruction.value.0.args)?;
+        // Add the labels to the label table
         for (label, span) in &instruction.labels {
             label_table.insert(
                 label.clone(),
                 Label::new(section.get().clone(), span.clone()),
             )?;
         }
-        let first_idx = pending_instructions.len();
+        // Parse the instruction, finding a valid definition to use for the compilation
+        let parsed_instruction =
+            parse_instruction(arch, (name, span.clone()), &instruction.value.0.args)?;
+        // Store the next index, so we can do a small post-processing to the processed instructions
+        let first_idx = memory.len();
         process_instruction(
             arch,
             section,
             label_table,
-            pending_instructions,
+            memory,
             parsed_instruction,
             (instruction.value.1.clone(), instruction.value.1.into()),
         )?;
-        if let Some(inst) = pending_instructions.get_mut(first_idx) {
+        // Add the labels attached to the instruction in the assembly code to the first generated
+        // instruction
+        if let Some(inst) = memory.get_mut(first_idx) {
             inst.labels = take_spanned_vec(&mut instruction.labels);
         }
-        for inst in &mut pending_instructions[first_idx + 1..] {
+        // Remove the user span from all generated instructions except the first, so the source
+        // isn't repeated in the UI
+        for inst in &mut memory[first_idx + 1..] {
             inst.user_span = 0..0;
         }
     }
     Ok(combine_sections(kernel, user))
 }
 
+/// Main function handling the compilation
+///
+/// # Parameters
+///
+/// * `arch`: architecture definition
+/// * `ast`: AST of the assembly code
+/// * `label_table`: symbol table for labels
+/// * `reserved_offset`: amount of addresses reserved for the instructions of the library used
+/// * `library`: whether to compile the assembly code as a library (`true`) or executable (`false`)
+///
+/// # Errors
+///
+/// Errors if there is any problem compiling the assembly code
 #[allow(clippy::too_many_lines)]
 fn compile_inner(
     arch: &Architecture,
@@ -731,29 +851,39 @@ fn compile_inner(
     let word_size_bits = arch.word_size();
     let word_size_bytes = arch.word_size().div_ceil(8);
 
+    // Split the statements into different sections
     let (instructions, data_directives, global_symbols) = split_statements(arch, ast)?;
-
+    // Compile each of the sections
     let instruction_eof = instructions.last().map_or(0, |inst| inst.value.1.end);
     let pending_data = compile_data(arch, label_table, data_directives)?;
     let pending_instructions =
         compile_instructions(arch, label_table, instructions, reserved_offset)?;
 
+    // TODO: extract into a function
+
+    // Verify that the main label (entry point of the program) isn't misplaced
     let add_main_span = |e: ErrorKind, main: &Label| e.add_span(main.span().unwrap_or(&(0..0)));
     match (label_table.get(arch.main_label()), library) {
+        // Main label wasn't used but we aren't compiling a library => main is missing
         (None, false) => {
             #[allow(clippy::range_plus_one)] // Ariadne works with exclusive ranges
             return Err(
                 ErrorKind::MissingMainLabel.add_span(&(instruction_eof..instruction_eof + 1))
             );
         }
+        // Main label was used but we are compiling a library => main shouldn't be used
         (Some(main), true) => return Err(add_main_span(ErrorKind::MainInLibrary, main)),
+        // Main label was used and we aren't compiling a library, but it doesn't point to an
+        // instruction => main is misplaced
         (Some(main), false) if !arch.code_section().contains(main.address()) => {
             return Err(add_main_span(ErrorKind::MainOutsideCode, main));
         }
+        // Otherwise, the main label is correctly placed
         _ => {}
     }
 
     let case = arch.arch_conf.sensitive_register_name;
+    // Perform the 2nd pass of instruction processing
     let instructions = pending_instructions
         .into_iter()
         .map(|inst| {
@@ -762,6 +892,9 @@ fn compile_inner(
             static FIELD: Lazy<Regex> = crate::regex!("\0([0-9]+)");
             let def = inst.definition;
             let mut binary_instruction = BitField::new(word_size_bits.saturating_mul(def.nwords));
+            // Replace the field placeholders in the translation spec with `\0N`. Since null bytes
+            // shouldn't appear in the translation spec/register names, this avoids issues when a
+            // placeholder is replaced with a register name with the same format as another placeholder
             let mut translated_instruction =
                 RE.replace_all(def.syntax.output_syntax, "\0$1").to_string();
             for arg in inst.args {
@@ -772,12 +905,17 @@ fn compile_inner(
                         unreachable!("This field type shouldn't be used for instruction arguments")
                     }
                     FieldType::Co => (def.co.0.clone().into(), def.name.to_string()),
-                    val_type @ (FieldType::Address
+                    // Numeric fields
+                    FieldType::Address
                     | FieldType::ImmSigned
                     | FieldType::ImmUnsigned
                     | FieldType::OffsetBytes
-                    | FieldType::OffsetWords) => {
+                    | FieldType::OffsetWords => {
+                        // Function to evaluate label names to the address they point to
                         let ident_eval = |label: &str| {
+                            // The identifier `.` should always correspond to the address in which
+                            // the value is being compiled into. Otherwise, try to find the label
+                            // name in the label table
                             let value = if label == "." {
                                 BigInt::from(inst.address.clone())
                             } else {
@@ -788,23 +926,30 @@ fn compile_inner(
                                     .clone()
                                     .into()
                             };
+                            // Function to calculate the offset between a given address and the
+                            // address in which the value is being compiled into
                             let offset = |x| x - BigInt::from(inst.address.clone());
-                            Ok(match val_type {
+                            Ok(match field.r#type {
                                 FieldType::OffsetWords => offset(value) / word_size_bytes,
                                 FieldType::OffsetBytes => offset(value),
                                 _ => value,
                             })
                         };
                         let value = arg.value.0.int(ident_eval)?;
+                        // Remove the least significant bits according to the padding specified by
+                        // the field
                         let padding = field.range.padding();
                         let value = (value >> padding) << padding;
                         let value_str = value.to_string();
                         (value, value_str)
                     }
-                    val_type @ (FieldType::IntReg
+                    // Register fields
+                    FieldType::IntReg
                     | FieldType::CtrlReg
                     | FieldType::SingleFPReg
-                    | FieldType::DoubleFPReg) => {
+                    | FieldType::DoubleFPReg => {
+                        // Get the name of the register. We only allow identifiers and integers to
+                        // be used as register names
                         let name = match arg.value.0 {
                             Expr::Identifier((name, _)) => name,
                             Expr::Integer(x) => x.to_string(),
@@ -816,18 +961,22 @@ fn compile_inner(
                                 .add_span((&arg.value.1, &inst.span)))
                             }
                         };
-                        let file_type = match val_type {
+                        // Convert the generic field type to an specific register type
+                        let file_type = match field.r#type {
                             FieldType::IntReg => RegisterType::Int,
                             FieldType::CtrlReg => RegisterType::Ctrl,
                             FieldType::SingleFPReg => RegisterType::Float(FloatType::Float),
                             FieldType::DoubleFPReg => RegisterType::Float(FloatType::Double),
                             _ => unreachable!("We already matched one of these variants"),
                         };
+                        // Find the register files with the requested type, and verify that at
+                        // least one file is found
                         let mut files = arch.find_reg_files(file_type).peekable();
                         files.peek().ok_or_else(|| {
                             ErrorKind::UnknownRegisterFile(file_type)
                                 .add_span((&arg.value.1, &inst.span))
                         })?;
+                        // Find the register with the given name
                         let (i, _, name) = files
                             .find_map(|file| file.find_register(&name, case))
                             .ok_or_else(|| {
@@ -839,13 +988,16 @@ fn compile_inner(
                         })?;
                         (i.into(), name.to_string())
                     }
+                    // Enumerated fields
                     FieldType::Enum { enum_name } => {
                         let span = (&arg.value.1, &inst.span);
+                        // Find the definition of the enum
                         let enum_definition = arch
                             .enums
                             .get(enum_name)
                             .ok_or_else(|| ErrorKind::UnknownEnumType((*enum_name).to_string()))
                             .add_span(span)?;
+                        // Get the identifier used
                         let Expr::Identifier((name, _)) = arg.value.0 else {
                             return Err(ErrorKind::IncorrectArgumentType {
                                 expected: ArgumentType::Identifier,
@@ -853,6 +1005,7 @@ fn compile_inner(
                             }
                             .add_span(span));
                         };
+                        // Map the identifier to its value according to the definition of the enum
                         let Some(value) = enum_definition.get(name.as_str()) else {
                             return Err(ErrorKind::UnknownEnumValue {
                                 value: name,
@@ -863,6 +1016,7 @@ fn compile_inner(
                         (value.0.clone().into(), name)
                     }
                 };
+                // Update the binary/translated instruction using the values obtained
                 binary_instruction
                     .replace(
                         &field.range,
@@ -877,12 +1031,12 @@ fn compile_inner(
                     .replace(&translated_instruction, NoExpand(&value_str))
                     .to_string();
             }
+            // Add the `Cop` fields' value to the binary instruction
             let fields = def.syntax.fields.iter();
             for (range, value) in fields.filter_map(|field| match &field.r#type {
                 FieldType::Cop { value } => Some((&field.range, value)),
                 _ => None,
             }) {
-                #[allow(clippy::cast_possible_wrap)]
                 binary_instruction
                     .replace(range, value.0.clone().into(), false)
                     .add_span(inst.span.clone())?;
@@ -897,14 +1051,20 @@ fn compile_inner(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
+    // Perform the 2nd pass of data directives processing
     let data_memory = pending_data
         .into_iter()
         .map(|data| {
             Ok(Data {
                 labels: data.labels,
                 value: match data.value {
+                    // Evaluate the expression used as value for integer directives
                     PendingValue::Integer((value, span), size, int_type) => {
+                        // Function to evaluate label names to the address they point to
                         let ident_eval = |label: &str| {
+                            // The identifier `.` should always correspond to the address in which
+                            // the value is being compiled into. Otherwise, try to find the label
+                            // name in the label table
                             Ok(if label == "." {
                                 BigInt::from(data.address.clone())
                             } else {
@@ -922,6 +1082,7 @@ fn compile_inner(
                                 .add_span(&span)?,
                         )
                     }
+                    // Copy the data from the other types of data directives
                     PendingValue::Space(x) => Value::Space(x),
                     PendingValue::Padding(x) => Value::Padding(x),
                     PendingValue::Float(x) => Value::Float(x),
@@ -942,6 +1103,20 @@ fn compile_inner(
     Ok((global_symbols, instructions, data_memory))
 }
 
+/// Compiles an AST obtained from an assembly code into a set of instructions, data elements, and a
+/// symbol table with the data from each label used
+///
+/// # Parameters
+///
+/// * `arch`: architecture definition
+/// * `ast`: AST of the assembly code
+/// * `reserved_offset`: amount of addresses reserved for the instructions of the library used
+/// * `labels`: global labels defined by the library used
+/// * `library`: whether to compile the assembly code as a library (`true`) or executable (`false`)
+///
+/// # Errors
+///
+/// Errors if there is any problem compiling the assembly code
 pub fn compile<'arch, S: std::hash::BuildHasher>(
     arch: &'arch Architecture,
     ast: Vec<ASTNode>,
@@ -950,6 +1125,9 @@ pub fn compile<'arch, S: std::hash::BuildHasher>(
     library: bool,
 ) -> Result<CompiledCode, CompileError<'arch>> {
     let mut label_table = LabelTable::from(labels);
+    // Wrap the result of the inner compilation function. We need to wrap the internal compilation
+    // function to add extra metadata added to all error types that isn't directly related with
+    // the errors (the architecture definition and the label table)
     match compile_inner(arch, ast, &mut label_table, reserved_offset, library) {
         Ok((global_symbols, instructions, data_memory)) => Ok(CompiledCode {
             label_table,
