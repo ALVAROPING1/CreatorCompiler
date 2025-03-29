@@ -33,7 +33,7 @@ use crate::architecture::{
     AlignmentType, Architecture, DirectiveAction, DirectiveData, DirectiveSegment, FieldType,
     FloatType, IntegerType, RegisterType, StringType,
 };
-use crate::parser::instruction::ParsedArgs;
+use crate::parser::instruction::{ParsedArgs, ParsedArgument};
 use crate::parser::{
     ASTNode, Data as DataToken, Expr, InstructionNode, Statement as StatementNode, Token,
 };
@@ -590,7 +590,7 @@ fn combine_sections<T>(kernel: (Section, Vec<T>), user: (Section, Vec<T>)) -> Ve
     mem1.into_iter().chain(mem2).collect()
 }
 
-/// Compiles the data directive statements
+/// Performs the 1st pass of the compilation of the data directive statements
 ///
 /// # Parameters
 ///
@@ -754,7 +754,7 @@ fn compile_data(
     Ok(combine_sections(kernel, user))
 }
 
-/// Compiles the instruction statements
+/// Performs the 1st pass of the compilation of the instruction statements
 ///
 /// # Parameters
 ///
@@ -896,6 +896,230 @@ fn check_main_location(
     }
 }
 
+/// Evaluates the argument of an instruction, returning its value as a number and as text
+///
+/// # Parameters
+///
+/// * `arch`: architecture definition
+/// * `label_table`: symbol table for labels
+/// * `address`: address of the instruction
+/// * `definition`: definition of the instruction
+/// * `arg`: expression containing the argument to evaluate
+/// * `span`: span of the instruction
+///
+/// # Errors
+///
+/// Errors if there is any problem evaluating the argument
+fn evaluate_instruction_field(
+    arch: &Architecture,
+    label_table: &LabelTable,
+    address: &BigUint,
+    def: &crate::architecture::Instruction,
+    arg: ParsedArgument,
+    span: &SpanList,
+) -> Result<(BigInt, String), ErrorData> {
+    let field = &def.syntax.fields[arg.field_idx];
+    Ok(match &field.r#type {
+        FieldType::Cop { .. } => unreachable!("Cop shouldn't be used in instruction args"),
+        FieldType::Co => (def.co.0.clone().into(), def.name.to_string()),
+        // Numeric fields
+        FieldType::Address
+        | FieldType::ImmSigned
+        | FieldType::ImmUnsigned
+        | FieldType::OffsetBytes
+        | FieldType::OffsetWords => {
+            let value = arg.value.0.int(|label: &str| {
+                let value = label_eval(label_table, address, label)?;
+                // Function to calculate the offset between a given address and the
+                // address in which the value is being compiled into
+                let offset = |x| x - BigInt::from(address.clone());
+                Ok(match field.r#type {
+                    FieldType::OffsetWords => offset(value) / arch.word_size().div_ceil(8),
+                    FieldType::OffsetBytes => offset(value),
+                    _ => value,
+                })
+            })?;
+            // Remove the least significant bits according to the padding specified by
+            // the field
+            let padding = field.range.padding();
+            let value = (value >> padding) << padding;
+            let value_str = value.to_string();
+            (value, value_str)
+        }
+        // Register fields
+        FieldType::IntReg
+        | FieldType::CtrlReg
+        | FieldType::SingleFPReg
+        | FieldType::DoubleFPReg => {
+            // Get the name of the register. We only allow identifiers and integers to
+            // be used as register names
+            let name = match arg.value.0 {
+                Expr::Identifier((name, _)) => name,
+                Expr::Integer(x) => x.to_string(),
+                _ => {
+                    return Err(ErrorKind::IncorrectArgumentType {
+                        expected: ArgumentType::RegisterName,
+                        found: ArgumentType::Expression,
+                    }
+                    .add_span((&arg.value.1, span)))
+                }
+            };
+            // Convert the generic field type to an specific register type
+            let file_type = match field.r#type {
+                FieldType::IntReg => RegisterType::Int,
+                FieldType::CtrlReg => RegisterType::Ctrl,
+                FieldType::SingleFPReg => RegisterType::Float(FloatType::Float),
+                FieldType::DoubleFPReg => RegisterType::Float(FloatType::Double),
+                _ => unreachable!("We already matched one of these variants"),
+            };
+            // Find the register files with the requested type, and verify that at
+            // least one file is found
+            let mut files = arch.find_reg_files(file_type).peekable();
+            files.peek().ok_or_else(|| {
+                ErrorKind::UnknownRegisterFile(file_type).add_span((&arg.value.1, span))
+            })?;
+            let case = arch.arch_conf.sensitive_register_name;
+            // Find the register with the given name
+            let (i, _, name) = files
+                .find_map(|file| file.find_register(&name, case))
+                .ok_or_else(|| {
+                    ErrorKind::UnknownRegister {
+                        name: name.clone(),
+                        file: file_type,
+                    }
+                    .add_span((&arg.value.1, span))
+                })?;
+            (i.into(), name.to_string())
+        }
+        // Enumerated fields
+        FieldType::Enum { enum_name } => {
+            let span = (&arg.value.1, span);
+            // Find the definition of the enum
+            let enum_def = arch.enums.get(enum_name);
+            let enum_def = enum_def
+                .ok_or_else(|| ErrorKind::UnknownEnumType((*enum_name).to_string()))
+                .add_span(span)?;
+            // Get the identifier used
+            let Expr::Identifier((name, _)) = arg.value.0 else {
+                return Err(ErrorKind::IncorrectArgumentType {
+                    expected: ArgumentType::Identifier,
+                    found: ArgumentType::Expression,
+                }
+                .add_span(span));
+            };
+            // Map the identifier to its value according to the definition of the enum
+            let Some(value) = enum_def.get(name.as_str()) else {
+                return Err(ErrorKind::UnknownEnumValue {
+                    value: name,
+                    enum_name: (*enum_name).to_string(),
+                })
+                .add_span(span);
+            };
+            (value.0.clone().into(), name)
+        }
+    })
+}
+
+/// Translates the data of an instruction to the final result of the compilation, performing the
+/// 2nd pass over the instructions
+///
+/// # Parameters
+///
+/// * `arch`: architecture definition
+/// * `label_table`: symbol table for labels
+/// * `inst`: instruction to translate
+///
+/// # Errors
+///
+/// Errors if there is any problem translating the instruction
+fn translate_instruction(
+    arch: &Architecture,
+    label_table: &LabelTable,
+    inst: PendingInstruction,
+) -> Result<Instruction, ErrorData> {
+    // Regex for replacement templates in the translation spec of instructions
+    static RE: Lazy<Regex> = crate::regex!(r"[fF]([0-9]+)");
+    static FIELD: Lazy<Regex> = crate::regex!("\0([0-9]+)");
+    let def = inst.definition;
+    let mut binary_instruction = BitField::new(arch.word_size().saturating_mul(def.nwords));
+    // Replace the field placeholders in the translation spec with `\0N`. Since null bytes
+    // shouldn't appear in the translation spec/register names, this avoids issues when a
+    // placeholder is replaced with a register name with the same format as another placeholder
+    let mut translated_instruction = RE.replace_all(def.syntax.output_syntax, "\0$1").to_string();
+    for arg in inst.args {
+        let field = &def.syntax.fields[arg.field_idx];
+        let arg_span = (&arg.value.1.clone(), &inst.span);
+        let (value, value_str) =
+            evaluate_instruction_field(arch, label_table, &inst.address, def, arg, &inst.span)?;
+        // Update the binary/translated instruction using the values obtained
+        let signed = matches!(
+            field.r#type,
+            FieldType::ImmSigned | FieldType::OffsetBytes | FieldType::OffsetWords
+        );
+        binary_instruction
+            .replace(&field.range, value, signed)
+            .add_span(arg_span)?;
+        translated_instruction = FIELD
+            .replace(&translated_instruction, NoExpand(&value_str))
+            .to_string();
+    }
+    // Add the `Cop` fields' value to the binary instruction
+    let fields = def.syntax.fields.iter();
+    for (range, value) in fields.filter_map(|field| match &field.r#type {
+        FieldType::Cop { value } => Some((&field.range, value)),
+        _ => None,
+    }) {
+        binary_instruction
+            .replace(range, value.0.clone().into(), false)
+            .add_span(inst.span.clone())?;
+    }
+    Ok(Instruction {
+        labels: inst.labels,
+        address: inst.address,
+        binary: binary_instruction,
+        loaded: translated_instruction,
+        user: inst.user_span,
+    })
+}
+
+/// Translates the data of a data element to the final result of the compilation, performing the
+/// 2nd pass over the data elements
+///
+/// # Parameters
+///
+/// * `label_table`: symbol table for labels
+/// * `data`: data element to translate
+///
+/// # Errors
+///
+/// Errors if there is any problem translating the instruction
+fn translate_data(label_table: &LabelTable, data: PendingData) -> Result<Data, ErrorData> {
+    Ok(Data {
+        labels: data.labels,
+        value: match data.value {
+            // Evaluate the expression used as value for integer directives
+            PendingValue::Integer((value, span), size, int_type) => {
+                let value = value.int(|label| label_eval(label_table, &data.address, label))?;
+                let int = Integer::build(value, size.saturating_mul(8), Some(int_type), None);
+                Value::Integer(int.add_span(&span)?)
+            }
+            // Copy the data from the other types of data directives
+            PendingValue::Space(x) => Value::Space(x),
+            PendingValue::Padding(x) => Value::Padding(x),
+            PendingValue::Float(x) => Value::Float(x),
+            PendingValue::Double(x) => Value::Double(x),
+            PendingValue::String {
+                data,
+                null_terminated,
+            } => Value::String {
+                data,
+                null_terminated,
+            },
+        },
+        address: data.address,
+    })
+}
+
 /// Main function handling the compilation
 ///
 /// # Parameters
@@ -909,7 +1133,6 @@ fn check_main_location(
 /// # Errors
 ///
 /// Errors if there is any problem compiling the assembly code
-#[allow(clippy::too_many_lines)]
 fn compile_inner(
     arch: &Architecture,
     ast: Vec<ASTNode>,
@@ -917,9 +1140,6 @@ fn compile_inner(
     reserved_offset: &BigUint,
     library: bool,
 ) -> Result<(GlobalSymbols, Vec<Instruction>, Vec<Data>), ErrorData> {
-    let word_size_bits = arch.word_size();
-    let word_size_bytes = arch.word_size().div_ceil(8);
-
     // Split the statements into different sections
     let (instructions, data_directives, global_symbols) = split_statements(arch, ast)?;
     // Compile each of the sections
@@ -927,200 +1147,17 @@ fn compile_inner(
     let pending_data = compile_data(arch, label_table, data_directives)?;
     let pending_instructions =
         compile_instructions(arch, label_table, instructions, reserved_offset)?;
-
-    // Verify that the main label (entry point of the program) isn't misplaced
     check_main_location(arch, label_table, library, instruction_eof)?;
-
-    let case = arch.arch_conf.sensitive_register_name;
     // Perform the 2nd pass of instruction processing
     let instructions = pending_instructions
         .into_iter()
-        .map(|inst| {
-            // Regex for replacement templates in the translation spec of instructions
-            static RE: Lazy<Regex> = crate::regex!(r"[fF]([0-9]+)");
-            static FIELD: Lazy<Regex> = crate::regex!("\0([0-9]+)");
-            let def = inst.definition;
-            let mut binary_instruction = BitField::new(word_size_bits.saturating_mul(def.nwords));
-            // Replace the field placeholders in the translation spec with `\0N`. Since null bytes
-            // shouldn't appear in the translation spec/register names, this avoids issues when a
-            // placeholder is replaced with a register name with the same format as another placeholder
-            let mut translated_instruction =
-                RE.replace_all(def.syntax.output_syntax, "\0$1").to_string();
-            for arg in inst.args {
-                let field = &def.syntax.fields[arg.field_idx];
-                #[allow(clippy::cast_sign_loss)]
-                let (value, value_str) = match &field.r#type {
-                    FieldType::Cop { .. } => {
-                        unreachable!("This field type shouldn't be used for instruction arguments")
-                    }
-                    FieldType::Co => (def.co.0.clone().into(), def.name.to_string()),
-                    // Numeric fields
-                    FieldType::Address
-                    | FieldType::ImmSigned
-                    | FieldType::ImmUnsigned
-                    | FieldType::OffsetBytes
-                    | FieldType::OffsetWords => {
-                        // Function to evaluate label names to the address they point to
-                        let ident_eval = |label: &str| {
-                            let value = label_eval(label_table, &inst.address, label)?;
-                            // Function to calculate the offset between a given address and the
-                            // address in which the value is being compiled into
-                            let offset = |x| x - BigInt::from(inst.address.clone());
-                            Ok(match field.r#type {
-                                FieldType::OffsetWords => offset(value) / word_size_bytes,
-                                FieldType::OffsetBytes => offset(value),
-                                _ => value,
-                            })
-                        };
-                        let value = arg.value.0.int(ident_eval)?;
-                        // Remove the least significant bits according to the padding specified by
-                        // the field
-                        let padding = field.range.padding();
-                        let value = (value >> padding) << padding;
-                        let value_str = value.to_string();
-                        (value, value_str)
-                    }
-                    // Register fields
-                    FieldType::IntReg
-                    | FieldType::CtrlReg
-                    | FieldType::SingleFPReg
-                    | FieldType::DoubleFPReg => {
-                        // Get the name of the register. We only allow identifiers and integers to
-                        // be used as register names
-                        let name = match arg.value.0 {
-                            Expr::Identifier((name, _)) => name,
-                            Expr::Integer(x) => x.to_string(),
-                            _ => {
-                                return Err(ErrorKind::IncorrectArgumentType {
-                                    expected: ArgumentType::RegisterName,
-                                    found: ArgumentType::Expression,
-                                }
-                                .add_span((&arg.value.1, &inst.span)))
-                            }
-                        };
-                        // Convert the generic field type to an specific register type
-                        let file_type = match field.r#type {
-                            FieldType::IntReg => RegisterType::Int,
-                            FieldType::CtrlReg => RegisterType::Ctrl,
-                            FieldType::SingleFPReg => RegisterType::Float(FloatType::Float),
-                            FieldType::DoubleFPReg => RegisterType::Float(FloatType::Double),
-                            _ => unreachable!("We already matched one of these variants"),
-                        };
-                        // Find the register files with the requested type, and verify that at
-                        // least one file is found
-                        let mut files = arch.find_reg_files(file_type).peekable();
-                        files.peek().ok_or_else(|| {
-                            ErrorKind::UnknownRegisterFile(file_type)
-                                .add_span((&arg.value.1, &inst.span))
-                        })?;
-                        // Find the register with the given name
-                        let (i, _, name) = files
-                            .find_map(|file| file.find_register(&name, case))
-                            .ok_or_else(|| {
-                            ErrorKind::UnknownRegister {
-                                name: name.clone(),
-                                file: file_type,
-                            }
-                            .add_span((&arg.value.1, &inst.span))
-                        })?;
-                        (i.into(), name.to_string())
-                    }
-                    // Enumerated fields
-                    FieldType::Enum { enum_name } => {
-                        let span = (&arg.value.1, &inst.span);
-                        // Find the definition of the enum
-                        let enum_definition = arch
-                            .enums
-                            .get(enum_name)
-                            .ok_or_else(|| ErrorKind::UnknownEnumType((*enum_name).to_string()))
-                            .add_span(span)?;
-                        // Get the identifier used
-                        let Expr::Identifier((name, _)) = arg.value.0 else {
-                            return Err(ErrorKind::IncorrectArgumentType {
-                                expected: ArgumentType::Identifier,
-                                found: ArgumentType::Expression,
-                            }
-                            .add_span(span));
-                        };
-                        // Map the identifier to its value according to the definition of the enum
-                        let Some(value) = enum_definition.get(name.as_str()) else {
-                            return Err(ErrorKind::UnknownEnumValue {
-                                value: name,
-                                enum_name: (*enum_name).to_string(),
-                            })
-                            .add_span(span);
-                        };
-                        (value.0.clone().into(), name)
-                    }
-                };
-                // Update the binary/translated instruction using the values obtained
-                binary_instruction
-                    .replace(
-                        &field.range,
-                        value,
-                        matches!(
-                            field.r#type,
-                            FieldType::ImmSigned | FieldType::OffsetBytes | FieldType::OffsetWords
-                        ),
-                    )
-                    .add_span((&arg.value.1, &inst.span))?;
-                translated_instruction = FIELD
-                    .replace(&translated_instruction, NoExpand(&value_str))
-                    .to_string();
-            }
-            // Add the `Cop` fields' value to the binary instruction
-            let fields = def.syntax.fields.iter();
-            for (range, value) in fields.filter_map(|field| match &field.r#type {
-                FieldType::Cop { value } => Some((&field.range, value)),
-                _ => None,
-            }) {
-                binary_instruction
-                    .replace(range, value.0.clone().into(), false)
-                    .add_span(inst.span.clone())?;
-            }
-            Ok(Instruction {
-                labels: inst.labels,
-                address: inst.address,
-                binary: binary_instruction,
-                loaded: translated_instruction,
-                user: inst.user_span,
-            })
-        })
+        .map(|inst| translate_instruction(arch, label_table, inst))
         .collect::<Result<Vec<_>, _>>()?;
-
     // Perform the 2nd pass of data directives processing
     let data_memory = pending_data
         .into_iter()
-        .map(|data| {
-            Ok(Data {
-                labels: data.labels,
-                value: match data.value {
-                    // Evaluate the expression used as value for integer directives
-                    PendingValue::Integer((value, span), size, int_type) => {
-                        let value =
-                            value.int(|label| label_eval(label_table, &data.address, label))?;
-                        let int =
-                            Integer::build(value, size.saturating_mul(8), Some(int_type), None);
-                        Value::Integer(int.add_span(&span)?)
-                    }
-                    // Copy the data from the other types of data directives
-                    PendingValue::Space(x) => Value::Space(x),
-                    PendingValue::Padding(x) => Value::Padding(x),
-                    PendingValue::Float(x) => Value::Float(x),
-                    PendingValue::Double(x) => Value::Double(x),
-                    PendingValue::String {
-                        data,
-                        null_terminated,
-                    } => Value::String {
-                        data,
-                        null_terminated,
-                    },
-                },
-                address: data.address,
-            })
-        })
+        .map(|data| translate_data(label_table, data))
         .collect::<Result<Vec<_>, _>>()?;
-
     Ok((global_symbols, instructions, data_memory))
 }
 
