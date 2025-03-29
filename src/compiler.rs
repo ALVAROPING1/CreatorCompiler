@@ -858,6 +858,44 @@ fn label_eval(
     Ok(value.clone().into())
 }
 
+/// Checks that the main label (entry point of an executable program) isn't misplaced
+///
+/// # Parameters
+///
+/// * `arch`: architecture definition
+/// * `label_table`: symbol table for labels
+/// * `library`: whether to compile the assembly code as a library (`true`) or executable (`false`)
+/// * `eof`: byte index of the end of the last instruction statement
+///
+/// # Errors
+///
+/// Returns [`ErrorKind::MissingMainLabel`], [`ErrorKind::MainInLibrary`], or
+/// [`ErrorKind::MainOutsideCode`] if the main label is misplaced
+fn check_main_location(
+    arch: &Architecture,
+    label_table: &LabelTable,
+    library: bool,
+    eof: usize,
+) -> Result<(), ErrorData> {
+    let add_main_span = |e: ErrorKind, main: &Label| e.add_span(main.span().unwrap_or(&(0..0)));
+    match (label_table.get(arch.main_label()), library) {
+        // Main label wasn't used but we aren't compiling a library => main is missing
+        (None, false) => {
+            #[allow(clippy::range_plus_one)] // Ariadne works with exclusive ranges
+            Err(ErrorKind::MissingMainLabel.add_span(&(eof..eof + 1)))
+        }
+        // Main label was used but we are compiling a library => main shouldn't be used
+        (Some(main), true) => Err(add_main_span(ErrorKind::MainInLibrary, main)),
+        // Main label was used and we aren't compiling a library, but it doesn't point to an
+        // instruction => main is misplaced
+        (Some(main), false) if !arch.code_section().contains(main.address()) => {
+            Err(add_main_span(ErrorKind::MainOutsideCode, main))
+        }
+        // Otherwise, the main label is correctly placed
+        _ => Ok(()),
+    }
+}
+
 /// Main function handling the compilation
 ///
 /// # Parameters
@@ -890,28 +928,8 @@ fn compile_inner(
     let pending_instructions =
         compile_instructions(arch, label_table, instructions, reserved_offset)?;
 
-    // TODO: extract into a function
-
     // Verify that the main label (entry point of the program) isn't misplaced
-    let add_main_span = |e: ErrorKind, main: &Label| e.add_span(main.span().unwrap_or(&(0..0)));
-    match (label_table.get(arch.main_label()), library) {
-        // Main label wasn't used but we aren't compiling a library => main is missing
-        (None, false) => {
-            #[allow(clippy::range_plus_one)] // Ariadne works with exclusive ranges
-            return Err(
-                ErrorKind::MissingMainLabel.add_span(&(instruction_eof..instruction_eof + 1))
-            );
-        }
-        // Main label was used but we are compiling a library => main shouldn't be used
-        (Some(main), true) => return Err(add_main_span(ErrorKind::MainInLibrary, main)),
-        // Main label was used and we aren't compiling a library, but it doesn't point to an
-        // instruction => main is misplaced
-        (Some(main), false) if !arch.code_section().contains(main.address()) => {
-            return Err(add_main_span(ErrorKind::MainOutsideCode, main));
-        }
-        // Otherwise, the main label is correctly placed
-        _ => {}
-    }
+    check_main_location(arch, label_table, library, instruction_eof)?;
 
     let case = arch.arch_conf.sensitive_register_name;
     // Perform the 2nd pass of instruction processing
