@@ -451,16 +451,16 @@ fn split_statements(
                     ErrorKind::UnknownDirective(directive.name.0).add_span(&directive.name.1)
                 })?;
                 // Execute the directive
-                match (action, &current_section) {
+                match action {
                     // No-op, ignore it and its arguments
-                    (DirectiveAction::Nop(_), _) => {}
+                    DirectiveAction::Nop(_) => {}
                     // Change the current section
-                    (DirectiveAction::Segment(new_section), _) => {
+                    DirectiveAction::Segment(new_section) => {
                         ArgumentNumber::new(0, false).check(&directive.args)?;
                         current_section = Some((new_section, node.statement.1));
                     }
                     // Add new global symbols
-                    (DirectiveAction::GlobalSymbol(_), _) => {
+                    DirectiveAction::GlobalSymbol(_) => {
                         ArgumentNumber::new(1, true).check(&directive.args)?;
                         for (label, span) in directive.args.0 {
                             // Extract the name from the argument, should be an identifier
@@ -481,30 +481,31 @@ fn split_statements(
                         }
                     }
                     // Add new data elements
-                    // TODO: refactor section check to nested match and document
-                    (DirectiveAction::Data(data_type), Some((section, _)))
-                        if !section.is_code() =>
-                    {
-                        let span = node.statement.1;
-                        data_directives.push(Statement {
-                            labels: node.labels,
-                            value: (
-                                DataValue {
-                                    data_type,
-                                    values: directive.args,
-                                },
-                                span,
-                            ),
-                            kernel: *section == DirectiveSegment::KernelData,
-                        });
-                    }
-                    (DirectiveAction::Data(_), _) => {
-                        return Err(ErrorKind::UnallowedStatementType {
-                            section: current_section,
-                            found: DirectiveSegment::Data,
+                    DirectiveAction::Data(data_type) => match current_section {
+                        // If the current section allows data, add it to the data directives vector
+                        Some((section, _)) if !section.is_code() => {
+                            let span = node.statement.1;
+                            data_directives.push(Statement {
+                                labels: node.labels,
+                                value: (
+                                    DataValue {
+                                        data_type,
+                                        values: directive.args,
+                                    },
+                                    span,
+                                ),
+                                kernel: section == DirectiveSegment::KernelData,
+                            });
                         }
-                        .add_span(&node.statement.1));
-                    }
+                        // Otherwise, the statement is in the wrong section
+                        _ => {
+                            return Err(ErrorKind::UnallowedStatementType {
+                                section: current_section,
+                                found: DirectiveSegment::Data,
+                            }
+                            .add_span(&node.statement.1));
+                        }
+                    },
                 }
             }
             StatementNode::Instruction(instruction) => match &current_section {
