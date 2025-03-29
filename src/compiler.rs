@@ -827,6 +827,36 @@ fn compile_instructions<'a>(
     Ok(combine_sections(kernel, user))
 }
 
+/// Evaluates an identifier used as a label within an expression
+///
+/// # Parameters
+///
+/// * `label_table`: symbol table for labels
+/// * `address`: address in which the value is being compiled into
+/// * `label`: identifier to evaluate
+///
+/// # Errors
+///
+/// Returns a [`ErrorKind::UnknownLabel`] if the label isn't defined
+fn label_eval(
+    label_table: &LabelTable,
+    address: &BigUint,
+    label: &str,
+) -> Result<BigInt, ErrorKind> {
+    // The identifier `.` should always correspond to the address in which
+    // the value is being compiled into. Otherwise, try to find the label
+    // name in the label table
+    let value = if label == "." {
+        address
+    } else {
+        label_table
+            .get(label)
+            .ok_or_else(|| ErrorKind::UnknownLabel(label.to_owned()))?
+            .address()
+    };
+    Ok(value.clone().into())
+}
+
 /// Main function handling the compilation
 ///
 /// # Parameters
@@ -913,19 +943,7 @@ fn compile_inner(
                     | FieldType::OffsetWords => {
                         // Function to evaluate label names to the address they point to
                         let ident_eval = |label: &str| {
-                            // The identifier `.` should always correspond to the address in which
-                            // the value is being compiled into. Otherwise, try to find the label
-                            // name in the label table
-                            let value = if label == "." {
-                                BigInt::from(inst.address.clone())
-                            } else {
-                                label_table
-                                    .get(label)
-                                    .ok_or_else(|| ErrorKind::UnknownLabel(label.to_owned()))?
-                                    .address()
-                                    .clone()
-                                    .into()
-                            };
+                            let value = label_eval(label_table, &inst.address, label)?;
                             // Function to calculate the offset between a given address and the
                             // address in which the value is being compiled into
                             let offset = |x| x - BigInt::from(inst.address.clone());
@@ -1060,27 +1078,11 @@ fn compile_inner(
                 value: match data.value {
                     // Evaluate the expression used as value for integer directives
                     PendingValue::Integer((value, span), size, int_type) => {
-                        // Function to evaluate label names to the address they point to
-                        let ident_eval = |label: &str| {
-                            // The identifier `.` should always correspond to the address in which
-                            // the value is being compiled into. Otherwise, try to find the label
-                            // name in the label table
-                            Ok(if label == "." {
-                                BigInt::from(data.address.clone())
-                            } else {
-                                label_table
-                                    .get(label)
-                                    .ok_or_else(|| ErrorKind::UnknownLabel(label.to_owned()))?
-                                    .address()
-                                    .clone()
-                                    .into()
-                            })
-                        };
-                        let value = value.int(ident_eval)?;
-                        Value::Integer(
-                            Integer::build(value, size.saturating_mul(8), Some(int_type), None)
-                                .add_span(&span)?,
-                        )
+                        let value =
+                            value.int(|label| label_eval(label_table, &data.address, label))?;
+                        let int =
+                            Integer::build(value, size.saturating_mul(8), Some(int_type), None);
+                        Value::Integer(int.add_span(&span)?)
                     }
                     // Copy the data from the other types of data directives
                     PendingValue::Space(x) => Value::Space(x),

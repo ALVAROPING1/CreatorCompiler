@@ -170,14 +170,7 @@ pub fn expand<'b, 'a: 'b>(
     static OP: Lazy<Regex> = crate::regex!(r"op\{([^}]*?)\}");
     static INSTRUCTIONS: Lazy<Regex> = crate::regex!(r"\{(.*?)\}");
 
-    let ident_eval = |label: &str| {
-        Ok(label_table
-            .get(label)
-            .ok_or_else(|| ErrorKind::UnknownLabel(label.to_owned()))?
-            .address()
-            .clone()
-            .into())
-    };
+    let ident_eval = |label: &str| super::label_eval(label_table, address, label);
 
     let num = |x: &str| {
         x.parse()
