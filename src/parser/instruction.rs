@@ -221,10 +221,7 @@ mod test {
     }
 
     fn parse(parser: &Instruction, src: &str) -> Result<ParsedArgs, ()> {
-        let ast = (
-            lexer::lexer("#").parse(src).unwrap(),
-            0..src.chars().count(),
-        );
+        let ast = (lexer::lexer("#").parse(src).unwrap(), 0..src.len());
         parser.parse(&ast).map_err(|e| eprintln!("{e:?}"))
     }
 
@@ -365,6 +362,14 @@ mod test {
         assert_eq!(
             parse(&parser, "1 * -2"),
             Ok(vec![co_arg(), arg((number(2), 5..6), 1)])
+        );
+        let parser = Instruction::build("F0 aF1 F1a F2", &fields()).unwrap();
+        assert_eq!(parse(&parser, "1 1 2"), Err(()));
+        assert_eq!(parse(&parser, "a1 1a 2"), Err(()));
+        assert_eq!(parse(&parser, "aF1 f1a 2"), Err(()));
+        assert_eq!(
+            parse(&parser, "aF1 F1a 2"),
+            Ok(vec![co_arg(), arg((number(2), 8..9), 2)])
         );
     }
 }

@@ -569,6 +569,34 @@
       "definition": "",
       "separated": [],
       "help": ""
+    },
+    {
+      "name": "lit",
+      "type": "Arithmetic integer",
+      "signature_definition": "F0 F1a aF1 F1",
+      "signature": "lit,F1a,aF1,inm-signed",
+      "signatureRaw": "lit F1a aF1 imm",
+      "co": "1111000",
+      "cop": "0000000000",
+      "nwords": 1,
+      "clk_cycles": 1,
+      "fields": [
+        {
+          "name": "lit",
+          "type": "co",
+          "startbit": 16,
+          "stopbit": 10
+        },
+        {
+          "name": "imm",
+          "type": "inm-signed",
+          "startbit": 3,
+          "stopbit": 0
+        }
+      ],
+      "definition": "",
+      "separated": [],
+      "help": ""
     }
   ],
   "pseudoinstructions": [],

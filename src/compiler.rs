@@ -1038,7 +1038,10 @@ fn translate_instruction(
     inst: PendingInstruction,
 ) -> Result<Instruction, ErrorData> {
     // Regex for replacement templates in the translation spec of instructions
-    static RE: Lazy<Regex> = crate::regex!(r"[fF]([0-9]+)");
+    // Surround the argument placeholder pattern (`[fF]([0-9]+)`) with word boundary assertions to
+    // make sure we match a full identifier rather than part of one
+    // SEE: https://docs.rs/regex/latest/regex/#empty-matches
+    static RE: Lazy<Regex> = crate::regex!(r"\b{start-half}[fF]([0-9]+)\b{end-half}");
     static FIELD: Lazy<Regex> = crate::regex!("\0([0-9]+)");
     let def = inst.definition;
     let mut binary_instruction = BitField::new(arch.word_size().saturating_mul(def.nwords));
@@ -1557,6 +1560,19 @@ mod test {
         assert_eq!(
             x.instructions,
             vec![inst(0, &["main"], "pad -16 -4", binary, 12..23)]
+        );
+        assert_eq!(x.data_memory, vec![]);
+        assert_eq!(x.global_symbols, HashSet::new());
+    }
+
+    #[test]
+    fn instruction_fields_literals() {
+        let x = compile(".text\nmain: lit F1a, aF1, 3").unwrap();
+        let binary = "00000000000000011110000000000011";
+        assert_eq!(x.label_table, label_table([("main", 0, 6..11)]));
+        assert_eq!(
+            x.instructions,
+            vec![inst(0, &["main"], "lit F1a aF1 3", binary, 12..27)]
         );
         assert_eq!(x.data_memory, vec![]);
         assert_eq!(x.global_symbols, HashSet::new());
