@@ -359,7 +359,7 @@ impl DataToken {
     /// # Errors
     ///
     /// Errors if the value doesn't contain an expression
-    fn to_expr(&self, span: &Span) -> Result<&Expr, ErrorData> {
+    fn into_expr(self, span: &Span) -> Result<Expr, ErrorData> {
         match self {
             Self::Number(expr) => Ok(expr),
             Self::String(_) => Err(ErrorKind::IncorrectArgumentType {
@@ -550,7 +550,7 @@ impl ArgumentNumber {
         Self { amount, at_least }
     }
 
-    /// Check if the argument number matches the amount specified
+    /// Checks if the argument number matches the amount specified
     ///
     /// # Parameters
     ///
@@ -558,7 +558,8 @@ impl ArgumentNumber {
     ///
     /// # Errors
     ///
-    /// Errors if the amount of arguments doesn't match the specified amount
+    /// Returns [`ErrorKind::IncorrectDirectiveArgumentNumber`] if the amount of arguments doesn't
+    /// match the specified amount
     fn check<T>(self, args: &Spanned<Vec<T>>) -> Result<(), ErrorData> {
         let len = args.0.len();
         if len < self.amount || (!self.at_least && len != self.amount) {
@@ -569,6 +570,21 @@ impl ArgumentNumber {
             .add_span(&args.1));
         };
         Ok(())
+    }
+
+    /// Checks that the argument number is exactly one, and returns that argument
+    ///
+    /// # Parameters
+    ///
+    /// * `args`: arguments found
+    ///
+    /// # Errors
+    ///
+    /// Errors if the amount of arguments isn't exactly 1
+    fn exactly_one<T>(args: Spanned<Vec<T>>) -> Result<T, ErrorData> {
+        Self::new(1, false).check(&args)?;
+        let mut iter = args.0.into_iter();
+        Ok(iter.next().expect("We should have exactly 1 value"))
     }
 }
 
@@ -640,11 +656,10 @@ fn compile_data(
         // Process the directive according to its type
         match statement.data_type {
             DirectiveData::Alignment(align_type) => {
-                ArgumentNumber::new(1, false).check(&args)?;
-                let (value, span) = &args.0[0];
-                let value = value.to_expr(span)?.int(Expr::unallowed_ident)?;
+                let (value, span) = ArgumentNumber::exactly_one(args)?;
+                let value = value.into_expr(&span)?.int(Expr::unallowed_ident)?;
                 let value = BigUint::try_from(value).map_err(|e| {
-                    ErrorKind::UnallowedNegativeValue(e.into_original()).add_span(span)
+                    ErrorKind::UnallowedNegativeValue(e.into_original()).add_span(&span)
                 })?;
                 // Calculate the align size in bytes
                 let align = match align_type {
@@ -657,7 +672,7 @@ fn compile_data(
                                 e.into_original().into(),
                                 0.into()..=u128::MAX.into(),
                             )
-                            .add_span(span)
+                            .add_span(&span)
                         })?;
                         BigUint::from(1u8) << value
                     }
@@ -675,14 +690,13 @@ fn compile_data(
                 }
             }
             DirectiveData::Space(size) => {
-                ArgumentNumber::new(1, false).check(&args)?;
-                let (value, span) = &args.0[0];
-                let value = value.to_expr(span)?.int(Expr::unallowed_ident)?;
+                let (value, span) = ArgumentNumber::exactly_one(args)?;
+                let value = value.into_expr(&span)?.int(Expr::unallowed_ident)?;
                 let size = BigUint::try_from(value).map_err(|e| {
-                    ErrorKind::UnallowedNegativeValue(e.into_original()).add_span(span)
+                    ErrorKind::UnallowedNegativeValue(e.into_original()).add_span(&span)
                 })? * size;
                 memory.push(PendingData {
-                    address: section.try_reserve(&size).add_span(span)?,
+                    address: section.try_reserve(&size).add_span(&span)?,
                     labels: take_spanned_vec(&mut labels),
                     value: PendingValue::Space(size),
                 });
@@ -690,20 +704,7 @@ fn compile_data(
             DirectiveData::Int(size, int_type) => {
                 ArgumentNumber::new(1, true).check(&args)?;
                 for (value, span) in args.0 {
-                    // Extract the argument as an expression without evaluating it. It might have
-                    // labels we haven't processed yet, so we need to wait until the 2nd pass (when
-                    // we have all the defined labels) to be able to evaluate it. We can't use
-                    // `.to_expr()` for this because we need to take ownership of the expression
-                    let value = match value {
-                        DataToken::Number(expr) => expr,
-                        DataToken::String(_) => {
-                            return Err(ErrorKind::IncorrectArgumentType {
-                                expected: ArgumentType::Expression,
-                                found: ArgumentType::String,
-                            }
-                            .add_span(&span))
-                        }
-                    };
+                    let value = value.into_expr(&span)?;
                     memory.push(PendingData {
                         address: section
                             .try_reserve_aligned(&size.into(), word_size_bytes)
@@ -716,7 +717,7 @@ fn compile_data(
             DirectiveData::Float(float_type) => {
                 ArgumentNumber::new(1, true).check(&args)?;
                 for (value, span) in args.0 {
-                    let value = value.to_expr(&span)?.float()?;
+                    let value = value.into_expr(&span)?.float()?;
                     // We intentionally want to truncate the number from f64 to f32 if the user
                     // asked for an f32
                     #[allow(clippy::cast_possible_truncation)]
