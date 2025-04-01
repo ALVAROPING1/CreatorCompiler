@@ -1,5 +1,10 @@
 # Contributing to the project
 
+## Documentation
+
+Developer documentation (including private elements) can be generated and opened
+from the doc comments using `cargo doc --open --document-private-items`
+
 ## Pre-requisites
 
 Code is formatted with `rustfmt` and linted with `clippy`. These should come by
