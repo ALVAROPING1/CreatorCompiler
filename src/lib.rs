@@ -1,5 +1,3 @@
-#![doc = include_str!("../README.md")]
-
 /*
  * Copyright 2018-2024 Felix Garcia Carballeira, Alejandro Calderon Mateos, Diego Camarmas Alonso,
  * Álvaro Guerrero Espinosa
@@ -19,6 +17,42 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with CREATOR.  If not, see <http://www.gnu.org/licenses/>.
  */
+
+#![doc = include_str!("../README.md")]
+//! # Example
+//!
+//! Example usage of the compiler from Rust:
+//!
+//! ```
+//! use creator_compiler::{compiler, parser, Architecture};
+//! use creator_compiler::RenderError as _;
+//!
+//! use std::collections::HashMap;
+//!
+//! let arch_json = include_str!("../tests/architecture.json");
+//! let arch = Architecture::from_json(arch_json).expect("The architecture should be correct");
+//!
+//! let code = "
+//! .data
+//! value: .word 5
+//!        .zero 1
+//!        .align 2
+//! address: .word value
+//! .text
+//! main: nop
+//! a: b: imm -3, 3, a
+//!       reg PC, x2, fs0, F1
+//! ";
+//!
+//! // Parse the code
+//! let ast = parser::parse(arch.arch_conf.comment_prefix, code)
+//!     .map_err(|e| eprintln!("{}", e.clone().render("file.s", code, true)))
+//!     .expect("The code should be valid");
+//! // Compile the code
+//! let compiled = compiler::compile(&arch, ast, &0u8.into(), HashMap::new(), false)
+//!     .map_err(|e| eprintln!("{}", e.clone().render("file.s", code, true)))
+//!     .expect("The code should be valid");
+//! ```
 
 pub mod architecture;
 pub mod compiler;
