@@ -63,7 +63,7 @@ impl BitField {
     ///
     /// # Errors
     ///
-    /// Returns a [`ErrorKind::IntegerTooBig`] if the data doesn't fit in the bit ranges
+    /// Returns a [`ErrorKind::IntegerOutOfRange`] if the data doesn't fit in the bit ranges
     pub fn replace(
         &mut self,
         range: &BitRange,
