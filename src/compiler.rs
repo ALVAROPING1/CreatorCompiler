@@ -35,7 +35,7 @@ use crate::architecture::{
 };
 use crate::parser::instruction::{ParsedArgs, ParsedArgument};
 use crate::parser::{
-    ASTNode, Data as DataToken, Expr, InstructionNode, Statement as StatementNode, Token,
+    ASTNode, Data as DataToken, Expr, InstructionNode, Statement as StatementNode, Token, AST,
 };
 use crate::span::{Source, Span, SpanList, Spanned};
 
@@ -1181,7 +1181,7 @@ fn compile_inner(
 /// Errors if there is any problem compiling the assembly code
 pub fn compile<'arch, S: std::hash::BuildHasher>(
     arch: &'arch Architecture,
-    ast: Vec<ASTNode>,
+    ast: AST,
     reserved_offset: &BigUint,
     labels: HashMap<String, BigUint, S>,
     library: bool,

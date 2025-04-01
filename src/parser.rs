@@ -89,9 +89,12 @@ pub struct ASTNode {
     pub statement: Spanned<Statement>,
 }
 
+/// Abstract Syntax Tree representing the assembly code
+pub type AST = Vec<ASTNode>;
+
 /// Creates a parser for the tokenized input
 #[must_use]
-fn parser<'a>() -> Parser!(Token, Vec<ASTNode>, 'a) {
+fn parser<'a>() -> Parser!(Token, AST, 'a) {
     // Newline token
     let newline = || just(Token::Ctrl('\n'));
     // Identifiers
