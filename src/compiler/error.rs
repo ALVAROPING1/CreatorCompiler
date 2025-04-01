@@ -118,6 +118,7 @@ pub struct Data {
 }
 
 /// Compiler error type
+#[derive(Debug, Clone)]
 pub struct Error<'arch> {
     /// Architecture used during the compilation
     pub arch: &'arch Architecture<'arch>,
@@ -176,8 +177,10 @@ impl Kind {
     }
 }
 
+/// Trait to get different types of data from an error, such as the error message, label message,
+/// error code, or notes/hints
 #[allow(unused_variables)]
-trait ErrorInfo {
+pub trait Info {
     /// Gets the numeric error code of the error
     fn code(&self) -> u32 {
         0
@@ -225,7 +228,7 @@ trait ErrorInfo {
     fn msg(&self, color: bool) -> String;
 }
 
-impl<'arch> ErrorInfo for Error<'arch> {
+impl<'arch> Info for Error<'arch> {
     fn code(&self) -> u32 {
         match self.error.kind.as_ref() {
             Kind::UnknownDirective(..) => 1,
@@ -570,7 +573,7 @@ impl<'arch> crate::RenderError for Error<'arch> {
     }
 }
 
-impl ErrorInfo for PseudoinstructionError {
+impl Info for PseudoinstructionError {
     fn note(&self, color: bool) -> Option<String> {
         use PseudoinstructionErrorKind as Kind;
         Some(match &self.kind {
