@@ -47,7 +47,3 @@ use the generated package, both for the web and Node.js:
 - `web.js`: main module for the web example, shows how to load the package in the web
 - `node.js`: main module for the Node.js example, shows how to load the package in Node.js
 - `compiler.mjs`: module responsible for interaction with the package, shows how to use the provided API
-
-## Running tests
-
-Unit tests can be run with `cargo test`.
