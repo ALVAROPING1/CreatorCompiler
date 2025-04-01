@@ -169,7 +169,7 @@ impl Kind {
     ///
     /// * `span`: location in the assembly code that caused the error
     #[must_use]
-    pub fn add_span(self, span: impl Into<SpanList>) -> Data {
+    pub(crate) fn add_span(self, span: impl Into<SpanList>) -> Data {
         Data {
             span: span.into(),
             kind: Box::new(self),

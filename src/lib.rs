@@ -56,7 +56,7 @@
 
 pub mod architecture;
 pub mod compiler;
-pub mod error_rendering;
+mod error_rendering;
 #[cfg(feature = "js")]
 mod js;
 pub mod parser;
