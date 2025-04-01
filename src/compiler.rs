@@ -47,7 +47,7 @@ use error::{ArgumentType, SpannedErr as _};
 pub use error::{Data as ErrorData, Error as CompileError, Kind as ErrorKind};
 
 mod bit_field;
-use bit_field::BitField;
+pub use bit_field::BitField;
 
 mod section;
 use section::Section;
@@ -166,7 +166,7 @@ fn parse_instruction<'a>(
 
 /// Processed instruction pending argument evaluation
 #[derive(Debug, Clone)]
-pub struct PendingInstruction<'arch> {
+struct PendingInstruction<'arch> {
     /// Address of the instruction
     address: BigUint,
     /// Labels pointing to this instruction
@@ -265,7 +265,7 @@ pub struct Instruction {
 
 /// Value to add to the data segment pending argument evaluation
 #[derive(Debug, PartialEq, Clone)]
-pub enum PendingValue {
+enum PendingValue {
     /// Integer value
     Integer(Spanned<Expr>, usize, IntegerType),
     /// Reserved space initialized to 0
@@ -309,13 +309,13 @@ pub enum Value {
 
 /// Compiled data segment element
 #[derive(Debug, PartialEq, Clone)]
-pub struct PendingData {
+struct PendingData {
     /// Address of the element
-    pub address: BigUint,
+    address: BigUint,
     /// Labels pointing to this data element
-    pub labels: Vec<String>,
+    labels: Vec<String>,
     /// Value of the data element
-    pub value: PendingValue,
+    value: PendingValue,
 }
 
 /// Compiled data segment element
