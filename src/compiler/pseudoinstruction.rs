@@ -136,9 +136,11 @@ mod js {
     }
 }
 
-fn reg_name(arg: &Spanned<Expr>) -> Result<&str, ErrorData> {
+/// Unwraps an expression containing a register name
+fn reg_name(arg: &Spanned<Expr>) -> Result<String, ErrorData> {
     match &arg.0 {
-        Expr::Identifier((name, _)) => Ok(name),
+        Expr::Identifier((name, _)) => Ok(name.clone()),
+        Expr::Integer(i) => Ok(i.to_string()),
         _ => Err(ErrorKind::IncorrectArgumentType {
             expected: ArgumentType::RegisterName,
             found: ArgumentType::Expression,
@@ -203,7 +205,7 @@ pub fn expand<'b, 'a: 'b>(
             }
             .compile_error(instruction, span.clone())
         })?;
-        let name = reg_name(&name.value)?;
+        let name = &reg_name(&name.value)?;
         let i: usize = num(i);
         for file in arch.find_reg_files(RegisterType::Float(FloatType::Double)) {
             if let Some((_, reg, _)) = file.find_register(name, case) {
