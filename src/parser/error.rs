@@ -49,7 +49,7 @@ impl From<Vec<Simple<Token>>> for Error {
 }
 
 impl<T: ToString + std::hash::Hash + std::cmp::Eq> crate::RenderError for Vec<Simple<T>> {
-    fn format(self, filename: &str, src: &str, mut buffer: &mut Vec<u8>, color: bool) {
+    fn format(&self, filename: &str, src: &str, mut buffer: &mut Vec<u8>, color: bool) {
         // Configure the error reports
         let config = Config::default()
             .with_color(color)
@@ -99,7 +99,7 @@ impl<T: ToString + std::hash::Hash + std::cmp::Eq> crate::RenderError for Vec<Si
 }
 
 impl crate::RenderError for Error {
-    fn format(self, filename: &str, src: &str, buffer: &mut Vec<u8>, color: bool) {
+    fn format(&self, filename: &str, src: &str, buffer: &mut Vec<u8>, color: bool) {
         match self {
             Self::Lexer(errs) => errs.format(filename, src, buffer, color),
             Self::Parser(errs) => errs.format(filename, src, buffer, color),

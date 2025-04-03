@@ -490,7 +490,7 @@ impl<'arch> Info for Error<'arch> {
     }
 }
 
-impl SpanList {
+impl crate::RenderError for SpanList {
     fn format(&self, filename: &str, src: &str, mut buffer: &mut Vec<u8>, color: bool) {
         let (filename, src) = self.source.as_ref().map_or((filename, src), |origin| {
             origin.span.format(filename, src, buffer, color);
@@ -516,7 +516,7 @@ impl SpanList {
 }
 
 impl<'arch> crate::RenderError for Error<'arch> {
-    fn format(self, filename: &str, src: &str, mut buffer: &mut Vec<u8>, color: bool) {
+    fn format(&self, filename: &str, src: &str, mut buffer: &mut Vec<u8>, color: bool) {
         let (filename_user, src_user) = (filename, src);
         let source = self.error.span.source.as_ref();
         let (filename, src) = source.map_or((filename, src), |origin| {
@@ -553,7 +553,7 @@ impl<'arch> crate::RenderError for Error<'arch> {
             .write((filename, Source::from(src)), &mut buffer)
             .expect("Writing to an in-memory vector shouldn't fail");
 
-        match *self.error.kind {
+        match self.error.kind.as_ref() {
             Kind::IncorrectInstructionSyntax(errs) => {
                 for (syntax, err) in errs {
                     writeln!(
@@ -572,7 +572,7 @@ impl<'arch> crate::RenderError for Error<'arch> {
             _ => {}
         }
 
-        if let Some(origin) = self.error.span.source {
+        if let Some(origin) = &self.error.span.source {
             origin.span.format(filename_user, src_user, buffer, color);
         }
     }
@@ -628,7 +628,7 @@ impl Info for PseudoinstructionError {
 }
 
 impl crate::RenderError for PseudoinstructionError {
-    fn format(self, _: &str, _: &str, mut buffer: &mut Vec<u8>, color: bool) {
+    fn format(&self, _: &str, _: &str, mut buffer: &mut Vec<u8>, color: bool) {
         static FILENAME: &str = "<pseudoinstruction expansion>";
         let src = &self.definition;
         let config = Config::default()
@@ -650,8 +650,8 @@ impl crate::RenderError for PseudoinstructionError {
             .write((FILENAME, Source::from(src)), &mut buffer)
             .expect("Writing to an in-memory vector shouldn't fail");
         writeln!(&mut buffer).expect("Writing to an in-memory vector can't fail");
-        if let PseudoinstructionErrorKind::ParseError(err) = self.kind {
-            err.format(FILENAME, &src[self.span], buffer, color);
+        if let PseudoinstructionErrorKind::ParseError(err) = &self.kind {
+            err.format(FILENAME, &src[self.span.clone()], buffer, color);
         }
     }
 }
