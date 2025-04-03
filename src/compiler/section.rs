@@ -44,6 +44,7 @@ impl Section {
     ///
     /// * `name`: name of the memory section
     /// * `bounds`: start/end addresses of the section
+    #[must_use]
     pub fn new(name: &'static str, bounds: Option<&NonEmptyRangeInclusive<BigUint>>) -> Self {
         bounds.map_or(
             Self {
@@ -60,6 +61,7 @@ impl Section {
     }
 
     /// Gets the first available address
+    #[must_use]
     pub const fn get(&self) -> &BigUint {
         &self.address
     }
@@ -139,6 +141,7 @@ impl Section {
 mod test {
     use super::*;
 
+    #[must_use]
     fn range(start: u64, end: u64) -> NonEmptyRangeInclusive<BigUint> {
         NonEmptyRangeInclusive::<BigUint>::build(start.into(), end.into())
             .expect("This shouldn't fail")

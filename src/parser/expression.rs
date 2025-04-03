@@ -184,6 +184,7 @@ impl Expr {
 }
 
 /// Converts a [`BigUint`] to a [`f64`]
+#[must_use]
 fn biguint_to_f64(x: &BigUint) -> f64 {
     x.to_f64().expect("Converting a bigint to f64 can't fail")
 }
@@ -343,6 +344,7 @@ mod test {
         );
     }
 
+    #[must_use]
     fn float_op(op: OperationKind, s: Span) -> ErrorData {
         ErrorKind::UnallowedFloatOperation(op).add_span(&s)
     }
@@ -392,14 +394,17 @@ mod test {
         ]);
     }
 
+    #[must_use]
     fn int(x: u32, s: Span) -> Spanned<Expr> {
         (Expr::Integer(x.into()), s)
     }
 
+    #[must_use]
     fn float(x: f64, s: Span) -> Spanned<Expr> {
         (Expr::Float((x, s.clone())), s)
     }
 
+    #[must_use]
     fn un_op(op: Spanned<UnaryOp>, operand: Spanned<Expr>) -> Expr {
         Expr::UnaryOp {
             op,
@@ -407,6 +412,7 @@ mod test {
         }
     }
 
+    #[must_use]
     fn bin_op(op: Spanned<BinaryOp>, lhs: Spanned<Expr>, rhs: Spanned<Expr>) -> Expr {
         Expr::BinaryOp {
             op,

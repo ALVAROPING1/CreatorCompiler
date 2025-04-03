@@ -501,6 +501,7 @@ pub struct CompiledCode {
 /// # Parameters
 ///
 /// * `src`: source vector to take the data from
+#[must_use]
 fn take_spanned_vec<T>(src: &mut Vec<Spanned<T>>) -> Vec<T> {
     std::mem::take(src).into_iter().map(|x| x.0).collect()
 }
@@ -707,6 +708,7 @@ impl ArgumentNumber {
 ///
 /// * `kernel`: kernel section with its vector of elements
 /// * `user`: user section with its vector of elements
+#[must_use]
 fn combine_sections<T>(kernel: (Section, Vec<T>), user: (Section, Vec<T>)) -> Vec<T> {
     // Sort the sections
     let (mem1, mem2) = if kernel.0.get() <= user.0.get() {
@@ -1344,6 +1346,7 @@ mod test {
         compile_with(src, &BigUint::ZERO, HashMap::new(), false)
     }
 
+    #[must_use]
     fn label_table(labels: impl IntoIterator<Item = (&'static str, u64, Span)>) -> LabelTable {
         let mut tbl = LabelTable::default();
         for v in labels {
@@ -1352,6 +1355,7 @@ mod test {
         tbl
     }
 
+    #[must_use]
     fn bitfield(bits: &str) -> BitField {
         let mut field = BitField::new(bits.len());
         for (i, c) in bits.chars().enumerate() {
@@ -1366,6 +1370,7 @@ mod test {
         field
     }
 
+    #[must_use]
     fn inst(address: u64, labels: &[&str], loaded: &str, binary: &str, user: Span) -> Instruction {
         Instruction {
             address: address.into(),
@@ -1378,10 +1383,12 @@ mod test {
 
     static NOP_BINARY: &str = "11110000000000000000000001111111";
 
+    #[must_use]
     fn main_nop(span: Span) -> Instruction {
         inst(0, &["main"], "nop", NOP_BINARY, span)
     }
 
+    #[must_use]
     fn data(address: u64, labels: &[&str], value: Value) -> Data {
         Data {
             address: address.into(),
@@ -1390,6 +1397,7 @@ mod test {
         }
     }
 
+    #[must_use]
     fn int_val(x: i64, size: usize, ty: IntegerType) -> Value {
         Value::Integer(Integer::build(x.into(), size, Some(ty), None).unwrap())
     }

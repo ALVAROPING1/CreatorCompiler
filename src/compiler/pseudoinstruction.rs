@@ -52,6 +52,7 @@ pub struct Error {
 }
 
 impl Error {
+    #[must_use]
     fn compile_error(self, def: &Pseudoinstruction, span: impl Into<SpanList>) -> ErrorData {
         ErrorKind::PseudoinstructionError {
             name: def.name.to_owned(),
@@ -74,6 +75,7 @@ mod js {
         unimplemented!("Evaluating js code during pseudoinstruction expansion requires the `pseudoinstruction` feature flag");
     }
 
+    #[must_use]
     pub fn to_string<T>(_: T) -> String {
         unimplemented!("Evaluating js code during pseudoinstruction expansion requires the `pseudoinstruction` feature flag");
     }
@@ -128,6 +130,7 @@ mod js {
             .map_err(to_string)
     }
 
+    #[must_use]
     pub fn to_string(x: JsValue) -> String {
         String::from(string(x))
     }
@@ -144,6 +147,7 @@ fn reg_name(arg: &Spanned<Expr>) -> Result<&str, ErrorData> {
     }
 }
 
+#[must_use]
 fn capture_span(captures: &Captures, i: usize) -> Span {
     captures
         .get(i)

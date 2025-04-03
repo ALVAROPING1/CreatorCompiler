@@ -55,6 +55,7 @@ pub struct Instruction<'a>(BoxedParser<'a, Token, ParsedArgs, Simple<Token>>);
 /// # Panics
 ///
 /// Panics if the identifier doesn't follow the regex `[fF]\d+`
+#[must_use]
 fn number(identifier: &str) -> usize {
     static MSG: &str = "This should have already matched a number";
     identifier[1..].parse().expect(MSG)
@@ -207,6 +208,7 @@ mod test {
     use super::*;
     use crate::parser::expression::BinaryOp;
 
+    #[must_use]
     fn fields() -> [InstructionField<'static, ()>; 3] {
         let field = |co| InstructionField {
             name: "",
@@ -225,18 +227,22 @@ mod test {
         parser.parse(&ast).map_err(|e| eprintln!("{e:?}"))
     }
 
+    #[must_use]
     const fn arg(value: Spanned<Expr>, field_idx: usize) -> ParsedArgument {
         ParsedArgument { value, field_idx }
     }
 
+    #[must_use]
     fn co_arg() -> ParsedArgument {
         arg((Expr::Integer(0u8.into()), 0..0), 0)
     }
 
+    #[must_use]
     fn ident(name: Spanned<&str>) -> Spanned<Expr> {
         (Expr::Identifier((name.0.into(), name.1.clone())), name.1)
     }
 
+    #[must_use]
     fn number(x: u32) -> Expr {
         Expr::Integer(x.into())
     }

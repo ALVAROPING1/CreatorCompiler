@@ -214,10 +214,12 @@ mod test {
         }
     }
 
+    #[must_use]
     fn owned<O, T: ToOwned<Owned = O> + ?Sized>(x: Spanned<&T>) -> Spanned<O> {
         (x.0.to_owned(), x.1)
     }
 
+    #[must_use]
     fn directive(
         labels: Vec<Spanned<&str>>,
         name: Spanned<&str>,
@@ -236,6 +238,7 @@ mod test {
         }
     }
 
+    #[must_use]
     fn instruction(
         labels: Vec<Spanned<&str>>,
         name: Spanned<&str>,

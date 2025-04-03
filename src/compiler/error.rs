@@ -182,6 +182,7 @@ impl Kind {
 #[allow(unused_variables)]
 pub trait Info {
     /// Gets the numeric error code of the error
+    #[must_use]
     fn code(&self) -> u32 {
         0
     }
@@ -191,6 +192,7 @@ pub trait Info {
     /// # Parameters
     ///
     /// * `color`: whether the message should be formatted (`true`) or plain text (`false`)
+    #[must_use]
     fn note(&self, color: bool) -> Option<String> {
         None
     }
@@ -200,6 +202,7 @@ pub trait Info {
     /// # Parameters
     ///
     /// * `color`: whether the message should be formatted (`true`) or plain text (`false`)
+    #[must_use]
     fn hint(&self, color: bool) -> Option<String> {
         None
     }
@@ -209,6 +212,7 @@ pub trait Info {
     /// # Parameters
     ///
     /// * `color`: whether the message should be formatted (`true`) or plain text (`false`)
+    #[must_use]
     fn context(&self, color: bool) -> Vec<(&Span, &'static str)> {
         vec![]
     }
@@ -218,6 +222,7 @@ pub trait Info {
     /// # Parameters
     ///
     /// * `color`: whether the message should be formatted (`true`) or plain text (`false`)
+    #[must_use]
     fn label(&self, color: bool) -> String;
 
     /// Gets the error message of the error
@@ -225,6 +230,7 @@ pub trait Info {
     /// # Parameters
     ///
     /// * `color`: whether the message should be formatted (`true`) or plain text (`false`)
+    #[must_use]
     fn msg(&self, color: bool) -> String;
 }
 
@@ -343,7 +349,6 @@ impl<'arch> Info for Error<'arch> {
         })
     }
 
-    /// Gets a list of extra context labels related to the error
     fn context(&self, _: bool) -> Vec<(&Span, &'static str)> {
         match self.error.kind.as_ref() {
             Kind::DuplicateLabel(_, Some(span)) => {

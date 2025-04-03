@@ -59,12 +59,14 @@ self_cell!(
 /// # Panics
 ///
 /// Panics if the string contains invalid ANSI escape codes
+#[must_use]
 fn to_html(str: &str) -> String {
     let opts = ansi_to_html::Opts::default().four_bit_var_prefix(Some("err-".into()));
     ansi_to_html::convert_with_opts(str, &opts).expect("we should only generate valid ANSI escapes")
 }
 
 /// Converts a number to a `JS` big integer
+#[must_use]
 fn to_js_bigint<T: num_traits::Num + ToString>(x: &T) -> BigInt {
     BigInt::from_str(&x.to_string())
         .expect("Converting a number to string should always return a valid format")
@@ -179,6 +181,7 @@ impl ArchitectureJS {
     }
 
     /// Generate a `JSON` schema
+    #[must_use]
     pub fn schema() -> String {
         Architecture::schema()
     }

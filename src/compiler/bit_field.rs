@@ -101,6 +101,7 @@ mod test {
 
     type NonEmptyRangeInclusive = crate::architecture::NonEmptyRangeInclusive<usize>;
 
+    #[must_use]
     fn range(segments: Vec<(usize, usize)>, padding: usize) -> BitRange {
         let ranges = segments
             .into_iter()
