@@ -163,7 +163,7 @@ impl fmt::Display for DirectiveSegment {
 }
 
 impl Kind {
-    /// Adds a span to the error kind, promoting it to an [`Data`]
+    /// Adds a span to the error kind, promoting it to a [`Data`]
     ///
     /// # Parameters
     ///

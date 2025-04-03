@@ -18,6 +18,15 @@
  * along with CREATOR.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+//! Module containing the interpreter engine used to expand pseudoinstructions
+//!
+//! The entry point for expanding pseudoinstructions is the [`expand()`] function
+
+// NOTE: for compatibility with pseudoinstruction definitions written for the old compiler, this
+// module reimplements the same functionality used by the old compiler with minimal changes. This
+// should be completely redesigned from scratch once we are ready to make a breaking change in the
+// definition of the architecture
+
 use num_bigint::BigUint;
 use once_cell::sync::Lazy;
 use regex::{Captures, Regex};
@@ -32,7 +41,7 @@ use super::{ArgumentType, ErrorData, ErrorKind, InstructionDefinition, LabelTabl
 use super::{Expr, ParsedArgs};
 use super::{Source, Span, SpanList, Spanned};
 
-/// Pseudoinstruction evaluation error
+/// Pseudoinstruction evaluation error kind
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Kind {
     UnknownFieldName(String),
@@ -44,14 +53,24 @@ pub enum Kind {
     ParseError(ParseError),
 }
 
+/// Pseudoinstruction evaluation error
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error {
+    /// Definition of the string at the point of the error
     pub definition: String,
+    /// Location in the definition that caused the error
     pub span: Span,
+    /// Type of the error
     pub kind: Kind,
 }
 
 impl Error {
+    /// Adds a span and a pseudoinstruction name to the error, promoting it to a [`ErrorData`]
+    ///
+    /// # Parameters
+    ///
+    /// * `def`: definition of the pseudoinstruction
+    /// * `span`: location in the assembly code that caused the error
     #[must_use]
     fn compile_error(self, def: &Pseudoinstruction, span: impl Into<SpanList>) -> ErrorData {
         ErrorKind::PseudoinstructionError {
@@ -88,6 +107,7 @@ mod js {
 
     #[wasm_bindgen]
     extern "C" {
+        /// Converts a `JS` value to a `JS` string
         #[wasm_bindgen(js_name = String)]
         fn string(x: JsValue) -> js_sys::JsString;
     }
@@ -119,10 +139,20 @@ mod js {
         fn call0(this: &Function, context: &JsValue) -> Result<JsValue, JsValue>;
     }
 
+    /// Evaluates code corresponding to a `JS` expression
+    ///
+    /// # Errors
+    ///
+    /// Errors if there is any exception during the execution of the code
     pub fn eval_expr(src: &str) -> Result<JsValue, String> {
         js_sys::eval(src).map_err(to_string)
     }
 
+    /// Evaluates code corresponding to the body of a `JS` function
+    ///
+    /// # Errors
+    ///
+    /// Errors if there is any exception during the execution of the code
     pub fn eval_fn(src: &str) -> Result<JsValue, String> {
         Function::new_no_args(src)
             .map_err(to_string)?
@@ -130,6 +160,7 @@ mod js {
             .map_err(to_string)
     }
 
+    /// Converts a `JS` value to a string
     #[must_use]
     pub fn to_string(x: JsValue) -> String {
         String::from(string(x))
@@ -137,6 +168,10 @@ mod js {
 }
 
 /// Unwraps an expression containing a register name
+///
+/// # Errors
+///
+/// Errors if the expression doesn't contain a register name
 fn reg_name(arg: &Spanned<Expr>) -> Result<String, ErrorData> {
     match &arg.0 {
         Expr::Identifier((name, _)) => Ok(name.clone()),
@@ -149,6 +184,16 @@ fn reg_name(arg: &Spanned<Expr>) -> Result<String, ErrorData> {
     }
 }
 
+/// Gets the [`Span`] of a capture group
+///
+/// # Parameters
+///
+/// * `captures`: list of capture groups
+/// * `i`: index of the capture group to get
+///
+/// # Panics
+///
+/// Panics if the index is out of bounds
 #[must_use]
 fn capture_span(captures: &Captures, i: usize) -> Span {
     captures
@@ -160,6 +205,20 @@ fn capture_span(captures: &Captures, i: usize) -> Span {
 /// Result of expanding a pseudoinstruction
 type ExpandedInstructions<'a> = Vec<((InstructionDefinition<'a>, ParsedArgs), SpanList)>;
 
+/// Expands a pseudoinstruction to a sequence of instructions, which might be real or another
+/// pseudoinstruction
+///
+/// # Parameters
+///
+/// * `arch`: architecture definition
+/// * `label_table`: symbol table for labels
+/// * `address`: address in which the instruction is being compiled into
+/// * `instruction`: pseudoinstruction definition to use
+/// * `args`: arguments of the instruction being expanded
+///
+/// # Errors
+///
+/// Errors if there is any problem expanding the pseudoinstruction
 #[allow(clippy::too_many_lines)]
 pub fn expand<'b, 'a: 'b>(
     arch: &'a Architecture,
@@ -169,15 +228,25 @@ pub fn expand<'b, 'a: 'b>(
     args: &ParsedArgs,
 ) -> Result<ExpandedInstructions<'a>, ErrorData> {
     // Regex used
+    // Register name should be replaced with the register name of the i-th register forming this
+    // double precision register
     static ALIAS_DOUBLE: Lazy<Regex> = crate::regex!(r"aliasDouble\(([^;]+);(\d+)\)");
+    // Gets the value of the i-th argument from bits j to k, evaluating the argument as the given
+    // type
     static FIELD_VALUE: Lazy<Regex> = crate::regex!(r"Field\.(\d+)\.\((\d+),(\d+)\)\.(\w+)");
+    // Gets the size of the i-th argument
     static FIELD_SIZE: Lazy<Regex> = crate::regex!(r"Field\.(\d+)\.SIZE");
+    // Evaluates a `JS` expression that doesn't return a value
     static NO_RET_OP: Lazy<Regex> = crate::regex!(r"no_ret_op\{([^}]*?)\};");
+    // Evaluates a `JS` expression should be replaced with its return value
     static OP: Lazy<Regex> = crate::regex!(r"op\{([^}]*?)\}");
+    // Block of code containing a list of instructions
     static INSTRUCTIONS: Lazy<Regex> = crate::regex!(r"\{(.*?)\}");
 
+    // Function to evaluate a label within an expression
     let ident_eval = |label: &str| super::label_eval(label_table, address, label);
 
+    // Parse a number from a string that already matched a number regex
     let num = |x: &str| {
         x.parse()
             .expect("This should have already matched a number")
@@ -197,6 +266,7 @@ pub fn expand<'b, 'a: 'b>(
     // Replace occurrences of `AliasDouble()`
     while let Some(x) = ALIAS_DOUBLE.captures(&def) {
         let (_, [name, i]) = x.extract();
+        // Get the user's register name
         let name = get_arg(name).ok_or_else(|| {
             Error {
                 definition: def.clone(),
@@ -207,6 +277,7 @@ pub fn expand<'b, 'a: 'b>(
         })?;
         let name = &reg_name(&name.value)?;
         let i: usize = num(i);
+        // Find the register name and replace it
         for file in arch.find_reg_files(RegisterType::Float(FloatType::Double)) {
             if let Some((_, reg, _)) = file.find_register(name, case) {
                 let name = reg
@@ -223,6 +294,7 @@ pub fn expand<'b, 'a: 'b>(
     while let Some(x) = FIELD_VALUE.captures(&def) {
         let (_, [arg, start_bit, end_bit, ty]) = x.extract();
         let arg_num = num(arg) - 1;
+        // Get the user's argument expression
         let (value, _) = &args
             .get(arg_num)
             .ok_or_else(|| {
@@ -237,9 +309,11 @@ pub fn expand<'b, 'a: 'b>(
                 .compile_error(instruction, span.clone())
             })?
             .value;
+        // Evaluate the expression according to the requested type
         #[allow(clippy::cast_possible_truncation)]
         let field = match ty {
             "int" => {
+                // Convert the number to binary using two's complement
                 let s = value.int(ident_eval)?.to_signed_bytes_be().iter().fold(
                     String::new(),
                     |mut s, byte| {
@@ -250,6 +324,7 @@ pub fn expand<'b, 'a: 'b>(
                 if s.len() >= 32 {
                     s
                 } else {
+                    // Pad the number to 32 bits, using sign extension
                     let pad = s
                         .chars()
                         .next()
@@ -272,6 +347,7 @@ pub fn expand<'b, 'a: 'b>(
                 .compile_error(instruction, span))
             }
         };
+        // Get the range of bits requested
         let start_bit = num(start_bit);
         let end_bit = num(end_bit);
         let msb = field.len() - 1;
@@ -294,6 +370,7 @@ pub fn expand<'b, 'a: 'b>(
             }
             .compile_error(instruction, span));
         }
+        // Replace the matched string with the corresponding bits
         let field = format!("0b{}", &field[msb - start_bit..=msb - end_bit]);
         def.replace_range(capture_span(&x, 0), &field);
     }
@@ -302,6 +379,7 @@ pub fn expand<'b, 'a: 'b>(
     while let Some(x) = FIELD_SIZE.captures(&def) {
         let (_, [arg]) = x.extract();
         let arg_num = num(arg) - 1;
+        // Get the user's argument expression
         let (value, _) = &args
             .get(arg_num)
             .ok_or_else(|| {
@@ -316,10 +394,13 @@ pub fn expand<'b, 'a: 'b>(
                 .compile_error(instruction, span.clone())
             })?
             .value;
+        // Calculate the size of the expression
         #[allow(clippy::cast_possible_truncation)]
         let size = match value.int(ident_eval) {
             Ok(x) => x.bits() + 1,
             Err(err) => match *err.kind {
+                // If the expression had any floating-point numbers, assume the result is in
+                // single precision
                 ErrorKind::UnallowedFloat => 32,
                 _ => return Err(err),
             },
@@ -362,7 +443,8 @@ pub fn expand<'b, 'a: 'b>(
         def.replace_range(capture_span(&x, 0), &js::to_string(result));
     }
 
-    // Wrap instruction sequences in quotes and with a return statement
+    // Wrap instruction sequences in quotes and with a return statement, so we can treat the
+    // definition code as the body of a function
     let mut start = 0;
     while let Some(x) = INSTRUCTIONS.captures_at(&def, start) {
         let (_, [instructions]) = x.extract();
@@ -386,31 +468,38 @@ pub fn expand<'b, 'a: 'b>(
         def = js::to_string(result);
     };
 
+    // Process the resulting instruction sequence
     let source = Rc::new(Source { code: def, span });
     let def = &source.code;
     def.split_terminator(';')
         .map(|inst| {
+            // Gets the address of the start of a string
             let addr_of = |str: &str| str.as_ptr() as usize;
+            // Calculate the span in the original `instructions`
             let span_start = addr_of(inst) - addr_of(def);
-            // Calculate the span in the original `instructions` as the difference between the
-            // pointers and the size
             let span = span_start..(span_start + inst.len());
+            // Lex the instruction
             let (name, mut args) = crate::parser::Instruction::lex(inst).map_err(|error| {
                 Error {
-                    span: span.clone(),
                     definition: def.clone(),
+                    span: span.clone(),
                     kind: Kind::ParseError(error),
                 }
                 .compile_error(instruction, source.span.clone())
             })?;
+            // Update the spans on the tokens to be relative to the start of the definition rather
+            // than relative to the start of the instruction
             for tok in &mut args {
                 tok.1.start += span_start;
                 tok.1.end += span_start;
             }
             let name_span = span_start..span_start + name.len();
             let args_span = name_span.end + 1..span_start + inst.len();
+            // Parse the instruction
             let (inst_def, mut args) =
                 super::parse_instruction(arch, (name.to_owned(), name_span), &(args, args_span))?;
+            // Replace the argument names that match those of the pseudoinstruction being expanded
+            // with the values provided by the user
             for arg in &mut args {
                 let value = &arg.value;
                 match &value.0 {
