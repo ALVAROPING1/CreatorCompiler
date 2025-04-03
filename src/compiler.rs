@@ -23,6 +23,118 @@
 //! The entry point for compiler code is the [`compile()`] function. Users are expected to parse
 //! the code first to an AST with [`crate::parser::parse()`]
 
+// # Compiler architecture
+//
+// ## General process
+//
+// 1. Process the AST and split the statements into instruction and data, processing non-data
+//    directives (directives that don't add elements to the data segment of the compiled program)
+// 2. Perform the 1st pass over the statements, determining the value of all labels defined
+//    1. Process the data directives, determining the address of each element. Delay expression
+//       evaluation on cases where labels are allowed until the 2nd pass to allow for forward
+//       references
+//    2. Process the instruction statements, determining the address of each real instruction. For
+//       each instruction:
+//       1. Find a valid definition to parse its arguments
+//       2. Evaluate the instruction with the definition found, expanding pseudoinstructions
+//          recursively if the definition corresponds with one. If the definition corresponds with a
+//          real instruction, extract its arguments as expressions (delaying their evaluation until
+//          the 2nd pass to allow for forward references)
+// 3. Perform the 2nd pass over the statements, compiling the program (order doesn't matter)
+//    * Evaluate the remaining arguments of data directives that were delayed during the 1st pass
+//    * Translate instructions
+//      1. Translate each field according to its type, evaluating its arguments
+//      2. Add the `cop` fields' values to the binary instruction
+//
+// ## Reasons
+//
+// The hardest problem to solve that leads to the above process is answering the question:
+//
+// "How do we handle forward references?"
+//
+// The assembly code might have labels with forward references (i.e. used before they are
+// defined in the assembly code. This is necessary for e.g. forward jumps). This means we can't
+// just go through the statements one by one compiling them, since we might get to a point where
+// the compilation might need to know the value of a label that's defined later in the code
+//
+// In order to solve this, we need to split the compilation in 2 passes:
+//
+// 1. Determine the values of all the labels without compiling anything, storing them on a symbol
+//    table. Since the value of labels is the address in which the element (instruction or data
+//    to add to the data segment) they point to is, this requires determining the address in which
+//    each element will be stored. This, in turn, requires determining how much memory each element
+//    will use, as the address of each element is the sum of the address of the start of the segment
+//    and the memory used by the elements that appeared before
+//
+//    This allows the 2nd pass to know the values of all labels, regardless of where they are
+//    defined relative to where they are used, solving the problem of forward references
+// 2. Perform the actual compilation of the elements using the values of the labels obtained in the
+//    1st pass. The processing of all statements during this pass is independent: the only global
+//    information used is contained in the symbol table created during the 1st pass, and that
+//    symbol table is never modified
+//
+// This approach, however, has some problems with pseudoinstructions (instructions that are allowed
+// in the assembly code but aren't defined in the actual architecture, and thus need to be replaced
+// with a sequence of instructions that implement an equivalent functionality):
+//
+// 1. The amount of memory used by a pseudoinstruction depends on the instruction sequence it gets
+//    replaced with after it is expanded
+// 2. Pseudoinstruction expansion might use the exact numeric value of its arguments to determine
+//    the instruction sequence it will expand into, which means we might need to evaluate its
+//    arguments during pseudoinstruction expansion. Different sequences might take different amounts
+//    of space in memory (instruction sizes can change, and they might have different amounts of
+//    instructions)
+// 3. Instruction arguments might contain labels with forward references
+// 4. Defining a label requires knowing how much memory has been used up to the element it points
+//    to
+//
+// Problem 1 means we need to perform the pseudoinstruction expansion during the 1st pass, as
+// that's when we need to determine the amount of space used by all elements. However, problems 2
+// and 3 mean we need to be able to use forward references during pseudoinstruction expansion,
+// which we can only do during the 2nd pass
+//
+// The core issue is that these problems create a cyclic dependency: expanding a pseudoinstruction
+// might require knowing the address of elements that appear later in the assembly code, but those
+// addresses might depend on how the pseudoinstruction is expanded. Thus, expanding a
+// pseudoinstruction might require knowing how that pseudoinstruction should be expanded, which is
+// impossible
+//
+// In order to solve this, we need to do one of these options:
+//
+// 1. Disallow forward references on pseudoinstruction expansions that need to know the exact
+//    numeric value of their arguments
+// 2. Add padding no-op instructions after the instruction sequence of a pseudoinstruction to
+//    guarantee all possible expansions end up using the same amount of memory, allowing the
+//    expansion to be performed during the 2nd pass
+// 3. Rework the pseudoinstruction definition specification to disallow instructions from using the
+//    exact numeric value of their arguments, only giving them access to their arguments by name and
+//    to get estimates of their size. This allows to decouple the process of determining the
+//    instruction sequence to replace the pseudoinstruction with from from the process of evaluating
+//    the arguments of the resulting instructions. Thus, the former could be performed during the
+//    1st pass while the later could be done during the 2nd pass
+//
+// Solution 3 is the best one, but requires a breaking change in the architecture specification
+// that would make some current pseudoinstruction definitions invalid. Option 2 would be the
+// simplest one that still allows forward references, but its implementation is extremely complex
+// without requiring the addition of extra metadata to the pseudoinstruction definition: a
+// pseudoinstruction that can be expanded into multiple different instruction sequences requires
+// running `JS` code, which would be very hard to analyze to determine all possible instruction
+// sequences it might result in
+//
+// This only leaves option 1, which is the solution currently being used. We can, however, be a
+// littler clever with it to allow some forward references during pseudoinstruction expansions that
+// need to know the exact numeric value of their arguments: pseudoinstruction expansions can only
+// influence the address used by other instructions, so forward references are only a problem when
+// they point to another instruction. Forward references to data elements aren't an issue as those
+// are never in the same segment as the problematic pseudoinstructions
+//
+// We can take advantage of this by, during the 1st pass, processing all data elements before any
+// instructions are processed. In order to achieve this, we must pre-process the assembly code to
+// split it into instruction and data statements, and from there perform the 1st pass for data
+// statements, the 1st pass for instructions, and finally the 2nd pass (the processing order doesn't
+// matter, since the symbol table isn't modified). This process is precisely a summary of the full
+// compilation process described above
+
 use num_bigint::{BigInt, BigUint};
 use once_cell::sync::Lazy;
 use regex::{NoExpand, Regex};
