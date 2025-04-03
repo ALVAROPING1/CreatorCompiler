@@ -96,6 +96,94 @@ impl fmt::Display for ArgNum {
     }
 }
 
+// NOTE: obtained and adapted from rustc
+// https://github.com/rust-lang/rust/blob/master/compiler/rustc_span/src/edit_distance.rs
+/// Finds the [edit distance] between two strings.
+///
+/// Returns `None` if the distance exceeds the limit.
+///
+/// [edit distance]: https://en.wikipedia.org/wiki/Edit_distance
+fn edit_distance(a: &str, b: &str, limit: usize) -> Option<usize> {
+    use std::{cmp, mem};
+    let mut a = &a.chars().collect::<Vec<_>>()[..];
+    let mut b = &b.chars().collect::<Vec<_>>()[..];
+
+    // Ensure that `b` is the shorter string, minimizing memory use.
+    if a.len() < b.len() {
+        mem::swap(&mut a, &mut b);
+    }
+
+    let min_dist = a.len() - b.len();
+    // If we know the limit will be exceeded, we can return early.
+    if min_dist > limit {
+        return None;
+    }
+
+    // Strip common prefix.
+    while let Some(((b_char, b_rest), (a_char, a_rest))) = b.split_first().zip(a.split_first()) {
+        if a_char != b_char {
+            break;
+        }
+        a = a_rest;
+        b = b_rest;
+    }
+    // Strip common suffix.
+    while let Some(((b_char, b_rest), (a_char, a_rest))) = b.split_last().zip(a.split_last()) {
+        if a_char != b_char {
+            break;
+        }
+        a = a_rest;
+        b = b_rest;
+    }
+
+    // If either string is empty, the distance is the length of the other.
+    // We know that `b` is the shorter string, so we don't need to check `a`.
+    if b.is_empty() {
+        return Some(min_dist);
+    }
+
+    let mut prev_prev = vec![usize::MAX; b.len() + 1];
+    let mut prev = (0..=b.len()).collect::<Vec<_>>();
+    let mut current = vec![0; b.len() + 1];
+
+    // row by row
+    for i in 1..=a.len() {
+        current[0] = i;
+        let a_idx = i - 1;
+
+        // column by column
+        for j in 1..=b.len() {
+            let b_idx = j - 1;
+
+            // There is no cost to substitute a character with itself.
+            let substitution_cost = usize::from(a[a_idx] != b[b_idx]);
+
+            current[j] = cmp::min(
+                // deletion
+                prev[j] + 1,
+                cmp::min(
+                    // insertion
+                    current[j - 1] + 1,
+                    // substitution
+                    prev[j - 1] + substitution_cost,
+                ),
+            );
+
+            if (i > 1) && (j > 1) && (a[a_idx] == b[b_idx - 1]) && (a[a_idx - 1] == b[b_idx]) {
+                // transposition
+                current[j] = cmp::min(current[j], prev_prev[j - 2] + 1);
+            }
+        }
+
+        // Rotate the buffers, reusing the memory.
+        [prev_prev, prev, current] = [prev, current, prev_prev];
+    }
+
+    // `prev` because we already rotated the buffers.
+    let distance = prev[b.len()];
+    (distance <= limit).then_some(distance)
+}
+
 /// Gets the names from a list that are the most similar to the given name
 ///
 /// # Parameters
@@ -104,21 +192,24 @@ impl fmt::Display for ArgNum {
 /// * `names`: iterator of possible names
 #[must_use]
 pub fn get_similar<'a>(target: &str, names: impl IntoIterator<Item = &'a str>) -> Vec<&'a str> {
+    use std::collections::hash_map::Entry;
     let mut distances = std::collections::HashMap::new();
+    let limit = std::cmp::max(target.len() / 3, 1);
     // For each candidate name, calculate its distance to the target if we haven't processed it yet
     for name in names {
-        distances
-            .entry(name)
-            .or_insert_with(|| edit_distance::edit_distance(name, target));
+        match distances.entry(name) {
+            Entry::Vacant(e) => match edit_distance(name, target, limit) {
+                Some(d) => e.insert(d),
+                None => continue,
+            },
+            Entry::Occupied(_) => continue,
+        };
     }
     // Get the names with the minimum distance
     distances
         .iter()
         .map(|(_, &d)| d)
         .min()
-        // Only return the names if the minimum distance to the target isn't too big, to remove
-        // false positives
-        .filter(|&min| min <= std::cmp::max(target.len() / 3, 1))
         .map(|min| {
             // Get the names with the minimum distance
             distances
@@ -268,8 +359,8 @@ mod test {
         assert_eq!(sim("x2", vec!["x0", "x1"]), vec!["x0", "x1"]);
         assert_eq!(sim("x20", vec!["x0", "x1"]), vec!["x0"]);
         assert_eq!(
-            sim("test", vec!["aest", "tst", "tests", "tsts", "aa"]),
-            vec!["aest", "tests", "tst"]
+            sim("test", vec!["aest", "tst", "tests", "tset", "tsts", "aa"]),
+            vec!["aest", "tests", "tset", "tst"]
         );
     }
 }
