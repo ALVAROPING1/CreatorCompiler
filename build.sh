@@ -8,7 +8,7 @@ function Info(){
 }
 
 function Build() {
-    wasm-pack build --target "$1" $2 --out-dir "pkg/$1"
+    wasm-pack build --target "$1" $2 --out-dir "pkg/$1" --no-default-features --features js
 }
 
 function Move() {
@@ -56,10 +56,7 @@ case "$1" in
     'profiling')
         BuildFull --profiling
         ;;
-    'help')
-        Help
-        ;;
-    '-h')
+    'help' | '-h')
         Help
         ;;
     *)
