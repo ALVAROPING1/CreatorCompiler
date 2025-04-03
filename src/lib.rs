@@ -24,9 +24,7 @@
 //! Example usage of the compiler from Rust:
 //!
 //! ```
-//! use creator_compiler::{compiler, parser, Architecture};
-//! use creator_compiler::RenderError as _;
-//!
+//! use creator_compiler::prelude::*;
 //! use std::collections::HashMap;
 //!
 //! let arch_json = include_str!("../tests/architecture.json");
@@ -61,7 +59,17 @@ mod error_rendering;
 mod js;
 pub mod parser;
 pub mod span;
-pub use error_rendering::RenderError;
+
+/// Module containing the default exports
+pub mod prelude {
+    pub use crate::architecture::Architecture;
+    pub use crate::compiler;
+    pub use crate::error_rendering::RenderError;
+    pub use crate::parser;
+    pub use num_bigint::BigUint;
+}
+
+use error_rendering::RenderError;
 
 /// Builds a new lazily-initialized regex with a given literal string
 ///
