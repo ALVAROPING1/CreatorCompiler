@@ -175,20 +175,29 @@ fn str_lexer() -> (Parser!(char, Token), Parser!(char, Token)) {
             Simple::custom(s.start..s.end + 1, "Invalid escape sequence")
         });
 
-    // Characters allowed inside string/character literals: anything that isn't their delimiter or
-    // a backslash
-    let char = |delimiter| filter(move |c| *c != '\\' && *c != delimiter).or(escape);
+    // Characters allowed inside string/character literals: anything that isn't their delimiter,
+    // a backslash, or a new line
+    let char = |delimiter| filter(move |c| *c != '\\' && *c != delimiter && *c != '\n').or(escape);
 
     // Literal strings: `string -> " char* "`
     let string = char('"')
         .repeated()
-        .delimited_by(just('"'), just('"'))
+        .delimited_by(
+            just('"'),
+            just('"')
+                .map_err_with_span(|_, s: Span| Simple::custom(s, "Unterminated string literal")),
+        )
         .collect::<String>()
         .map(Token::String);
 
     // Literal characters: `character -> ' char '`
     let character = char('\'')
-        .delimited_by(just('\''), just('\''))
+        .delimited_by(
+            just('\''),
+            just('\'').map_err_with_span(|_, s: Span| {
+                Simple::custom(s, "Unterminated character literal")
+            }),
+        )
         .map(Token::Character);
 
     (string, character)
@@ -371,6 +380,8 @@ mod test {
         assert_eq!(lex(msg), Ok(vec![(Token::String("a string with escape sequences like newline `\n` or tabs `\t`, also quotes `\"` and literal backslashes `\\`".into()), 0..msg.len())]));
         let err = Simple::custom(8..10, "Invalid escape sequence").with_label("token");
         assert_eq!(lexer("#").parse("\"invalid\\z\""), Err(vec![err]));
+        let err = Simple::custom(5..6, "Unterminated string literal").with_label("token");
+        assert_eq!(lexer("#").parse("\"test\ntest"), Err(vec![err]));
     }
 
     #[test]
@@ -405,6 +416,8 @@ mod test {
         }
         let err = Simple::custom(1..3, "Invalid escape sequence").with_label("token");
         assert_eq!(lexer("#").parse("'\\z'"), Err(vec![err]));
+        let err = Simple::custom(2..3, "Unterminated character literal").with_label("token");
+        assert_eq!(lexer("#").parse("'a\ntest"), Err(vec![err]));
     }
 
     #[test]
