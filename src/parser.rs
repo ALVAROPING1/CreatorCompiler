@@ -180,12 +180,12 @@ fn parse_with<T>(
     // Create `Stream` manually to use byte spans instead of the default character spans
     let src_iter = src.char_indices().map(|(i, c)| (c, i..i + c.len_utf8()));
     #[allow(clippy::range_plus_one)] // Chumsky requires an inclusive range to avoid type errors
-    let stream = chumsky::stream::Stream::from_iter(len..len + 1, src_iter);
+    let stream = chumsky::stream::Stream::from_iter(len..len, src_iter);
     let tokens = lexer::lexer(comment_prefix).parse(stream)?; // Tokenize the input
 
     // Parser
     #[allow(clippy::range_plus_one)] // Chumsky requires an inclusive range to avoid type errors
-    let stream = Stream::from_iter(len..len + 1, tokens.into_iter());
+    let stream = Stream::from_iter(len..len, tokens.into_iter());
     Ok(parser.parse(stream)?)
 }
 
@@ -266,7 +266,7 @@ mod test {
             ),
             (
                 ".name",
-                vec![directive(vec![], (".name", 0..5), (vec![], 5..6), 0..5)],
+                vec![directive(vec![], (".name", 0..5), (vec![], 5..5), 0..5)],
             ),
             (
                 ".name \"a\"\n",
@@ -398,7 +398,7 @@ mod test {
             ),
             (
                 "name",
-                vec![instruction(vec![], ("name", 0..4), (vec![], 4..5), 0..4)],
+                vec![instruction(vec![], ("name", 0..4), (vec![], 4..4), 0..4)],
             ),
             (
                 "name a\n",

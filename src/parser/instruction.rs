@@ -163,8 +163,7 @@ impl<'a> Instruction<'a> {
     /// Errors if the code doesn't follow the syntax defined
     pub fn parse(&self, code: &Spanned<Vec<Spanned<Token>>>) -> Result<ParsedArgs, ParseError> {
         let end = code.1.end;
-        #[allow(clippy::range_plus_one)] // Chumsky requires an inclusive range to avoid type errors
-        let stream = Stream::from_iter(end..end + 1, code.0.iter().cloned());
+        let stream = Stream::from_iter(end..end, code.0.iter().cloned());
         Ok(self.0.parse(stream)?)
     }
 
@@ -185,8 +184,7 @@ impl<'a> Instruction<'a> {
             let span = name.len() + 1 + i;
             (c, span..span + c.len_utf8())
         });
-        #[allow(clippy::range_plus_one)] // Chumsky requires an inclusive range to avoid type errors
-        let stream = chumsky::stream::Stream::from_iter(len..len + 1, src_iter);
+        let stream = chumsky::stream::Stream::from_iter(len..len, src_iter);
         // NOTE: we use a null character as the comment prefix because we don't know what prefix
         // the architecture specifies here. Null characters can't appear in the input, so this
         // disallows line comments
