@@ -65,7 +65,7 @@ impl<T: ToString + std::hash::Hash + std::cmp::Eq> crate::RenderError for Vec<Si
                             x.map_or_else(|| "end of input".into(), ToString::to_string)
                         };
                         format!(
-                            "found {} but expected one of {}",
+                            "found {} but expected {}",
                             Colored(fmt(e.found()), color.then_some(Color::Red)),
                             DisplayList::new(
                                 e.expected().map(|x| fmt(x.as_ref())).collect(),
