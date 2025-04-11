@@ -497,7 +497,12 @@ impl crate::RenderError for SpanList {
             ("<pseudoinstruction expansion>", origin.code.as_str())
         });
         writeln!(&mut buffer).expect("Writing to an in-memory vector can't fail");
-        let kind = ReportKind::Custom("Note", Color::BrightBlue);
+        let kind_color = if color {
+            Color::BrightBlue
+        } else {
+            Color::Primary
+        };
+        let kind = ReportKind::Custom("Note", kind_color);
         let config = Config::default()
             .with_color(color)
             .with_index_type(IndexType::Byte);
