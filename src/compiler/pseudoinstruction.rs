@@ -309,6 +309,17 @@ pub fn expand<'b, 'a: 'b>(
                 .compile_error(instruction, span.clone())
             })?
             .value;
+        // Get the range of bits requested
+        let start_bit = num(start_bit);
+        let end_bit = num(end_bit);
+        if start_bit < end_bit {
+            return Err(Error {
+                definition: def.clone(),
+                span: capture_span(&x, 2).start..capture_span(&x, 3).end,
+                kind: Kind::EmptyBitRange,
+            }
+            .compile_error(instruction, span));
+        }
         // Evaluate the expression according to the requested type
         #[allow(clippy::cast_possible_truncation)]
         let field = match ty {
@@ -321,16 +332,17 @@ pub fn expand<'b, 'a: 'b>(
                         s
                     },
                 );
-                if s.len() >= 32 {
+                // Pad the number to `start_bit` bits, using sign extension
+                let msb = start_bit + 1;
+                if s.len() >= msb {
                     s
                 } else {
-                    // Pad the number to 32 bits, using sign extension
                     let pad = s
                         .chars()
                         .next()
                         .expect("There should always be at least 1 character");
                     let mut pad = std::iter::repeat(pad)
-                        .take(32 - s.len())
+                        .take(msb - s.len())
                         .collect::<String>();
                     pad.push_str(&s);
                     pad
@@ -347,18 +359,7 @@ pub fn expand<'b, 'a: 'b>(
                 .compile_error(instruction, span))
             }
         };
-        // Get the range of bits requested
-        let start_bit = num(start_bit);
-        let end_bit = num(end_bit);
         let msb = field.len() - 1;
-        if start_bit < end_bit {
-            return Err(Error {
-                definition: def.clone(),
-                span: capture_span(&x, 2).start..capture_span(&x, 3).end,
-                kind: Kind::EmptyBitRange,
-            }
-            .compile_error(instruction, span));
-        }
         if start_bit > msb {
             return Err(Error {
                 definition: def.clone(),
@@ -371,7 +372,11 @@ pub fn expand<'b, 'a: 'b>(
             .compile_error(instruction, span));
         }
         // Replace the matched string with the corresponding bits
-        let field = format!("0b{}", &field[msb - start_bit..=msb - end_bit]);
+        let mut field = format!("0b{}", &field[msb - start_bit..=msb - end_bit]);
+        // If the number is bigger than 32 bits, add the `n` postfix to mark it as a big integer
+        if start_bit - end_bit + 1 > 32 {
+            field.push('n');
+        }
         def.replace_range(capture_span(&x, 0), &field);
     }
 
