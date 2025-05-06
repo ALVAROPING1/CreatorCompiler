@@ -929,14 +929,15 @@ fn compile_instructions<'a>(
             parsed_instruction,
             (instruction.value.1.clone(), instruction.value.1.into()),
         )?;
+        let mut iter = memory[first_idx..].iter_mut().fuse();
         // Add the labels attached to the instruction in the assembly code to the first generated
         // instruction
-        if let Some(inst) = memory.get_mut(first_idx) {
+        if let Some(inst) = iter.next() {
             inst.labels = take_spanned_vec(&mut instruction.labels);
         }
         // Remove the user span from all generated instructions except the first, so the source
         // isn't repeated in the UI
-        for inst in &mut memory[first_idx + 1..] {
+        for inst in iter {
             inst.user_span = 0..0;
         }
     }
