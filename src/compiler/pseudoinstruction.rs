@@ -172,7 +172,7 @@ mod js {
 /// # Errors
 ///
 /// Errors if the expression doesn't contain a register name
-fn reg_name(arg: &Spanned<Expr>) -> Result<String, ErrorData> {
+fn reg_name(arg: &Spanned<Expr>, origin: &SpanList) -> Result<String, ErrorData> {
     match &arg.0 {
         Expr::Identifier((name, _)) => Ok(name.clone()),
         Expr::Integer(i) => Ok(i.to_string()),
@@ -180,7 +180,7 @@ fn reg_name(arg: &Spanned<Expr>) -> Result<String, ErrorData> {
             expected: ArgumentType::RegisterName,
             found: ArgumentType::Expression,
         }
-        .add_span(&arg.1)),
+        .add_span((&arg.1, origin))),
     }
 }
 
@@ -236,6 +236,8 @@ pub fn expand<'b, 'a: 'b>(
     static FIELD_VALUE: Lazy<Regex> = crate::regex!(r"Field\.(\d+)\.\((\d+),(\d+)\)\.(\w+)");
     // Gets the size of the i-th argument
     static FIELD_SIZE: Lazy<Regex> = crate::regex!(r"Field\.(\d+)\.SIZE");
+    // Gets the register name of the i-th argument
+    static REG_NAME: Lazy<Regex> = crate::regex!(r"reg_name\{(\d+)\}");
     // Evaluates a `JS` expression that doesn't return a value
     static NO_RET_OP: Lazy<Regex> = crate::regex!(r"no_ret_op\{([^}]*?)\};");
     // Evaluates a `JS` expression should be replaced with its return value
@@ -275,7 +277,7 @@ pub fn expand<'b, 'a: 'b>(
             }
             .compile_error(instruction, span.clone())
         })?;
-        let name = &reg_name(&name.value)?;
+        let name = &reg_name(&name.value, &span)?;
         let i: usize = num(i);
         // Find the register name and replace it
         for file in arch.find_reg_files(RegisterType::Float(FloatType::Double)) {
@@ -411,6 +413,29 @@ pub fn expand<'b, 'a: 'b>(
             },
         };
         def.replace_range(capture_span(&x, 0), &size.to_string());
+    }
+
+    // Replace occurrences of `reg_name`
+    while let Some(x) = REG_NAME.captures(&def) {
+        let (_, [arg]) = x.extract();
+        let arg_num = num(arg) - 1;
+        // Get the user's argument expression
+        let value = &args
+            .get(arg_num)
+            .ok_or_else(|| {
+                Error {
+                    definition: def.clone(),
+                    span: capture_span(&x, 1),
+                    kind: Kind::UnknownFieldNumber {
+                        idx: arg_num + 1,
+                        size: args.len(),
+                    },
+                }
+                .compile_error(instruction, span.clone())
+            })?
+            .value;
+        let name = reg_name(value, &span)?;
+        def.replace_range(capture_span(&x, 0), &format!("\"{name}\""));
     }
 
     // Replace occurrences of `reg.pc` and update its value on the JS side
