@@ -61,8 +61,10 @@ self_cell!(
 /// Panics if the string contains invalid ANSI escape codes
 #[must_use]
 fn to_html(str: &str) -> String {
-    let opts = ansi_to_html::Opts::default().four_bit_var_prefix(Some("err-".into()));
-    ansi_to_html::convert_with_opts(str, &opts).expect("we should only generate valid ANSI escapes")
+    let converter = ansi_to_html::Converter::default().four_bit_var_prefix(Some("err-".into()));
+    converter
+        .convert(str)
+        .expect("we should only generate valid ANSI escapes")
 }
 
 /// Converts a number to a `JS` big integer
