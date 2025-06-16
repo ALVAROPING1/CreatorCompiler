@@ -681,13 +681,11 @@ impl BitRange {
     /// Calculates the size of this range in bits
     #[must_use]
     pub fn size(&self) -> usize {
-        // We need a closure because there are multiple methods for different types
-        #[allow(clippy::redundant_closure_for_method_calls)]
         let size = self
             .ranges
             .iter()
             .map(|x| *x.size())
-            .reduce(|acc, val| acc.saturating_add(val))
+            .reduce(usize::saturating_add)
             .unwrap_or_default();
         size + self.padding
     }
