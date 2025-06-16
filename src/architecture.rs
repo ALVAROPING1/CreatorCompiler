@@ -24,7 +24,7 @@
 
 use num_bigint::BigUint;
 use schemars::{schema_for, JsonSchema};
-use serde::Deserialize;
+use serde::{de::Error, Deserialize};
 use serde_json::Number;
 
 use std::collections::HashMap;
@@ -539,7 +539,21 @@ impl<'a> Architecture<'a> {
     /// Errors if the input `JSON` data is invalid, either because it's ill-formatted or because it
     /// doesn't conform to the specification
     pub fn from_json(src: &str) -> serde_json::Result<Architecture> {
-        serde_json::from_str(src)
+        let arch = serde_json::from_str::<Architecture>(src)?;
+        let word_size = arch.arch_conf.word_size;
+        for instruction in &arch.instructions {
+            let size = instruction.nwords.saturating_mul(word_size);
+            for field in &instruction.syntax.fields {
+                for range in &field.range.ranges {
+                    let end = range.end();
+                    if end >= size {
+                        let msg = format!("instruction `{}` contains fields out of bounds (size: {size}, field index: {end})", instruction.name);
+                        return Err(serde_json::Error::custom(msg));
+                    }
+                }
+            }
+        }
+        Ok(arch)
     }
 
     /// Finds the action associated with the directive with the given name
