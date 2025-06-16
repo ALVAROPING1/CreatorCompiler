@@ -1,6 +1,6 @@
 [package]
 name = "creator-compiler"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 license = "LGPL-2.1-or-later"
 description = "A reimplementation of Creator (https://creatorsim.github.io/)'s compiler"
