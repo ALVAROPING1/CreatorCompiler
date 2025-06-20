@@ -996,10 +996,7 @@ fn check_main_location(
     let add_main_span = |e: ErrorKind, main: &Label| e.add_span(main.span().unwrap_or(&(0..0)));
     match (label_table.get(arch.main_label()), library) {
         // Main label wasn't used but we aren't compiling a library => main is missing
-        (None, false) => {
-            #[allow(clippy::range_plus_one)] // Ariadne works with exclusive ranges
-            Err(ErrorKind::MissingMainLabel.add_span(&(eof..eof + 1)))
-        }
+        (None, false) => Err(ErrorKind::MissingMainLabel.add_span(eof..eof)),
         // Main label was used but we are compiling a library => main shouldn't be used
         (Some(main), true) => Err(add_main_span(ErrorKind::MainInLibrary, main)),
         // Main label was used and we aren't compiling a library, but it doesn't point to an
@@ -2580,11 +2577,11 @@ mod test {
     fn missing_main() {
         assert_eq!(
             compile(".text\nnop"),
-            Err(ErrorKind::MissingMainLabel.add_span(9..10)),
+            Err(ErrorKind::MissingMainLabel.add_span(9..9)),
         );
         assert_eq!(
             compile(".text\nnop\n.data"),
-            Err(ErrorKind::MissingMainLabel.add_span(9..10)),
+            Err(ErrorKind::MissingMainLabel.add_span(9..9)),
         );
     }
 
@@ -2602,6 +2599,11 @@ mod test {
             compile(".ktext\nmain: nop\n.text\nnop"),
             Err(ErrorKind::MainOutsideCode.add_span(7..12)),
         );
+    }
+
+    #[test]
+    fn empty_code() {
+        assert_eq!(compile(""), Err(ErrorKind::MissingMainLabel.add_span(0..0)),);
     }
 
     #[test]
