@@ -681,7 +681,7 @@ impl ArgumentNumber {
                 found: args.0.len(),
             }
             .add_span(&args.1));
-        };
+        }
         Ok(())
     }
 

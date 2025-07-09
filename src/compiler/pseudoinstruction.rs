@@ -343,9 +343,7 @@ pub fn expand<'b, 'a: 'b>(
                         .chars()
                         .next()
                         .expect("There should always be at least 1 character");
-                    let mut pad = std::iter::repeat(pad)
-                        .take(msb - s.len())
-                        .collect::<String>();
+                    let mut pad = std::iter::repeat_n(pad, msb - s.len()).collect::<String>();
                     pad.push_str(&s);
                     pad
                 }
@@ -496,7 +494,7 @@ pub fn expand<'b, 'a: 'b>(
             .compile_error(instruction, span.clone())
         })?;
         def = js::to_string(result);
-    };
+    }
 
     // Process the resulting instruction sequence
     let source = Rc::new(Source { code: def, span });
@@ -532,13 +530,10 @@ pub fn expand<'b, 'a: 'b>(
             // with the values provided by the user
             for arg in &mut args {
                 let value = &arg.value;
-                match &value.0 {
-                    Expr::Identifier((ident, _)) => {
-                        if let Some(pseudoinstruction_arg) = get_arg(ident) {
-                            arg.value.0 = pseudoinstruction_arg.value.0.clone();
-                        }
+                if let Expr::Identifier((ident, _)) = &value.0 {
+                    if let Some(pseudoinstruction_arg) = get_arg(ident) {
+                        arg.value.0 = pseudoinstruction_arg.value.0.clone();
                     }
-                    _ => continue,
                 }
             }
             let span = SpanList {

@@ -234,7 +234,7 @@ pub trait Info {
     fn msg(&self, color: bool) -> String;
 }
 
-impl<'arch> Info for Error<'arch> {
+impl Info for Error<'_> {
     fn code(&self) -> u32 {
         match self.error.kind.as_ref() {
             Kind::UnknownDirective(..) => 1,
@@ -520,7 +520,7 @@ impl crate::RenderError for SpanList {
     }
 }
 
-impl<'arch> crate::RenderError for Error<'arch> {
+impl crate::RenderError for Error<'_> {
     fn format(&self, filename: &str, src: &str, mut buffer: &mut Vec<u8>, color: bool) {
         let (filename_user, src_user) = (filename, src);
         let source = self.error.span.source.as_ref();

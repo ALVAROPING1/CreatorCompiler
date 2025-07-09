@@ -518,7 +518,7 @@ pub struct Interrupts<'a> {
     pub set_interrupt_cause: &'a str,
 }
 
-impl<'a> Architecture<'a> {
+impl Architecture<'_> {
     /// Generate a `JSON` schema
     #[must_use]
     #[allow(clippy::missing_panics_doc)] // This should never panic at runtime from user error
@@ -619,7 +619,7 @@ impl<'a> Architecture<'a> {
     pub fn find_instructions<'b: 'c, 'c>(
         &'b self,
         name: &'c str,
-    ) -> impl Iterator<Item = &'b Instruction> + 'c {
+    ) -> impl Iterator<Item = &'b Instruction<'b>> + 'c {
         self.instructions
             .iter()
             .filter(move |instruction| instruction.name == name)
@@ -633,7 +633,7 @@ impl<'a> Architecture<'a> {
     pub fn find_pseudoinstructions<'b: 'c, 'c>(
         &'b self,
         name: &'c str,
-    ) -> impl Iterator<Item = &'b Pseudoinstruction> + 'c {
+    ) -> impl Iterator<Item = &'b Pseudoinstruction<'b>> + 'c {
         self.pseudoinstructions
             .iter()
             .filter(move |instruction| instruction.name == name)
@@ -660,7 +660,7 @@ impl<'a> Architecture<'a> {
     }
 }
 
-impl<'a> Component<'a> {
+impl Component<'_> {
     /// Finds the register with the given name, returning its index in its register file, the
     /// register definition, and the name that matched
     ///

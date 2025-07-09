@@ -355,7 +355,7 @@ impl TryFrom<Vec<Pair<MemoryLayoutKeys, BaseN<16>>>> for super::MemoryLayout {
             check_overlap!(ktext, text);
             check_overlap!(ktext, data);
             check_overlap!(ktext, stack);
-        };
+        }
 
         if let Some(kdata) = &kernel_data {
             check_overlap!(kdata, text);

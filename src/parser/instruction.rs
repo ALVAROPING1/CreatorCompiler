@@ -61,7 +61,7 @@ fn number(identifier: &str) -> usize {
     identifier[1..].parse().expect(MSG)
 }
 
-impl<'a> Instruction<'a> {
+impl Instruction<'_> {
     /// Creates a new [`Instruction`] parser
     ///
     /// # Parameters
@@ -194,7 +194,7 @@ impl<'a> Instruction<'a> {
 }
 
 // Boxed parsers don't implement `Debug`, so we need to implement it manually as an opaque box
-impl<'a> std::fmt::Debug for Instruction<'a> {
+impl std::fmt::Debug for Instruction<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("InstructionParser").finish()
     }

@@ -75,7 +75,7 @@ impl Integer {
                 value,
                 bounds.start..=bounds.end - 1,
             ));
-        };
+        }
         // Reinterpret the value as unsigned, so that we can manipulate the bits more easily
         let value = value.to_biguint().unwrap_or_else(|| {
             let mut bytes = value.to_signed_bytes_le();

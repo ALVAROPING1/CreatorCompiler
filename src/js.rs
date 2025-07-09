@@ -345,7 +345,7 @@ impl DataJS {
     pub fn size(&self) -> BigInt {
         use crate::compiler::Value;
         match &self.0.value {
-            Value::Integer(int) => to_js_bigint(&((int.size() + 7) / 8)),
+            Value::Integer(int) => to_js_bigint(&int.size().div_ceil(8)),
             Value::Float(_) => BigInt::from(4),
             Value::Double(_) => BigInt::from(8),
             Value::String { data, .. } => to_js_bigint(&data.len()),

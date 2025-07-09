@@ -103,7 +103,7 @@ impl Section {
         let offset = &self.address % align_size;
         if offset.is_zero() {
             return Ok((self.address.clone(), BigUint::ZERO));
-        };
+        }
         let size = align_size - offset;
         let start = self.try_reserve(&size)?;
         Ok((start, size))

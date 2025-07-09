@@ -197,13 +197,11 @@ pub fn get_similar<'a>(target: &str, names: impl IntoIterator<Item = &'a str>) -
     let limit = std::cmp::max(target.len() / 3, 1);
     // For each candidate name, calculate its distance to the target if we haven't processed it yet
     for name in names {
-        match distances.entry(name) {
-            Entry::Vacant(e) => match edit_distance(name, target, limit) {
-                Some(d) => e.insert(d),
-                None => continue,
-            },
-            Entry::Occupied(_) => continue,
-        };
+        if let Entry::Vacant(e) = distances.entry(name) {
+            if let Some(d) = edit_distance(name, target, limit) {
+                e.insert(d);
+            }
+        }
     }
     // Get the names with the minimum distance
     distances
