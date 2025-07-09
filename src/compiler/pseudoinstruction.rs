@@ -28,11 +28,11 @@
 // definition of the architecture
 
 use num_bigint::BigUint;
-use once_cell::sync::Lazy;
 use regex::{Captures, Regex};
 
 use std::fmt::Write as _;
 use std::rc::Rc;
+use std::sync::LazyLock;
 
 use crate::architecture::{Architecture, FloatType, Pseudoinstruction, RegisterType};
 use crate::parser::ParseError;
@@ -230,20 +230,20 @@ pub fn expand<'b, 'a: 'b>(
     // Regex used
     // Register name should be replaced with the register name of the i-th register forming this
     // double precision register
-    static ALIAS_DOUBLE: Lazy<Regex> = crate::regex!(r"aliasDouble\(([^;]+);(\d+)\)");
+    static ALIAS_DOUBLE: LazyLock<Regex> = crate::regex!(r"aliasDouble\(([^;]+);(\d+)\)");
     // Gets the value of the i-th argument from bits j to k, evaluating the argument as the given
     // type
-    static FIELD_VALUE: Lazy<Regex> = crate::regex!(r"Field\.(\d+)\.\((\d+),(\d+)\)\.(\w+)");
+    static FIELD_VALUE: LazyLock<Regex> = crate::regex!(r"Field\.(\d+)\.\((\d+),(\d+)\)\.(\w+)");
     // Gets the size of the i-th argument
-    static FIELD_SIZE: Lazy<Regex> = crate::regex!(r"Field\.(\d+)\.SIZE");
+    static FIELD_SIZE: LazyLock<Regex> = crate::regex!(r"Field\.(\d+)\.SIZE");
     // Gets the register name of the i-th argument
-    static REG_NAME: Lazy<Regex> = crate::regex!(r"reg_name\{(\d+)\}");
+    static REG_NAME: LazyLock<Regex> = crate::regex!(r"reg_name\{(\d+)\}");
     // Evaluates a `JS` expression that doesn't return a value
-    static NO_RET_OP: Lazy<Regex> = crate::regex!(r"no_ret_op\{([^}]*?)\};");
+    static NO_RET_OP: LazyLock<Regex> = crate::regex!(r"no_ret_op\{([^}]*?)\};");
     // Evaluates a `JS` expression should be replaced with its return value
-    static OP: Lazy<Regex> = crate::regex!(r"op\{([^}]*?)\}");
+    static OP: LazyLock<Regex> = crate::regex!(r"op\{([^}]*?)\}");
     // Block of code containing a list of instructions
-    static INSTRUCTIONS: Lazy<Regex> = crate::regex!(r"\{(.*?)\}");
+    static INSTRUCTIONS: LazyLock<Regex> = crate::regex!(r"\{(.*?)\}");
 
     // Function to evaluate a label within an expression
     let ident_eval = |label: &str| super::label_eval(label_table, address, label);

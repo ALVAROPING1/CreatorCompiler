@@ -136,10 +136,10 @@
 // compilation process described above
 
 use num_bigint::{BigInt, BigUint};
-use once_cell::sync::Lazy;
 use regex::{NoExpand, Regex};
 
 use std::collections::{HashMap, HashSet};
+use std::sync::LazyLock;
 
 use crate::architecture::{
     AlignmentType, Architecture, DirectiveAction, DirectiveData, DirectiveSegment, FieldType,
@@ -1154,8 +1154,8 @@ fn translate_instruction(
     // Surround the argument placeholder pattern (`[fF]([0-9]+)`) with word boundary assertions to
     // make sure we match a full identifier rather than part of one
     // SEE: https://docs.rs/regex/latest/regex/#empty-matches
-    static RE: Lazy<Regex> = crate::regex!(r"\b{start-half}[fF]([0-9]+)\b{end-half}");
-    static FIELD: Lazy<Regex> = crate::regex!("\0([0-9]+)");
+    static RE: LazyLock<Regex> = crate::regex!(r"\b{start-half}[fF]([0-9]+)\b{end-half}");
+    static FIELD: LazyLock<Regex> = crate::regex!("\0([0-9]+)");
     let def = inst.definition;
     let mut binary_instruction = BitField::new(arch.word_size().saturating_mul(def.nwords));
     // Replace the field placeholders in the translation spec with `\0N`. Since null bytes

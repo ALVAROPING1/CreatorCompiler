@@ -23,9 +23,9 @@
 //! The main entry point is the [`Instruction`] type
 
 use chumsky::{prelude::*, stream::Stream};
-
-use once_cell::sync::Lazy;
 use regex::Regex;
+
+use std::sync::LazyLock;
 
 use super::{expression, expression::Expr, lexer, ParseError, Spanned, Token};
 use crate::architecture::{FieldType, InstructionField};
@@ -74,7 +74,7 @@ impl Instruction<'_> {
     /// Errors if the syntax specification is invalid
     pub fn build<T>(fmt: &str, fields: &[InstructionField<T>]) -> Result<Self, &'static str> {
         // Regex for a instruction argument placeholder
-        static FIELD: Lazy<Regex> = crate::regex!(r"^[fF][0-9]+$");
+        static FIELD: LazyLock<Regex> = crate::regex!(r"^[fF][0-9]+$");
 
         // Gets the field number the placeholder points to and validates that it has a correct type
         let field = |ident: String, no_co: bool| -> Result<usize, _> {

@@ -78,7 +78,7 @@ use error_rendering::RenderError;
 /// Panics if the literal string isn't a valid regex
 macro_rules! build_regex {
     ($re:expr) => {
-        Lazy::new(|| Regex::new($re).expect("All regexes should compile"))
+        LazyLock::new(|| Regex::new($re).expect("All regexes should compile"))
     };
 }
 use build_regex as regex;

@@ -204,7 +204,6 @@ dependencies = [
  "js-sys",
  "num-bigint",
  "num-traits",
- "once_cell",
  "regex",
  "schemars",
  "self_cell",
