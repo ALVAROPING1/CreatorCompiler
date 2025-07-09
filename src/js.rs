@@ -348,7 +348,10 @@ impl DataJS {
             Value::Integer(int) => to_js_bigint(&int.size().div_ceil(8)),
             Value::Float(_) => BigInt::from(4),
             Value::Double(_) => BigInt::from(8),
-            Value::String { data, .. } => to_js_bigint(&data.len()),
+            Value::String {
+                data,
+                null_terminated,
+            } => to_js_bigint(&(data.len() + usize::from(*null_terminated))),
             Value::Space(x) | Value::Padding(x) => to_js_bigint(x),
         }
     }
