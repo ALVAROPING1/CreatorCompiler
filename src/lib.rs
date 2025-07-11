@@ -57,6 +57,7 @@ pub mod compiler;
 mod error_rendering;
 #[cfg(feature = "js")]
 mod js;
+mod number;
 pub mod parser;
 pub mod span;
 

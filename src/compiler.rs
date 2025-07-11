@@ -155,7 +155,7 @@ mod label;
 pub use label::{Label, Table as LabelTable};
 
 pub mod error;
-use error::{ArgumentType, SpannedErr as _};
+use error::{ArgumentType, SpannedErr};
 pub use error::{Data as ErrorData, Error as CompileError, Kind as ErrorKind};
 
 mod bit_field;
@@ -215,6 +215,7 @@ fn parse_instruction<'a>(
                 // Check if all the arguments fit in the current instruction definition
                 let ok = parsed_args.iter().all(|arg| {
                     let field = &inst.syntax.fields[arg.field_idx];
+                    let (value, span) = &arg.value;
                     let value = match field.r#type {
                         // If the field expects a number and the argument value is a number,
                         // evaluate the number. If any forward reference labels are used, we can't
@@ -224,7 +225,10 @@ fn parse_instruction<'a>(
                         | FieldType::ImmSigned
                         | FieldType::ImmUnsigned
                         | FieldType::OffsetBytes
-                        | FieldType::OffsetWords => match arg.value.0.int(Expr::unallowed_ident) {
+                        | FieldType::OffsetWords => match value
+                            .eval_no_ident()
+                            .and_then(|x| BigInt::try_from(x).add_span(span))
+                        {
                             Ok(val) => val,
                             // If there was any error, assume the argument fits. This should be
                             // properly handled later when we can fully evaluate the expressions
@@ -771,10 +775,8 @@ fn compile_data(
         match statement.data_type {
             DirectiveData::Alignment(align_type) => {
                 let (value, span) = ArgumentNumber::exactly_one(args)?;
-                let value = value.into_expr(&span)?.int(Expr::unallowed_ident)?;
-                let value = BigUint::try_from(value).map_err(|e| {
-                    ErrorKind::UnallowedNegativeValue(e.into_original()).add_span(&span)
-                })?;
+                let value = value.into_expr(&span)?.eval_no_ident()?;
+                let value = BigUint::try_from(value).add_span(&span)?;
                 // Calculate the align size in bytes
                 let align = match align_type {
                     // Calculate 2^argument
@@ -805,10 +807,8 @@ fn compile_data(
             }
             DirectiveData::Space(size) => {
                 let (value, span) = ArgumentNumber::exactly_one(args)?;
-                let value = value.into_expr(&span)?.int(Expr::unallowed_ident)?;
-                let size = BigUint::try_from(value).map_err(|e| {
-                    ErrorKind::UnallowedNegativeValue(e.into_original()).add_span(&span)
-                })? * size;
+                let value = value.into_expr(&span)?.eval_no_ident()?;
+                let size = BigUint::try_from(value).add_span(&span)? * size;
                 memory.push(PendingData {
                     address: section.try_reserve(&size).add_span(&span)?,
                     labels: take_spanned_vec(&mut labels),
@@ -831,7 +831,7 @@ fn compile_data(
             DirectiveData::Float(float_type) => {
                 ArgumentNumber::new(1, true).check(&args)?;
                 for (value, span) in args.0 {
-                    let value = value.into_expr(&span)?.float()?;
+                    let value = f64::from(value.into_expr(&span)?.eval_no_ident()?);
                     // We intentionally want to truncate the number from f64 to f32 if the user
                     // asked for an f32
                     #[allow(clippy::cast_possible_truncation)]
@@ -1032,6 +1032,7 @@ fn evaluate_instruction_field(
     span: &SpanList,
 ) -> Result<(BigInt, String), ErrorData> {
     let field = &def.syntax.fields[arg.field_idx];
+    let (value, value_span) = arg.value;
     Ok(match &field.r#type {
         FieldType::Cop { .. } => unreachable!("Cop shouldn't be used in instruction args"),
         FieldType::Co => (def.co.0.clone().into(), def.name.to_string()),
@@ -1041,7 +1042,7 @@ fn evaluate_instruction_field(
         | FieldType::ImmUnsigned
         | FieldType::OffsetBytes
         | FieldType::OffsetWords => {
-            let value = arg.value.0.int(|label: &str| {
+            let value = value.eval(|label: &str| {
                 let value = label_eval(label_table, address, label)?;
                 // Function to calculate the offset between a given address and the
                 // address in which the value is being compiled into
@@ -1052,6 +1053,7 @@ fn evaluate_instruction_field(
                     _ => value,
                 })
             })?;
+            let value = BigInt::try_from(value).add_span((&value_span, span))?;
             // Remove the least significant bits according to the padding specified by
             // the field
             let padding = field.range.padding();
@@ -1066,7 +1068,7 @@ fn evaluate_instruction_field(
         | FieldType::DoubleFPReg => {
             // Get the name of the register. We only allow identifiers and integers to
             // be used as register names
-            let name = match arg.value.0 {
+            let name = match value {
                 Expr::Identifier((name, _)) => name,
                 Expr::Integer(x) => x.to_string(),
                 _ => {
@@ -1074,7 +1076,7 @@ fn evaluate_instruction_field(
                         expected: ArgumentType::RegisterName,
                         found: ArgumentType::Expression,
                     }
-                    .add_span((&arg.value.1, span)))
+                    .add_span((&value_span, span)))
                 }
             };
             // Convert the generic field type to an specific register type
@@ -1089,7 +1091,7 @@ fn evaluate_instruction_field(
             // least one file is found
             let mut files = arch.find_reg_files(file_type).peekable();
             files.peek().ok_or_else(|| {
-                ErrorKind::UnknownRegisterFile(file_type).add_span((&arg.value.1, span))
+                ErrorKind::UnknownRegisterFile(file_type).add_span((&value_span, span))
             })?;
             let case = arch.arch_conf.sensitive_register_name;
             // Find the register with the given name
@@ -1100,20 +1102,20 @@ fn evaluate_instruction_field(
                         name: name.clone(),
                         file: file_type,
                     }
-                    .add_span((&arg.value.1, span))
+                    .add_span((&value_span, span))
                 })?;
             (i.into(), name.to_string())
         }
         // Enumerated fields
         FieldType::Enum { enum_name } => {
-            let span = (&arg.value.1, span);
+            let span = (&value_span, span);
             // Find the definition of the enum
             let enum_def = arch.enums.get(enum_name);
             let enum_def = enum_def
                 .ok_or_else(|| ErrorKind::UnknownEnumType((*enum_name).to_string()))
                 .add_span(span)?;
             // Get the identifier used
-            let Expr::Identifier((name, _)) = arg.value.0 else {
+            let Expr::Identifier((name, _)) = value else {
                 return Err(ErrorKind::IncorrectArgumentType {
                     expected: ArgumentType::Identifier,
                     found: ArgumentType::Expression,
@@ -1215,7 +1217,8 @@ fn translate_data(label_table: &LabelTable, data: PendingData) -> Result<Data, E
         value: match data.value {
             // Evaluate the expression used as value for integer directives
             PendingValue::Integer((value, span), size, int_type) => {
-                let value = value.int(|label| label_eval(label_table, &data.address, label))?;
+                let value = value.eval(|label| label_eval(label_table, &data.address, label))?;
+                let value = BigInt::try_from(value).add_span(&span)?;
                 let int = Integer::build(value, size.saturating_mul(8), Some(int_type), None);
                 Value::Integer(int.add_span(&span)?)
             }
@@ -2376,13 +2379,13 @@ mod test {
             );
             assert_eq!(
                 compile(&format!(".data\n.{directive} 1.0\n.text\nmain: nop")),
-                Err(ErrorKind::UnallowedFloat.add_span(14..17)),
+                Err(ErrorKind::UnallowedFloat(14..17).add_span(14..17)),
                 "{directive}"
             );
         }
         assert_eq!(
             compile(".text\nmain: imm 0, 0, 1.0"),
-            Err(ErrorKind::UnallowedFloat.add_span(22..25)),
+            Err(ErrorKind::UnallowedFloat(22..25).add_span(22..25)),
         );
         assert_eq!(
             compile(".text\nmain: reg PC, 0+2, ft1, ft2"),
@@ -2546,6 +2549,7 @@ mod test {
 
     #[test]
     fn expr_eval() {
+        use error::OperationKind;
         assert_eq!(
             compile(".data\n.byte 1/0\n.text\nmain: nop"),
             Err(ErrorKind::DivisionBy0.add_span(14..15)),
@@ -2561,18 +2565,18 @@ mod test {
         assert_eq!(
             compile(".data\n.float ~1.0\n.text\nmain: nop"),
             Err(
-                ErrorKind::UnallowedFloatOperation(error::OperationKind::Complement)
+                ErrorKind::UnallowedFloatOperation(OperationKind::Complement, 14..17)
                     .add_span(13..14)
             ),
         );
         for (op, c) in [
-            (error::OperationKind::BitwiseOR, '|'),
-            (error::OperationKind::BitwiseAND, '&'),
-            (error::OperationKind::BitwiseXOR, '^'),
+            (OperationKind::BitwiseOR, '|'),
+            (OperationKind::BitwiseAND, '&'),
+            (OperationKind::BitwiseXOR, '^'),
         ] {
             assert_eq!(
                 compile(&format!(".data\n.float 1.0 {c} 2.0\n.text\nmain: nop")),
-                Err(ErrorKind::UnallowedFloatOperation(op).add_span(17..18)),
+                Err(ErrorKind::UnallowedFloatOperation(op, 13..16).add_span(17..18)),
             );
         }
     }

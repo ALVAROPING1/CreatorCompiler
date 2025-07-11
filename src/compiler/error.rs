@@ -97,8 +97,8 @@ pub enum Kind {
         found: DirectiveSegment,
     },
     UnallowedLabel,
-    UnallowedFloat,
-    UnallowedFloatOperation(OperationKind),
+    UnallowedFloat(Span),
+    UnallowedFloatOperation(OperationKind, Span),
     UnallowedNegativeValue(BigInt),
     IntegerOutOfRange(BigInt, RangeInclusive<BigInt>),
     DivisionBy0,
@@ -256,7 +256,7 @@ impl Info for Error<'_> {
             Kind::DataUnaligned { .. } => 16,
             Kind::UnallowedStatementType { .. } => 17,
             Kind::UnallowedLabel => 18,
-            Kind::UnallowedFloat => 19,
+            Kind::UnallowedFloat(..) => 19,
             Kind::UnallowedFloatOperation(..) => 20,
             Kind::UnallowedNegativeValue(..) => 21,
             Kind::IntegerOutOfRange(..) => 22,
@@ -362,6 +362,12 @@ impl Info for Error<'_> {
             } => {
                 vec![(&section.1, "Section previously started here")]
             }
+            Kind::UnallowedFloat(span) if *span != self.error.span.span => {
+                vec![(span, "Expression evaluates to a float due to this")]
+            }
+            Kind::UnallowedFloatOperation(_, span) => {
+                vec![(span, "Operands are converted to floats due to this")]
+            }
             _ => Vec::new(),
         }
     }
@@ -394,7 +400,7 @@ impl Info for Error<'_> {
             Kind::UnallowedStatementType { .. } => {
                 "This statement can't be used in the current section".into()
             }
-            Kind::UnallowedLabel | Kind::UnallowedFloat => "This value can't be used".into(),
+            Kind::UnallowedLabel | Kind::UnallowedFloat(..) => "This value can't be used".into(),
             Kind::UnallowedFloatOperation(..) => "This operation can't be performed".into(),
             Kind::UnallowedNegativeValue(val) | Kind::IntegerOutOfRange(val, _) => {
                 format!("This expression has value {}", Colored(val, red))
@@ -473,8 +479,10 @@ impl Info for Error<'_> {
                 format!("Can't use {found} statements while in section {section}",)
             }
             Kind::UnallowedLabel => "Can't use labels in literal expressions".into(),
-            Kind::UnallowedFloat => "Can't use floating point values in integer expressions".into(),
-            Kind::UnallowedFloatOperation(op) => format!(
+            Kind::UnallowedFloat(..) => {
+                "Can't use floating point values in integer expressions".into()
+            }
+            Kind::UnallowedFloatOperation(op, ..) => format!(
                 "Can't perform the {} operation with floating point numbers",
                 Colored(op, red),
             ),

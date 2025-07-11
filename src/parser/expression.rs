@@ -25,11 +25,11 @@
 
 use chumsky::prelude::*;
 use num_bigint::{BigInt, BigUint};
-use num_traits::cast::ToPrimitive;
 
 use super::{Parser, Span, Spanned, Token};
-use crate::compiler::error::{OperationKind, SpannedErr};
+use crate::compiler::error::SpannedErr;
 use crate::compiler::{ErrorData, ErrorKind};
+use crate::number::Number;
 
 /// Allowed unary operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,7 +93,7 @@ pub enum Expr {
 }
 
 impl Expr {
-    /// Evaluates the expression as an integer
+    /// Evaluates the expression
     ///
     /// # Parameters
     ///
@@ -101,76 +101,39 @@ impl Expr {
     ///
     /// # Errors
     ///
-    /// Returns a [`ErrorKind::UnallowedFloat`] if a float literal is used, a
-    /// [`ErrorKind::DivisionBy0`] if a division by 0 is attempted, or any [`ErrorKind`] returned by
-    /// the callback function
-    pub fn int(
+    /// Returns a [`ErrorKind::UnallowedFloatOperation`] if an operation that's undefined with
+    /// floats is attempted, a [`ErrorKind::DivisionBy0`] if a division by 0 is attempted, or any
+    /// [`ErrorKind`] returned by the callback function
+    pub fn eval(
         &self,
         ident_eval: impl Copy + Fn(&str) -> Result<BigInt, ErrorKind>,
-    ) -> Result<BigInt, ErrorData> {
-        Ok(match self {
-            Self::Integer(value) => value.clone().into(),
-            Self::Float((_, span)) => return Err(ErrorKind::UnallowedFloat.add_span(span)),
-            Self::Character(c) => (*c as u32).into(),
-            Self::Identifier((ident, span)) => ident_eval(ident).add_span(span)?,
+    ) -> Result<Number, ErrorData> {
+        match self {
+            Self::Integer(value) => Ok(value.clone().into()),
+            Self::Float((value, span)) => Ok(Number::from((*value, span.clone()))),
+            Self::Character(c) => Ok((*c as u32).into()),
+            Self::Identifier((ident, span)) => Ok(ident_eval(ident).add_span(span)?.into()),
             Self::UnaryOp { op, operand } => match op.0 {
-                UnaryOp::Plus => operand.0.int(ident_eval)?,
-                UnaryOp::Minus => -operand.0.int(ident_eval)?,
-                UnaryOp::Complement => !operand.0.int(ident_eval)?,
+                UnaryOp::Plus => operand.0.eval(ident_eval),
+                UnaryOp::Minus => Ok(-(operand.0.eval(ident_eval)?)),
+                UnaryOp::Complement => (!(operand.0.eval(ident_eval)?)).add_span(&op.1),
             },
             Self::BinaryOp { op, lhs, rhs } => {
-                let lhs = lhs.0.int(ident_eval)?;
+                let lhs = lhs.0.eval(ident_eval)?;
                 let span = &rhs.1;
-                let rhs = rhs.0.int(ident_eval)?;
+                let rhs = rhs.0.eval(ident_eval)?;
                 match op.0 {
-                    BinaryOp::Add => lhs + rhs,
-                    BinaryOp::Sub => lhs - rhs,
-                    BinaryOp::Mul => lhs * rhs,
-                    BinaryOp::Div => lhs
-                        .checked_div(&rhs)
-                        .ok_or_else(|| ErrorKind::DivisionBy0.add_span(span))?,
-                    BinaryOp::Rem => (rhs != BigInt::ZERO).then(|| lhs % rhs).ok_or_else(|| ErrorKind::RemainderWith0.add_span(span))?,
-                    BinaryOp::BitwiseOR => lhs | rhs,
-                    BinaryOp::BitwiseAND => lhs & rhs,
-                    BinaryOp::BitwiseXOR => lhs ^ rhs,
+                    BinaryOp::Add => Ok(lhs + rhs),
+                    BinaryOp::Sub => Ok(lhs - rhs),
+                    BinaryOp::Mul => Ok(lhs * rhs),
+                    BinaryOp::Div => (lhs / rhs).add_span(span),
+                    BinaryOp::Rem => (lhs % rhs).add_span(span),
+                    BinaryOp::BitwiseOR => (lhs | rhs).add_span(&op.1),
+                    BinaryOp::BitwiseAND => (lhs & rhs).add_span(&op.1),
+                    BinaryOp::BitwiseXOR => (lhs ^ rhs).add_span(&op.1),
                 }
             }
-        })
-    }
-
-    /// Evaluates the expression as a float
-    ///
-    /// # Errors
-    ///
-    /// Returns a [`ErrorKind::UnallowedFloatOperation`] if an operation that's undefined with
-    /// floats is attempted
-    pub fn float(&self) -> Result<f64, ErrorData> {
-        let err = |op, s| ErrorKind::UnallowedFloatOperation(op).add_span(s);
-        Ok(match self {
-            Self::Integer(value) => biguint_to_f64(value),
-            Self::Float((value, _)) => *value,
-            Self::Character(c) => (*c as u32).into(),
-            Self::Identifier((_, span)) => return Self::unallowed_ident("").add_span(span),
-            Self::UnaryOp { op, operand } => match op.0 {
-                UnaryOp::Plus => operand.0.float()?,
-                UnaryOp::Minus => -operand.0.float()?,
-                UnaryOp::Complement => return Err(err(OperationKind::Complement, &op.1)),
-            },
-            Self::BinaryOp { op, lhs, rhs } => {
-                let lhs = lhs.0.float()?;
-                let rhs = rhs.0.float()?;
-                match op.0 {
-                    BinaryOp::Add => lhs + rhs,
-                    BinaryOp::Sub => lhs - rhs,
-                    BinaryOp::Mul => lhs * rhs,
-                    BinaryOp::Div => lhs / rhs,
-                    BinaryOp::Rem => lhs % rhs,
-                    BinaryOp::BitwiseOR => return Err(err(OperationKind::BitwiseOR, &op.1)),
-                    BinaryOp::BitwiseAND => return Err(err(OperationKind::BitwiseAND, &op.1)),
-                    BinaryOp::BitwiseXOR => return Err(err(OperationKind::BitwiseXOR, &op.1)),
-                }
-            }
-        })
+        }
     }
 
     /// Identifier evaluator utility function that doesn't allow any identifier in the expression
@@ -181,12 +144,16 @@ impl Expr {
     pub const fn unallowed_ident<T>(_: &str) -> Result<T, ErrorKind> {
         Err(ErrorKind::UnallowedLabel)
     }
-}
 
-/// Converts a [`BigUint`] to a [`f64`]
-#[must_use]
-fn biguint_to_f64(x: &BigUint) -> f64 {
-    x.to_f64().expect("Converting a bigint to f64 can't fail")
+    /// Utility function to evaluate an expression without allowing identifiers
+    ///
+    /// # Errors
+    ///
+    /// Errors in the same cases as [`Expr::eval`], but any identifier usage results in a
+    /// [`ErrorKind::UnallowedLabel`]
+    pub fn eval_no_ident(&self) -> Result<Number, ErrorData> {
+        self.eval(Self::unallowed_ident)
+    }
 }
 
 /// Creates a new parser for a sequence of binary expressions
@@ -313,14 +280,15 @@ pub fn parser() -> Parser!(Token, Expr) {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::compiler::error::OperationKind;
 
     fn parse(code: &str) -> Result<Expr, ()> {
         super::super::parse_with(super::parser(), "#", code).map_err(|_| ())
     }
 
-    type ExprResult<T> = (Result<T, ErrorData>, Result<f64, ErrorData>);
+    type ExprResult = Result<Number, ErrorData>;
 
-    fn test_bigint(test_cases: impl IntoIterator<Item = (&'static str, Expr, ExprResult<BigInt>)>) {
+    fn test(test_cases: impl IntoIterator<Item = (&'static str, Expr, ExprResult)>) {
         let ident_eval = |ident: &str| {
             if ident.len() == 1 {
                 Ok(BigInt::from(ident.as_bytes()[0] - b'a' + 5))
@@ -328,25 +296,16 @@ mod test {
                 Err(ErrorKind::UnknownLabel(ident.to_owned()))
             }
         };
-        for (src, expr, (res1, res2)) in test_cases {
+        for (src, expr, expected) in test_cases {
             assert_eq!(parse(src), Ok(expr.clone()), "`{src}`");
-            let int = expr.int(ident_eval);
-            assert_eq!(int, res1, "`{src}` as int\n{expr:?}");
-            assert_eq!(expr.float(), res2, "`{src}` as float\n{expr:?}");
+            let res = expr.eval(ident_eval);
+            assert_eq!(res, expected, "`{src}`\n{expr:?}");
         }
     }
 
-    fn test(test_cases: impl IntoIterator<Item = (&'static str, Expr, ExprResult<i64>)>) {
-        test_bigint(
-            test_cases
-                .into_iter()
-                .map(|(src, expr, (res1, res2))| (src, expr, (res1.map(BigInt::from), res2))),
-        );
-    }
-
     #[must_use]
-    fn float_op(op: OperationKind, s: Span) -> ErrorData {
-        ErrorKind::UnallowedFloatOperation(op).add_span(&s)
+    fn float_op(op: OperationKind, float_span: Span, op_span: Span) -> ErrorData {
+        ErrorKind::UnallowedFloatOperation(op, float_span).add_span(op_span)
     }
 
     #[test]
@@ -361,35 +320,27 @@ mod test {
 
     #[test]
     fn literal() {
+        let int = BigUint::from(2u8).pow(128) - 1u8;
         test([
-            ("16", Expr::Integer(16u8.into()), (Ok(16), Ok(16.0))),
-            ("\n\n16", Expr::Integer(16u8.into()), (Ok(16), Ok(16.0))),
-            ("'a'", Expr::Character('a'), (Ok(97), Ok(97.0))),
-            (
-                "a",
-                Expr::Identifier(("a".into(), 0..1)),
-                (Ok(5), Err(ErrorKind::UnallowedLabel.add_span(0..1))),
-            ),
+            ("16", Expr::Integer(16u8.into()), Ok(16.into())),
+            ("\n\n16", Expr::Integer(16u8.into()), Ok(16.into())),
+            ("'a'", Expr::Character('a'), Ok(('a' as u32).into())),
+            ("a", Expr::Identifier(("a".into(), 0..1)), Ok(5.into())),
             (
                 "test",
                 Expr::Identifier(("test".into(), 0..4)),
-                (
-                    Err(ErrorKind::UnknownLabel("test".into()).add_span(0..4)),
-                    Err(ErrorKind::UnallowedLabel.add_span(0..4)),
-                ),
+                Err(ErrorKind::UnknownLabel("test".into()).add_span(0..4)),
             ),
             (
                 ".test",
                 Expr::Identifier((".test".into(), 0..5)),
-                (
-                    Err(ErrorKind::UnknownLabel(".test".into()).add_span(0..5)),
-                    Err(ErrorKind::UnallowedLabel.add_span(0..5)),
-                ),
+                Err(ErrorKind::UnknownLabel(".test".into()).add_span(0..5)),
             ),
+            ("1.0", Expr::Float((1.0, 0..3)), Ok((1.0, 0..3).into())),
             (
-                "1.0",
-                Expr::Float((1.0, 0..3)),
-                (Err(ErrorKind::UnallowedFloat.add_span(0..3)), Ok(1.0)),
+                "340282366920938463463374607431768211455",
+                Expr::Integer(int.clone()),
+                Ok(int.into()),
             ),
         ]);
     }
@@ -427,22 +378,37 @@ mod test {
             (
                 "+2",
                 un_op((UnaryOp::Plus, 0..1), int(2, 1..2)),
-                (Ok(2), Ok(2.0)),
+                Ok(2.into()),
+            ),
+            (
+                "+2.2",
+                un_op((UnaryOp::Plus, 0..1), float(2.2, 1..4)),
+                Ok((2.2, 1..4).into()),
             ),
             (
                 "\n\n+\n2",
                 un_op((UnaryOp::Plus, 2..3), int(2, 4..5)),
-                (Ok(2), Ok(2.0)),
+                Ok(2.into()),
+            ),
+            (
+                "\n\n+\n2.2",
+                un_op((UnaryOp::Plus, 2..3), float(2.2, 4..7)),
+                Ok((2.2, 4..7).into()),
             ),
             (
                 "-2",
                 un_op((UnaryOp::Minus, 0..1), int(2, 1..2)),
-                (Ok(-2), Ok(-2.0)),
+                Ok((-2).into()),
             ),
             (
                 "~2",
                 un_op((UnaryOp::Complement, 0..1), int(2, 1..2)),
-                (Ok(!2), Err(float_op(OperationKind::Complement, 0..1))),
+                Ok((!2).into()),
+            ),
+            (
+                "~2.75",
+                un_op((UnaryOp::Complement, 0..1), float(2.75, 1..5)),
+                Err(float_op(OperationKind::Complement, 1..5, 0..1)),
             ),
         ]);
     }
@@ -453,12 +419,12 @@ mod test {
             (
                 "5 + 7",
                 bin_op((BinaryOp::Add, 2..3), int(5, 0..1), int(7, 4..5)),
-                (Ok(12), Ok(12.0)),
+                Ok(12.into()),
             ),
             (
                 "\n5 \n\n+ \n7",
                 bin_op((BinaryOp::Add, 5..6), int(5, 1..2), int(7, 8..9)),
-                (Ok(12), Ok(12.0)),
+                Ok(12.into()),
             ),
             (
                 "2147483647 + 1",
@@ -467,17 +433,17 @@ mod test {
                     int(i32::MAX as u32, 0..10),
                     int(1, 13..14),
                 ),
-                (Ok(2_147_483_648), Ok(f64::from(i32::MAX) + 1.0)),
+                Ok(2_147_483_648_u32.into()),
             ),
             (
                 "2.5 + 7",
                 bin_op((BinaryOp::Add, 4..5), float(2.5, 0..3), int(7, 6..7)),
-                (Err(ErrorKind::UnallowedFloat.add_span(0..3)), Ok(9.5)),
+                Ok((9.5, 0..3).into()),
             ),
             (
                 "2.5 + 7.25",
                 bin_op((BinaryOp::Add, 4..5), float(2.5, 0..3), float(7.25, 6..10)),
-                (Err(ErrorKind::UnallowedFloat.add_span(0..3)), Ok(9.75)),
+                Ok((9.75, 0..3).into()),
             ),
         ]);
     }
@@ -492,7 +458,7 @@ mod test {
                     int(u32::MAX, 0..10),
                     int(u32::MAX, 13..23),
                 ),
-                (Ok(0), Ok(0.0)),
+                Ok(0.into()),
             ),
             (
                 "d - a",
@@ -501,7 +467,7 @@ mod test {
                     (Expr::Identifier(("d".into(), 0..1)), 0..1),
                     (Expr::Identifier(("a".into(), 4..5)), 4..5),
                 ),
-                (Ok(3), Err(ErrorKind::UnallowedLabel.add_span(0..1))),
+                Ok(3.into()),
             ),
         ]);
     }
@@ -512,12 +478,12 @@ mod test {
             (
                 "5 * 7",
                 bin_op((BinaryOp::Mul, 2..3), int(5, 0..1), int(7, 4..5)),
-                (Ok(35), Ok(35.0)),
+                Ok(35.into()),
             ),
             (
                 "\n5 \n\n* \n7",
                 bin_op((BinaryOp::Mul, 5..6), int(5, 1..2), int(7, 8..9)),
-                (Ok(35), Ok(35.0)),
+                Ok(35.into()),
             ),
             (
                 "2147483647 * 2147483648",
@@ -526,10 +492,7 @@ mod test {
                     int(i32::MAX as u32, 0..10),
                     int(1 << 31, 13..23),
                 ),
-                (
-                    Ok(2_147_483_647 * 2_147_483_648),
-                    Ok(4_611_686_016_279_904_256.0),
-                ),
+                Ok((BigInt::from(2_147_483_647) * BigInt::from(2_147_483_648_u32)).into()),
             ),
         ]);
     }
@@ -540,26 +503,40 @@ mod test {
             (
                 "8 / 2",
                 bin_op((BinaryOp::Div, 2..3), int(8, 0..1), int(2, 4..5)),
-                (Ok(4), Ok(4.0)),
+                Ok(4.into()),
             ),
             (
                 "10 / 0",
                 bin_op((BinaryOp::Div, 3..4), int(10, 0..2), int(0, 5..6)),
-                (
-                    Err(ErrorKind::DivisionBy0.add_span(5..6)),
-                    Ok(f64::INFINITY),
-                ),
+                Err(ErrorKind::DivisionBy0.add_span(5..6)),
+            ),
+            (
+                "10 / 0.0",
+                bin_op((BinaryOp::Div, 3..4), int(10, 0..2), float(0.0, 5..8)),
+                Ok((f64::INFINITY, 5..8).into()),
             ),
         ]);
     }
 
     #[test]
     fn binary_rem() {
-        test([(
-            "7 % 5",
-            bin_op((BinaryOp::Rem, 2..3), int(7, 0..1), int(5, 4..5)),
-            (Ok(2), Ok(2.0)),
-        )]);
+        test([
+            (
+                "7 % 5",
+                bin_op((BinaryOp::Rem, 2..3), int(7, 0..1), int(5, 4..5)),
+                Ok(2.into()),
+            ),
+            (
+                "7 % 0",
+                bin_op((BinaryOp::Rem, 2..3), int(7, 0..1), int(0, 4..5)),
+                Err(ErrorKind::RemainderWith0.add_span(4..5)),
+            ),
+            (
+                "7.2 % 5",
+                bin_op((BinaryOp::Rem, 4..5), float(7.2, 0..3), int(5, 6..7)),
+                Ok((2.2, 0..3).into()),
+            ),
+        ]);
     }
 
     #[test]
@@ -572,7 +549,7 @@ mod test {
                     int(0b0101, 0..6),
                     int(0b0011, 9..15),
                 ),
-                (Ok(0b0111), Err(float_op(OperationKind::BitwiseOR, 7..8))),
+                Ok(0b0111.into()),
             ),
             (
                 "0b0101 & 0b0011",
@@ -581,7 +558,7 @@ mod test {
                     int(0b0101, 0..6),
                     int(0b0011, 9..15),
                 ),
-                (Ok(0b0001), Err(float_op(OperationKind::BitwiseAND, 7..8))),
+                Ok(0b0001.into()),
             ),
             (
                 "0b0101 ^ 0b0011",
@@ -590,7 +567,7 @@ mod test {
                     int(0b0101, 0..6),
                     int(0b0011, 9..15),
                 ),
-                (Ok(0b0110), Err(float_op(OperationKind::BitwiseXOR, 7..8))),
+                Ok(0b0110.into()),
             ),
             (
                 "\n0b0101 \n\n^ \n0b0011",
@@ -599,7 +576,16 @@ mod test {
                     int(0b0101, 1..7),
                     int(0b0011, 13..19),
                 ),
-                (Ok(0b0110), Err(float_op(OperationKind::BitwiseXOR, 10..11))),
+                Ok(0b0110.into()),
+            ),
+            (
+                "\n0b0101 \n\n^ \n1.1",
+                bin_op(
+                    (BinaryOp::BitwiseXOR, 10..11),
+                    int(0b0101, 1..7),
+                    float(1.1, 13..16),
+                ),
+                Err(float_op(OperationKind::BitwiseXOR, 13..16, 10..11)),
             ),
         ]);
     }
@@ -618,7 +604,7 @@ mod test {
                     ),
                     int(3, 8..9),
                 ),
-                (Ok(0), Ok(0.0)),
+                Ok(0.into()),
             ),
             (
                 "1 + \n(\n2 - 3\n)",
@@ -630,7 +616,7 @@ mod test {
                         5..14,
                     ),
                 ),
-                (Ok(0), Ok(0.0)),
+                Ok(0.into()),
             ),
             (
                 "1 | 6 & 3 ^ 9",
@@ -649,7 +635,7 @@ mod test {
                     ),
                     int(9, 12..13),
                 ),
-                (Ok(10), Err(float_op(OperationKind::BitwiseOR, 2..3))),
+                Ok(10.into()),
             ),
             (
                 "1 * 6 / 3 % 2",
@@ -668,7 +654,7 @@ mod test {
                     ),
                     int(2, 12..13),
                 ),
-                (Ok(0), Ok(0.0)),
+                Ok(0.into()),
             ),
             (
                 "\n- \n\n+ \n1",
@@ -676,7 +662,7 @@ mod test {
                     (UnaryOp::Minus, 1..2),
                     (un_op((UnaryOp::Plus, 5..6), int(1, 8..9)), 5..9),
                 ),
-                (Ok(-1), Ok(-1.0)),
+                Ok((-1).into()),
             ),
             (
                 "~-+1",
@@ -690,7 +676,7 @@ mod test {
                         1..4,
                     ),
                 ),
-                (Ok(0), Err(float_op(OperationKind::Complement, 0..1))),
+                Ok(0.into()),
             ),
             (
                 "1 + 6 | 3 * +9",
@@ -713,68 +699,7 @@ mod test {
                         4..14,
                     ),
                 ),
-                (Ok(32), Err(float_op(OperationKind::BitwiseOR, 6..7))),
-            ),
-        ]);
-    }
-
-    #[test]
-    fn bigint() {
-        let int = BigUint::from(2u8).pow(128) - 1u8;
-        #[allow(clippy::unwrap_used)]
-        test_bigint([
-            (
-                "340282366920938463463374607431768211455",
-                Expr::Integer(int.clone()),
-                (Ok(int.clone().into()), Ok(int.to_f64().unwrap())),
-            ),
-            (
-                "340282366920938463463374607431768211455 * 340282366920938463463374607431768211455",
-                Expr::BinaryOp {
-                    op: (BinaryOp::Mul, 40..41),
-                    lhs: Box::new((Expr::Integer(int.clone()), 0..39)),
-                    rhs: Box::new((Expr::Integer(int.clone()), 42..81)),
-                },
-                {
-                    let square = int.clone() * &int;
-                    (Ok(square.clone().into()), Ok(square.to_f64().unwrap()))
-                },
-            ),
-            (
-                "340282366920938463463374607431768211455 / 340282366920938463463374607431768211455",
-                Expr::BinaryOp {
-                    op: (BinaryOp::Div, 40..41),
-                    lhs: Box::new((Expr::Integer(int.clone()), 0..39)),
-                    rhs: Box::new((Expr::Integer(int.clone()), 42..81)),
-                },
-                (Ok(1.into()), Ok(1.0)),
-            ),
-            (
-                "340282366920938463463374607431768211465 - 340282366920938463463374607431768211453",
-                Expr::BinaryOp {
-                    op: (BinaryOp::Sub, 40..41),
-                    lhs: Box::new((Expr::Integer(int.clone() + 10u8), 0..39)),
-                    rhs: Box::new((Expr::Integer(int.clone() - 2u8), 42..81)),
-                },
-                (Ok(12.into()), Ok(0.0)),
-            ),
-            (
-                "340282366920938463463374607431768211455 - 340282366920938463463374607431768211465",
-                Expr::BinaryOp {
-                    op: (BinaryOp::Sub, 40..41),
-                    lhs: Box::new((Expr::Integer(int.clone()), 0..39)),
-                    rhs: Box::new((Expr::Integer(int.clone() + 10u8), 42..81)),
-                },
-                (Ok((-10).into()), Ok(0.0)),
-            ),
-            (
-                "340282366920938463463374607431768211465 % 340282366920938463463374607431768211453",
-                Expr::BinaryOp {
-                    op: (BinaryOp::Rem, 40..41),
-                    lhs: Box::new((Expr::Integer(int.clone() + 10u8), 0..39)),
-                    rhs: Box::new((Expr::Integer(int - 2u8), 42..81)),
-                },
-                (Ok(12.into()), Ok(0.0)),
+                Ok(32.into()),
             ),
         ]);
     }

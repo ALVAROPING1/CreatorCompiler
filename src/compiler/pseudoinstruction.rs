@@ -27,7 +27,7 @@
 // should be completely redesigned from scratch once we are ready to make a breaking change in the
 // definition of the architecture
 
-use num_bigint::BigUint;
+use num_bigint::{BigInt, BigUint};
 use regex::{Captures, Regex};
 
 use std::fmt::Write as _;
@@ -35,11 +35,12 @@ use std::rc::Rc;
 use std::sync::LazyLock;
 
 use crate::architecture::{Architecture, FloatType, Pseudoinstruction, RegisterType};
+use crate::number::Number;
 use crate::parser::ParseError;
 
 use super::{ArgumentType, ErrorData, ErrorKind, InstructionDefinition, LabelTable};
 use super::{Expr, ParsedArgs};
-use super::{Source, Span, SpanList, Spanned};
+use super::{Source, Span, SpanList, Spanned, SpannedErr};
 
 /// Pseudoinstruction evaluation error kind
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -297,7 +298,7 @@ pub fn expand<'b, 'a: 'b>(
         let (_, [arg, start_bit, end_bit, ty]) = x.extract();
         let arg_num = num(arg) - 1;
         // Get the user's argument expression
-        let (value, _) = &args
+        let (value, value_span) = &args
             .get(arg_num)
             .ok_or_else(|| {
                 Error {
@@ -327,13 +328,14 @@ pub fn expand<'b, 'a: 'b>(
         let field = match ty {
             "int" => {
                 // Convert the number to binary using two's complement
-                let s = value.int(ident_eval)?.to_signed_bytes_be().iter().fold(
-                    String::new(),
-                    |mut s, byte| {
+                let s = BigInt::try_from(value.eval(ident_eval)?)
+                    .add_span(value_span)?
+                    .to_signed_bytes_be()
+                    .iter()
+                    .fold(String::new(), |mut s, byte| {
                         write!(s, "{byte:08b}").expect("Writing to a string shouldn't fail");
                         s
-                    },
-                );
+                    });
                 // Pad the number to `start_bit` bits, using sign extension
                 let msb = start_bit + 1;
                 if s.len() >= msb {
@@ -348,8 +350,8 @@ pub fn expand<'b, 'a: 'b>(
                     pad
                 }
             }
-            "float" => format!("{:032b}", (value.float()? as f32).to_bits()),
-            "double" => format!("{:064b}", value.float()?.to_bits()),
+            "float" => format!("{:032b}", f32::from(value.eval_no_ident()?).to_bits()),
+            "double" => format!("{:064b}", f64::from(value.eval_no_ident()?).to_bits()),
             ty => {
                 return Err(Error {
                     definition: def.clone(),
@@ -401,14 +403,10 @@ pub fn expand<'b, 'a: 'b>(
             .value;
         // Calculate the size of the expression
         #[allow(clippy::cast_possible_truncation)]
-        let size = match value.int(ident_eval) {
-            Ok(x) => x.bits() + 1,
-            Err(err) => match *err.kind {
-                // If the expression had any floating-point numbers, assume the result is in
-                // single precision
-                ErrorKind::UnallowedFloat => 32,
-                _ => return Err(err),
-            },
+        let size = match value.eval(ident_eval)? {
+            Number::Int(x) => x.bits() + 1,
+            // If the result is a float, assume it is in single precision
+            Number::Float { .. } => 32,
         };
         def.replace_range(capture_span(&x, 0), &size.to_string());
     }
