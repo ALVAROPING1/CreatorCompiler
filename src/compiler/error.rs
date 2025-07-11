@@ -102,6 +102,7 @@ pub enum Kind {
     UnallowedNegativeValue(BigInt),
     IntegerOutOfRange(BigInt, RangeInclusive<BigInt>),
     DivisionBy0,
+    RemainderWith0,
     PseudoinstructionError {
         name: String,
         error: Box<PseudoinstructionError>,
@@ -260,7 +261,8 @@ impl Info for Error<'_> {
             Kind::UnallowedNegativeValue(..) => 21,
             Kind::IntegerOutOfRange(..) => 22,
             Kind::DivisionBy0 => 23,
-            Kind::PseudoinstructionError { .. } => 24,
+            Kind::RemainderWith0 => 24,
+            Kind::PseudoinstructionError { .. } => 25,
         }
     }
 
@@ -397,7 +399,7 @@ impl Info for Error<'_> {
             Kind::UnallowedNegativeValue(val) | Kind::IntegerOutOfRange(val, _) => {
                 format!("This expression has value {}", Colored(val, red))
             }
-            Kind::DivisionBy0 => format!("This expression has value {}", Colored(0, red)),
+            Kind::DivisionBy0 | Kind::RemainderWith0 => format!("This expression has value {}", Colored(0, red)),
             Kind::PseudoinstructionError { .. } => "While expanding this pseudoinstruction".into(),
         }
     }
@@ -482,6 +484,7 @@ impl Info for Error<'_> {
                 Colored(val, red)
             ),
             Kind::DivisionBy0 => "Can't divide by 0".into(),
+            Kind::RemainderWith0 => "Can't take the remainder of a division by 0".into(),
             Kind::PseudoinstructionError { name, .. } => {
                 let name = Colored(name, red);
                 format!("Error while expanding pseudoinstruction {name}")

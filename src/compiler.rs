@@ -2555,6 +2555,10 @@ mod test {
             Err(ErrorKind::DivisionBy0.add_span(24..25)),
         );
         assert_eq!(
+            compile(".text\nmain: imm 0, 0, 1%0"),
+            Err(ErrorKind::RemainderWith0.add_span(24..25)),
+        );
+        assert_eq!(
             compile(".data\n.float ~1.0\n.text\nmain: nop"),
             Err(
                 ErrorKind::UnallowedFloatOperation(error::OperationKind::Complement)

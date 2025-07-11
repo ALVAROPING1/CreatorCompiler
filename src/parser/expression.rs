@@ -129,7 +129,7 @@ impl Expr {
                     BinaryOp::Div => lhs
                         .checked_div(&rhs)
                         .ok_or_else(|| ErrorKind::DivisionBy0.add_span(span))?,
-                    BinaryOp::Rem => lhs % rhs,
+                    BinaryOp::Rem => (rhs != BigInt::ZERO).then(|| lhs % rhs).ok_or_else(|| ErrorKind::RemainderWith0.add_span(span))?,
                     BinaryOp::BitwiseOR => lhs | rhs,
                     BinaryOp::BitwiseAND => lhs & rhs,
                     BinaryOp::BitwiseXOR => lhs ^ rhs,
