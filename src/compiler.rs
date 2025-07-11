@@ -2552,15 +2552,15 @@ mod test {
         use error::OperationKind;
         assert_eq!(
             compile(".data\n.byte 1/0\n.text\nmain: nop"),
-            Err(ErrorKind::DivisionBy0.add_span(14..15)),
+            Err(ErrorKind::DivisionBy0(14..15).add_span(13..14)),
         );
         assert_eq!(
             compile(".text\nmain: imm 0, 0, 1/0"),
-            Err(ErrorKind::DivisionBy0.add_span(24..25)),
+            Err(ErrorKind::DivisionBy0(24..25).add_span(23..24)),
         );
         assert_eq!(
             compile(".text\nmain: imm 0, 0, 1%0"),
-            Err(ErrorKind::RemainderWith0.add_span(24..25)),
+            Err(ErrorKind::RemainderWith0(24..25).add_span(23..24)),
         );
         assert_eq!(
             compile(".data\n.float ~1.0\n.text\nmain: nop"),

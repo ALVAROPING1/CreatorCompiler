@@ -137,7 +137,7 @@ macro_rules! impl_bin_op {
         impl_bin_op!($trait, $name, (lhs, rhs), lhs $op rhs, |origin| lhs $op rhs, Self);
     };
     ($trait:path, $name:ident, ($lhs:ident, $rhs:ident), $int:expr, $float:expr) => {
-        impl_bin_op!($trait, $name, ($lhs, $rhs), $int, |origin| $float, Result<Self, ErrorKind>: Ok);
+        impl_bin_op!($trait, $name, ($lhs, $rhs), $int, |origin| $float, Option<Self>: Some);
     };
     ($trait:path, $name:ident, $int:tt, $float:expr) => {
         impl_bin_op!(
@@ -154,12 +154,12 @@ macro_rules! impl_bin_op {
 impl_bin_op!(ops::Add, add, +);
 impl_bin_op!(ops::Sub, sub, -);
 impl_bin_op!(ops::Mul, mul, *);
-impl_bin_op!(ops::Div, div, (lhs, rhs), lhs.checked_div(&rhs).ok_or(ErrorKind::DivisionBy0)?, lhs / rhs);
+impl_bin_op!(ops::Div, div, (lhs, rhs), lhs.checked_div(&rhs)?, lhs / rhs);
 impl_bin_op!(
     ops::Rem,
     rem,
     (lhs, rhs),
-    (rhs != BigInt::ZERO).then(|| lhs % rhs).ok_or(ErrorKind::RemainderWith0)?,
+    (rhs != BigInt::ZERO).then(|| lhs % rhs)?,
     lhs % rhs
 );
 impl_bin_op!(ops::BitOr, bitor, |, OperationKind::BitwiseOR);
@@ -316,20 +316,20 @@ mod test {
         let f2 = Number::from((-2.5, 5..6));
         let f3 = Number::from((0.0, 5..6));
         let f4 = Number::from((-0.0, 5..6));
-        assert_eq!(op(&i1, &i2), Ok(Number::from(-1)));
-        assert_eq!(op(&i1, &f2), Ok(Number::from((9.0 / -2.5, 5..6))));
-        assert_eq!(op(&f1, &i2), Ok(Number::from((1.2 / -5.0, 1..3))));
-        assert_eq!(op(&f1, &f2), Ok(Number::from((1.2 / -2.5, 1..3))));
-        assert_eq!(opint(int(), int()), Ok(Number::from(1)));
+        assert_eq!(op(&i1, &i2), Some(Number::from(-1)));
+        assert_eq!(op(&i1, &f2), Some(Number::from((9.0 / -2.5, 5..6))));
+        assert_eq!(op(&f1, &i2), Some(Number::from((1.2 / -5.0, 1..3))));
+        assert_eq!(op(&f1, &f2), Some(Number::from((1.2 / -2.5, 1..3))));
+        assert_eq!(opint(int(), int()), Some(Number::from(1)));
 
-        assert_eq!(op(&i1, &i3), Err(ErrorKind::DivisionBy0));
-        assert_eq!(op(&i1, &f3), Ok(Number::from((INF, 5..6))));
-        assert_eq!(op(&f1, &i3), Ok(Number::from((INF, 1..3))));
-        assert_eq!(op(&f1, &f3), Ok(Number::from((INF, 1..3))));
-        assert_eq!(op(&f2, &f4), Ok(Number::from((INF, 5..6))));
-        assert_eq!(op(&i2, &f3), Ok(Number::from((-INF, 5..6))));
-        assert_eq!(op(&f2, &i3), Ok(Number::from((-INF, 5..6))));
-        assert_eq!(op(&f1, &f4), Ok(Number::from((-INF, 1..3))));
+        assert_eq!(op(&i1, &i3), None);
+        assert_eq!(op(&i1, &f3), Some(Number::from((INF, 5..6))));
+        assert_eq!(op(&f1, &i3), Some(Number::from((INF, 1..3))));
+        assert_eq!(op(&f1, &f3), Some(Number::from((INF, 1..3))));
+        assert_eq!(op(&f2, &f4), Some(Number::from((INF, 5..6))));
+        assert_eq!(op(&i2, &f3), Some(Number::from((-INF, 5..6))));
+        assert_eq!(op(&f2, &i3), Some(Number::from((-INF, 5..6))));
+        assert_eq!(op(&f1, &f4), Some(Number::from((-INF, 1..3))));
     }
 
     #[test]
@@ -344,20 +344,20 @@ mod test {
         let f2 = Number::from((2.5, 5..6));
         let f3 = Number::from((-2.5, 5..6));
         let f4 = Number::from((0.0, 5..6));
-        assert_eq!(op(&i1, &i2), Ok(Number::from(4)));
-        assert_eq!(op(&i1, &f2), Ok(Number::from((9.0 % 2.5, 5..6))));
-        assert_eq!(op(&f1, &i2), Ok(Number::from((1.2 % 5.0, 1..3))));
-        assert_eq!(op(&f1, &f2), Ok(Number::from((1.2 % 2.5, 1..3))));
-        assert_eq!(opint(2 * int() + 10, int() - 2), Ok(Number::from(14)));
+        assert_eq!(op(&i1, &i2), Some(Number::from(4)));
+        assert_eq!(op(&i1, &f2), Some(Number::from((9.0 % 2.5, 5..6))));
+        assert_eq!(op(&f1, &i2), Some(Number::from((1.2 % 5.0, 1..3))));
+        assert_eq!(op(&f1, &f2), Some(Number::from((1.2 % 2.5, 1..3))));
+        assert_eq!(opint(2 * int() + 10, int() - 2), Some(Number::from(14)));
 
-        assert_eq!(op(&i1, &i3), Ok(Number::from(4)));
-        assert_eq!(op(&i3, &i1), Ok(Number::from(-5)));
-        assert_eq!(op(&f1, &f3), Ok(Number::from((1.2, 1..3))));
-        assert_eq!(op(&f3, &f1), Ok(Number::from((-2.5 % 1.2, 5..6))));
+        assert_eq!(op(&i1, &i3), Some(Number::from(4)));
+        assert_eq!(op(&i3, &i1), Some(Number::from(-5)));
+        assert_eq!(op(&f1, &f3), Some(Number::from((1.2, 1..3))));
+        assert_eq!(op(&f3, &f1), Some(Number::from((-2.5 % 1.2, 5..6))));
 
-        assert_eq!(i1.clone() % i4.clone(), Err(ErrorKind::RemainderWith0));
+        assert_eq!(i1.clone() % i4.clone(), None);
         let test = |a: &Number, b: &Number| {
-            op(a, b).is_ok_and(|x| match x {
+            op(a, b).is_some_and(|x| match x {
                 Number::Float { value, .. } => value.is_nan(),
                 Number::Int(_) => false,
             })

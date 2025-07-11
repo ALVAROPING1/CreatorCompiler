@@ -101,8 +101,8 @@ pub enum Kind {
     UnallowedFloatOperation(OperationKind, Span),
     UnallowedNegativeValue(BigInt),
     IntegerOutOfRange(BigInt, RangeInclusive<BigInt>),
-    DivisionBy0,
-    RemainderWith0,
+    DivisionBy0(Span),
+    RemainderWith0(Span),
     PseudoinstructionError {
         name: String,
         error: Box<PseudoinstructionError>,
@@ -214,7 +214,7 @@ pub trait Info {
     ///
     /// * `color`: whether the message should be formatted (`true`) or plain text (`false`)
     #[must_use]
-    fn context(&self, color: bool) -> Vec<(&Span, &'static str)> {
+    fn context(&self, color: bool) -> Vec<(&Span, String)> {
         vec![]
     }
 
@@ -260,8 +260,8 @@ impl Info for Error<'_> {
             Kind::UnallowedFloatOperation(..) => 20,
             Kind::UnallowedNegativeValue(..) => 21,
             Kind::IntegerOutOfRange(..) => 22,
-            Kind::DivisionBy0 => 23,
-            Kind::RemainderWith0 => 24,
+            Kind::DivisionBy0(..) => 23,
+            Kind::RemainderWith0(..) => 24,
             Kind::PseudoinstructionError { .. } => 25,
         }
     }
@@ -351,22 +351,29 @@ impl Info for Error<'_> {
         })
     }
 
-    fn context(&self, _: bool) -> Vec<(&Span, &'static str)> {
+    fn context(&self, color: bool) -> Vec<(&Span, String)> {
+        let red = color.then_some(Color::Red);
         match self.error.kind.as_ref() {
             Kind::DuplicateLabel(_, Some(span)) => {
-                vec![(span, "Label also defined here")]
+                vec![(span, "Label also defined here".into())]
             }
             Kind::UnallowedStatementType {
                 section: Some(section),
                 ..
             } => {
-                vec![(&section.1, "Section previously started here")]
+                vec![(&section.1, "Section previously started here".into())]
             }
             Kind::UnallowedFloat(span) if *span != self.error.span.span => {
-                vec![(span, "Expression evaluates to a float due to this")]
+                vec![(span, "Expression evaluates to a float due to this".into())]
             }
             Kind::UnallowedFloatOperation(_, span) => {
-                vec![(span, "Operands are converted to floats due to this")]
+                vec![(span, "Operands are converted to floats due to this".into())]
+            }
+            Kind::DivisionBy0(span) | Kind::RemainderWith0(span) => {
+                vec![(
+                    span,
+                    format!("This expression has value {}", Colored(0, red)),
+                )]
             }
             _ => Vec::new(),
         }
@@ -401,11 +408,12 @@ impl Info for Error<'_> {
                 "This statement can't be used in the current section".into()
             }
             Kind::UnallowedLabel | Kind::UnallowedFloat(..) => "This value can't be used".into(),
-            Kind::UnallowedFloatOperation(..) => "This operation can't be performed".into(),
+            Kind::UnallowedFloatOperation(..)
+            | Kind::DivisionBy0(..)
+            | Kind::RemainderWith0(..) => "This operation can't be performed".into(),
             Kind::UnallowedNegativeValue(val) | Kind::IntegerOutOfRange(val, _) => {
                 format!("This expression has value {}", Colored(val, red))
             }
-            Kind::DivisionBy0 | Kind::RemainderWith0 => format!("This expression has value {}", Colored(0, red)),
             Kind::PseudoinstructionError { .. } => "While expanding this pseudoinstruction".into(),
         }
     }
@@ -491,8 +499,8 @@ impl Info for Error<'_> {
                 "Value {} is outside of the valid range of the field",
                 Colored(val, red)
             ),
-            Kind::DivisionBy0 => "Can't divide by 0".into(),
-            Kind::RemainderWith0 => "Can't take the remainder of a division by 0".into(),
+            Kind::DivisionBy0(..) => "Can't divide by 0".into(),
+            Kind::RemainderWith0(..) => "Can't take the remainder of a division by 0".into(),
             Kind::PseudoinstructionError { name, .. } => {
                 let name = Colored(name, red);
                 format!("Error while expanding pseudoinstruction {name}")

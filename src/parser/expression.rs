@@ -126,12 +126,13 @@ impl Expr {
                     BinaryOp::Add => Ok(lhs + rhs),
                     BinaryOp::Sub => Ok(lhs - rhs),
                     BinaryOp::Mul => Ok(lhs * rhs),
-                    BinaryOp::Div => (lhs / rhs).add_span(span),
-                    BinaryOp::Rem => (lhs % rhs).add_span(span),
-                    BinaryOp::BitwiseOR => (lhs | rhs).add_span(&op.1),
-                    BinaryOp::BitwiseAND => (lhs & rhs).add_span(&op.1),
-                    BinaryOp::BitwiseXOR => (lhs ^ rhs).add_span(&op.1),
+                    BinaryOp::Div => (lhs / rhs).ok_or(ErrorKind::DivisionBy0(span.clone())),
+                    BinaryOp::Rem => (lhs % rhs).ok_or(ErrorKind::RemainderWith0(span.clone())),
+                    BinaryOp::BitwiseOR => lhs | rhs,
+                    BinaryOp::BitwiseAND => lhs & rhs,
+                    BinaryOp::BitwiseXOR => lhs ^ rhs,
                 }
+                .add_span(&op.1)
             }
         }
     }
@@ -508,7 +509,7 @@ mod test {
             (
                 "10 / 0",
                 bin_op((BinaryOp::Div, 3..4), int(10, 0..2), int(0, 5..6)),
-                Err(ErrorKind::DivisionBy0.add_span(5..6)),
+                Err(ErrorKind::DivisionBy0(5..6).add_span(3..4)),
             ),
             (
                 "10 / 0.0",
@@ -529,7 +530,7 @@ mod test {
             (
                 "7 % 0",
                 bin_op((BinaryOp::Rem, 2..3), int(7, 0..1), int(0, 4..5)),
-                Err(ErrorKind::RemainderWith0.add_span(4..5)),
+                Err(ErrorKind::RemainderWith0(4..5).add_span(2..3)),
             ),
             (
                 "7.2 % 5",
