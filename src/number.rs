@@ -7,13 +7,24 @@ use crate::compiler::error::OperationKind;
 use crate::compiler::ErrorKind;
 use crate::span::{Span, Spanned};
 
+/// Generic number type, either an integer or a floating-point number
 #[derive(Debug, Clone, PartialEq)]
 pub enum Number {
     Int(BigInt),
-    Float { value: f64, origin: Span },
+    Float {
+        // Value of the number
+        value: f64,
+        // Span that caused the number to be casted to a float
+        origin: Span,
+    },
 }
 
 impl Number {
+    /// Convines the origin spans of 2 numbers, assuming either one or both of them are floats
+    ///
+    /// # Panics
+    ///
+    /// Panics if both numbers are integers
     fn combine_origin(&self, rhs: &Self) -> Span {
         match (self, rhs) {
             (Self::Float { origin, .. }, _) | (_, Self::Float { origin, .. }) => origin.clone(),
@@ -30,6 +41,7 @@ impl From<Number> for f64 {
         }
     }
 }
+
 impl From<Number> for f32 {
     fn from(value: Number) -> Self {
         match value {
@@ -40,6 +52,7 @@ impl From<Number> for f32 {
     }
 }
 
+/// Generates implementations of [`From`]`<int>` for [`Number`]
 macro_rules! impl_from_int {
     ($($ty:ty),+) => {
         $(
@@ -51,7 +64,6 @@ macro_rules! impl_from_int {
         )+
     };
 }
-
 impl_from_int!(BigUint, BigInt, u32, i32);
 
 impl From<Spanned<f64>> for Number {
@@ -113,7 +125,9 @@ impl ops::Not for Number {
     }
 }
 
+/// Generates an implementation of a binary operation for [`Number`]
 macro_rules! impl_bin_op {
+    // Generic interface
     ($trait:path, $name:ident, ($lhs:ident, $rhs:ident), $int:expr, |$orig:ident| $float:expr, $out:ty$(: $wrap:ident)?) => {
         impl $trait for Number {
             type Output = $out;
@@ -133,12 +147,17 @@ macro_rules! impl_bin_op {
             }
         }
     };
+    // Convenience shorthands that forward the arguments to the generic interface
+    // No possible errors, just forwards the numbers to the operator
     ($trait:path, $name:ident, $op:tt) => {
         impl_bin_op!($trait, $name, (lhs, rhs), lhs $op rhs, |origin| lhs $op rhs, Self);
     };
+    // Integer implementation that can fail in a single way, result wrapped in an `Option`
     ($trait:path, $name:ident, ($lhs:ident, $rhs:ident), $int:expr, $float:expr) => {
         impl_bin_op!($trait, $name, ($lhs, $rhs), $int, |origin| $float, Option<Self>: Some);
     };
+    // Implementation for bitwise operators that aren't allowed with floats, result wrapped in
+    // `Result`
     ($trait:path, $name:ident, $int:tt, $float:expr) => {
         impl_bin_op!(
             $trait,
