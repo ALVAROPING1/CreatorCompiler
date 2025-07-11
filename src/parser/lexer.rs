@@ -300,15 +300,14 @@ mod test {
     }
 
     #[test]
-    #[allow(clippy::unreadable_literal)]
     fn int() {
         let test_cases = [
             // decimal
             ("0", 0),
             ("1", 1),
             ("1234", 1234),
-            (&u32::MAX.to_string(), u64::from(u32::MAX)),
-            (&u64::MAX.to_string(), u64::MAX),
+            (&u32::MAX.to_string(), u128::from(u32::MAX)),
+            (&u128::MAX.to_string(), u128::MAX),
             // octal
             ("00", 0),
             ("01", 1),
@@ -320,11 +319,13 @@ mod test {
             ("0x10", 16),
             ("0X10", 16),
             ("0xFf", 255),
+            ("0xAAAAAAAAAAAAAAAAAAAB", 0xAAAA_AAAA_AAAA_AAAA_AAAB_u128),
             // binary
             ("0b0", 0),
             ("0b1", 1),
             ("0b10", 2),
             ("0B10", 2),
+            ("0b10011001100110011001100110011001100110011001100110011001100110011001100110011001", 0x9999_9999_9999_9999_9999_u128),
         ];
         for (s, v) in test_cases {
             let v = v.into();
