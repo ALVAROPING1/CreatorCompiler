@@ -94,7 +94,7 @@ pub type AST = Vec<ASTNode>;
 
 /// Creates a parser for the tokenized input
 #[must_use]
-fn parser<'a>() -> Parser!(Token, AST, 'a) {
+fn parser() -> Parser!(Token, AST) {
     // Newline token
     let newline = || just(Token::Ctrl('\n'));
     // Identifiers
