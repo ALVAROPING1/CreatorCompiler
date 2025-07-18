@@ -1,9 +1,11 @@
+#!/bin/bash
+
 set -e
 
 WEB_TARGET="web"
 CLI_TARGET="nodejs"
 
-function Info(){
+function Info() {
     echo -e '\033[1;34m'"Build:\033[0m $*";
 }
 
