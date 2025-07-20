@@ -127,15 +127,14 @@ where
                 .rewind()
                 .or(expression::parser()
                     .map(Data::Number)
-                    .or(select! { Token::String(s) => Data::String(s) })
+                    .or(select! { Token::String(s) => Data::String(s) }.labelled("string"))
                     .map_with(|x, e| (x, e.span()))
                     .separated_by(just(Token::Ctrl(',')).padded_by(newline().repeated()))
                     .collect()
-                    .map_with(|x, e| (x, e.span())))
-                .labelled("parameters"),
+                    .map_with(|x, e| (x, e.span()))),
         )
         .map(|(name, args)| Statement::Directive(DirectiveNode { name, args }))
-        .labelled("data directive");
+        .labelled("directive");
 
     // Instruction: `instruction -> ident [^\n]*`
     let instruction = ident
