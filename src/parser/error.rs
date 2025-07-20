@@ -23,8 +23,6 @@
 use ariadne::{Color, Config, IndexType, Label, Report, ReportKind, Source};
 use chumsky::error::{Rich, RichPattern, RichReason};
 
-use std::fmt;
-
 use super::Token;
 use crate::error_rendering::{Colored, DisplayList};
 
@@ -49,7 +47,7 @@ impl<'src> From<Vec<Rich<'src, Token>>> for Error {
     }
 }
 
-impl<T: fmt::Display + std::hash::Hash + std::cmp::Eq> crate::RenderError for Vec<Rich<'_, T>> {
+impl<T: std::fmt::Display> crate::RenderError for Vec<Rich<'_, T>> {
     fn format(&self, filename: &str, src: &str, mut buffer: &mut Vec<u8>, color: bool) {
         // Configure the error reports
         let config = Config::default()
