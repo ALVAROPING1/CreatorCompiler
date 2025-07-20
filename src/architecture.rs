@@ -263,7 +263,7 @@ pub enum InstructionType {
 #[serde(try_from = "json::InstructionSyntax<BitRange>")]
 pub struct InstructionSyntax<'a, BitRange> {
     /// Parser for the syntax of the instruction
-    pub parser: crate::parser::Instruction<'a>,
+    pub parser: crate::parser::Instruction,
     /// Translated instruction's syntax
     pub output_syntax: &'a str,
     /// User representation of the instruction's syntax

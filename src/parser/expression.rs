@@ -23,7 +23,7 @@
 //! The main entry point for creating the parser is the [`parser()`] function, with the evaluation
 //! of methods being defined in the methods of the [`Expr`] type
 
-use chumsky::prelude::*;
+use chumsky::{input::ValueInput, prelude::*};
 use num_bigint::{BigInt, BigUint};
 
 use super::{Parser, Span, Spanned, Token};
@@ -110,29 +110,29 @@ impl Expr {
     ) -> Result<Number, ErrorData> {
         match self {
             Self::Integer(value) => Ok(value.clone().into()),
-            Self::Float((value, span)) => Ok(Number::from((*value, span.clone()))),
+            Self::Float((value, span)) => Ok(Number::from((*value, *span))),
             Self::Character(c) => Ok((*c as u32).into()),
             Self::Identifier((ident, span)) => Ok(ident_eval(ident).add_span(span)?.into()),
             Self::UnaryOp { op, operand } => match op.0 {
                 UnaryOp::Plus => operand.0.eval(ident_eval),
                 UnaryOp::Minus => Ok(-(operand.0.eval(ident_eval)?)),
-                UnaryOp::Complement => (!(operand.0.eval(ident_eval)?)).add_span(&op.1),
+                UnaryOp::Complement => (!(operand.0.eval(ident_eval)?)).add_span(op.1),
             },
             Self::BinaryOp { op, lhs, rhs } => {
                 let lhs = lhs.0.eval(ident_eval)?;
-                let span = &rhs.1;
+                let span = rhs.1;
                 let rhs = rhs.0.eval(ident_eval)?;
                 match op.0 {
                     BinaryOp::Add => Ok(lhs + rhs),
                     BinaryOp::Sub => Ok(lhs - rhs),
                     BinaryOp::Mul => Ok(lhs * rhs),
-                    BinaryOp::Div => (lhs / rhs).ok_or(ErrorKind::DivisionBy0(span.clone())),
-                    BinaryOp::Rem => (lhs % rhs).ok_or(ErrorKind::RemainderWith0(span.clone())),
+                    BinaryOp::Div => (lhs / rhs).ok_or(ErrorKind::DivisionBy0(span)),
+                    BinaryOp::Rem => (lhs % rhs).ok_or(ErrorKind::RemainderWith0(span)),
                     BinaryOp::BitwiseOR => lhs | rhs,
                     BinaryOp::BitwiseAND => lhs & rhs,
                     BinaryOp::BitwiseXOR => lhs ^ rhs,
                 }
-                .add_span(&op.1)
+                .add_span(op.1)
             }
         }
     }
@@ -164,21 +164,22 @@ impl Expr {
 /// * `elem`: parser for each atomic value of the new expression
 /// * `op`: parser for the operation symbols in the expression
 #[must_use]
-fn binary_parser(
-    elem: Parser!(Token, Spanned<Expr>),
-    op: Parser!(Token, BinaryOp),
-) -> Parser!(Token, Spanned<Expr>) {
+fn binary_parser<'tokens, I>(
+    elem: Parser!('tokens, I, Spanned<Expr>),
+    op: Parser!('tokens, I, BinaryOp),
+) -> Parser!('tokens, I, Spanned<Expr>)
+where
+    I: ValueInput<'tokens, Token = Token, Span = Span>,
+{
     // Expression: `expression -> element [operator element]*`
-    elem.clone()
-        .then(
-            // Allow operators to be prefixed by newlines
-            just(Token::Ctrl('\n'))
-                .repeated()
-                .ignore_then(op.map_with_span(|op, span| (op, span)))
-                .then(elem)
-                .repeated(),
-        )
-        .foldl(|lhs, (op, rhs)| {
+    elem.clone().foldl(
+        // Allow operators to be prefixed by newlines
+        just(Token::Ctrl('\n'))
+            .repeated()
+            .ignore_then(op.map_with(|op, e| (op, e.span())))
+            .then(elem)
+            .repeated(),
+        |lhs, (op, rhs)| {
             // Calculate the span of the new expression from the spans of its operands, since they
             // are on the start/end of the expression
             let span = lhs.1.start..rhs.1.end;
@@ -188,23 +189,27 @@ fn binary_parser(
                     lhs: Box::new(lhs),
                     rhs: Box::new(rhs),
                 },
-                span,
+                span.into(),
             )
-        })
+        },
+    )
 }
 
 /// Creates a parser for expressions
 #[must_use]
-pub fn parser() -> Parser!(Token, Expr) {
+pub fn parser<'tokens, I>() -> Parser!('tokens, I, Expr)
+where
+    I: ValueInput<'tokens, Token = Token, Span = Span>,
+{
     // Newline tokens
     let newline = || just(Token::Ctrl('\n')).repeated();
     // Literal values
-    let literal = select! { |span|
+    let literal = select! {
         Token::Integer(x) => Expr::Integer(x),
-        Token::Float(x) => Expr::Float((x.into(), span)),
+        Token::Float(x) = e => Expr::Float((x.into(), e.span())),
         Token::Character(c) => Expr::Character(c),
-        Token::Identifier(ident) => Expr::Identifier((ident, span)),
-        Token::Directive(ident) => Expr::Identifier((ident, span)),
+        Token::Identifier(ident) = e => Expr::Identifier((ident, e.span())),
+        Token::Directive(ident) = e => Expr::Identifier((ident, e.span())),
     };
     recursive(|expr| {
         // NOTE: newlines before atoms (literal numbers/parenthesized expressions) and operators
@@ -218,7 +223,7 @@ pub fn parser() -> Parser!(Token, Expr) {
                     just(Token::Ctrl('(')),
                     newline().ignore_then(just(Token::Ctrl(')'))),
                 ))
-                .map_with_span(|atom, span: Span| (atom, span)),
+                .map_with(|atom, e| (atom, e.span())),
         );
 
         // Unary expressions have the highest precedence
@@ -229,18 +234,20 @@ pub fn parser() -> Parser!(Token, Expr) {
                 Token::Operator('-') => UnaryOp::Minus,
                 Token::Operator('~') => UnaryOp::Complement,
             }
-            .map_with_span(|op, span: Span| (op, span)),
+            .map_with(|op, e| (op, e.span())),
         );
-        let unary = op.repeated().then(atom).foldr(|op, rhs| {
-            let span = op.1.start..rhs.1.end;
-            (
-                Expr::UnaryOp {
-                    op,
-                    operand: Box::new(rhs),
-                },
-                span,
-            )
-        });
+        let unary = op
+            .repeated()
+            .foldr(atom, |op: Spanned<UnaryOp>, rhs: Spanned<Expr>| {
+                let span = op.1.start..rhs.1.end;
+                (
+                    Expr::UnaryOp {
+                        op,
+                        operand: Box::new(rhs),
+                    },
+                    span.into(),
+                )
+            });
 
         // Product expressions have the second highest precedence
         // product expression: `product -> unary ([*/%] unary)*`
@@ -305,8 +312,8 @@ mod test {
     }
 
     #[must_use]
-    fn float_op(op: OperationKind, float_span: Span, op_span: Span) -> ErrorData {
-        ErrorKind::UnallowedFloatOperation(op, float_span).add_span(op_span)
+    fn float_op<S: Into<Span>>(op: OperationKind, float_span: S, op_span: S) -> ErrorData {
+        ErrorKind::UnallowedFloatOperation(op, float_span.into()).add_span(op_span.into())
     }
 
     #[test]
@@ -326,18 +333,26 @@ mod test {
             ("16", Expr::Integer(16u8.into()), Ok(16.into())),
             ("\n\n16", Expr::Integer(16u8.into()), Ok(16.into())),
             ("'a'", Expr::Character('a'), Ok(('a' as u32).into())),
-            ("a", Expr::Identifier(("a".into(), 0..1)), Ok(5.into())),
+            (
+                "a",
+                Expr::Identifier(("a".into(), (0..1).into())),
+                Ok(5.into()),
+            ),
             (
                 "test",
-                Expr::Identifier(("test".into(), 0..4)),
+                Expr::Identifier(("test".into(), (0..4).into())),
                 Err(ErrorKind::UnknownLabel("test".into()).add_span(0..4)),
             ),
             (
                 ".test",
-                Expr::Identifier((".test".into(), 0..5)),
+                Expr::Identifier((".test".into(), (0..5).into())),
                 Err(ErrorKind::UnknownLabel(".test".into()).add_span(0..5)),
             ),
-            ("1.0", Expr::Float((1.0, 0..3)), Ok((1.0, 0..3).into())),
+            (
+                "1.0",
+                Expr::Float((1.0, (0..3).into())),
+                Ok((1.0, 0..3).into()),
+            ),
             (
                 "340282366920938463463374607431768211455",
                 Expr::Integer(int.clone()),
@@ -347,29 +362,35 @@ mod test {
     }
 
     #[must_use]
-    fn int(x: u32, s: Span) -> Spanned<Expr> {
-        (Expr::Integer(x.into()), s)
+    fn int(x: u32, s: impl Into<Span>) -> Spanned<Expr> {
+        (Expr::Integer(x.into()), s.into())
     }
 
     #[must_use]
-    fn float(x: f64, s: Span) -> Spanned<Expr> {
-        (Expr::Float((x, s.clone())), s)
+    fn float(x: f64, s: impl Into<Span>) -> Spanned<Expr> {
+        let s = s.into();
+        (Expr::Float((x, s)), s)
     }
 
     #[must_use]
-    fn un_op(op: Spanned<UnaryOp>, operand: Spanned<Expr>) -> Expr {
+    fn un_op(op: (UnaryOp, impl Into<Span>), operand: (Expr, impl Into<Span>)) -> Expr {
         Expr::UnaryOp {
-            op,
-            operand: Box::new(operand),
+            op: (op.0, op.1.into()),
+            operand: Box::new((operand.0, operand.1.into())),
         }
     }
 
     #[must_use]
-    fn bin_op(op: Spanned<BinaryOp>, lhs: Spanned<Expr>, rhs: Spanned<Expr>) -> Expr {
+    fn bin_op<S1, S2, S3>(op: (BinaryOp, S1), lhs: (Expr, S2), rhs: (Expr, S3)) -> Expr
+    where
+        S1: Into<Span>,
+        S2: Into<Span>,
+        S3: Into<Span>,
+    {
         Expr::BinaryOp {
-            op,
-            lhs: Box::new(lhs),
-            rhs: Box::new(rhs),
+            op: (op.0, op.1.into()),
+            lhs: Box::new((lhs.0, lhs.1.into())),
+            rhs: Box::new((rhs.0, rhs.1.into())),
         }
     }
 
@@ -465,8 +486,8 @@ mod test {
                 "d - a",
                 bin_op(
                     (BinaryOp::Sub, 2..3),
-                    (Expr::Identifier(("d".into(), 0..1)), 0..1),
-                    (Expr::Identifier(("a".into(), 4..5)), 4..5),
+                    (Expr::Identifier(("d".into(), (0..1).into())), 0..1),
+                    (Expr::Identifier(("a".into(), (4..5).into())), 4..5),
                 ),
                 Ok(3.into()),
             ),
@@ -509,7 +530,7 @@ mod test {
             (
                 "10 / 0",
                 bin_op((BinaryOp::Div, 3..4), int(10, 0..2), int(0, 5..6)),
-                Err(ErrorKind::DivisionBy0(5..6).add_span(3..4)),
+                Err(ErrorKind::DivisionBy0((5..6).into()).add_span(3..4)),
             ),
             (
                 "10 / 0.0",
@@ -530,7 +551,7 @@ mod test {
             (
                 "7 % 0",
                 bin_op((BinaryOp::Rem, 2..3), int(7, 0..1), int(0, 4..5)),
-                Err(ErrorKind::RemainderWith0(4..5).add_span(2..3)),
+                Err(ErrorKind::RemainderWith0((4..5).into()).add_span(2..3)),
             ),
             (
                 "7.2 % 5",

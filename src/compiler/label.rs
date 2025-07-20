@@ -45,8 +45,8 @@ impl Label {
 
     /// Gets the [`Span`] where the label was defined
     #[must_use]
-    pub const fn span(&self) -> Option<&Span> {
-        self.span.as_ref()
+    pub const fn span(&self) -> Option<Span> {
+        self.span
     }
 }
 
@@ -93,7 +93,11 @@ impl Table {
     /// # Errors
     ///
     /// Errors with [`ErrorKind::DuplicateLabel`] if the label has already been inserted
-    pub fn insert(&mut self, label: String, span: Span, address: BigUint) -> Result<(), ErrorData> {
+    pub fn insert<S>(&mut self, label: String, span: S, address: BigUint) -> Result<(), ErrorData>
+    where
+        S: Into<Span>,
+    {
+        let span = span.into();
         match self.0.entry(label) {
             Entry::Vacant(e) => {
                 let span = Some(span);
@@ -101,7 +105,7 @@ impl Table {
                 Ok(())
             }
             Entry::Occupied(e) => {
-                Err(ErrorKind::DuplicateLabel(e.key().clone(), e.get().span.clone()).add_span(span))
+                Err(ErrorKind::DuplicateLabel(e.key().clone(), e.get().span).add_span(span))
             }
         }
     }
@@ -149,13 +153,15 @@ mod test {
         let mut table = Table::default();
         assert_eq!(table.insert("test".to_string(), 0..2, 12u8.into()), Ok(()));
         assert_eq!(table.insert("test2".to_string(), 6..10, 0u8.into()), Ok(()));
+        let s = 13..17;
         assert_eq!(
             table.insert("test".to_string(), 13..17, 4u8.into()),
-            Err(ErrorKind::DuplicateLabel("test".to_string(), Some(0..2)).add_span(13..17))
+            Err(ErrorKind::DuplicateLabel("test".to_string(), Some((0..2).into())).add_span(s))
         );
+        let s = 20..22;
         assert_eq!(
             table.insert("test2".to_string(), 20..22, 128u8.into()),
-            Err(ErrorKind::DuplicateLabel("test2".to_string(), Some(6..10)).add_span(20..22))
+            Err(ErrorKind::DuplicateLabel("test2".to_string(), Some((6..10).into())).add_span(s))
         );
     }
 
@@ -166,12 +172,12 @@ mod test {
         assert_eq!(table.insert("test2".to_string(), 5..10, 0u8.into()), Ok(()));
         let label = Label {
             address: 12u8.into(),
-            span: Some(2..4),
+            span: Some((2..4).into()),
         };
         assert_eq!(table.get("test"), Some(&label));
         let label = Label {
             address: 0u8.into(),
-            span: Some(5..10),
+            span: Some((5..10).into()),
         };
         assert_eq!(table.get("test2"), Some(&label));
         assert_eq!(table.get("none"), None);

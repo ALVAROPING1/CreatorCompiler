@@ -22,7 +22,7 @@
 //! throughout the crate
 
 /// Range of characters in the source code of an element
-pub type Span = std::ops::Range<usize>;
+pub type Span = chumsky::span::SimpleSpan<usize>;
 /// Value with an attached [`Span`]
 pub type Spanned<T> = (T, Span);
 
@@ -53,17 +53,22 @@ impl From<Span> for SpanList {
 
 impl From<&Span> for SpanList {
     fn from(span: &Span) -> Self {
-        Self {
-            span: span.clone(),
-            source: None,
-        }
+        (*span).into()
     }
 }
 
-impl From<(&Span, &Self)> for SpanList {
-    fn from(value: (&Span, &Self)) -> Self {
+type Range = std::ops::Range<usize>;
+
+impl From<Range> for SpanList {
+    fn from(span: Range) -> Self {
+        Span::from(span).into()
+    }
+}
+
+impl From<(Span, &Self)> for SpanList {
+    fn from(value: (Span, &Self)) -> Self {
         Self {
-            span: value.0.clone(),
+            span: value.0,
             source: value.1.source.clone(),
         }
     }
