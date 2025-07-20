@@ -299,10 +299,10 @@ pub fn lexer<'src, 'arch: 'src>(
     // Definition of a token
     token
         .map_with(|tok, e| (tok, e.span()))
-        .padded_by(padding)
-        .repeated()
+        .separated_by(padding)
+        .allow_leading()
+        .allow_trailing()
         .collect()
-        .padded_by(padding)
 }
 
 #[cfg(test)]
