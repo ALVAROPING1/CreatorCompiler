@@ -172,11 +172,14 @@ where
     I: ValueInput<'tokens, Token = Token, Span = Span>,
 {
     // Expression: `expression -> element [operator element]*`
-    elem.clone().foldl(
+    let expr = elem.clone().foldl(
         // Allow operators to be prefixed by newlines
         just(Token::Ctrl('\n'))
             .repeated()
-            .ignore_then(op.map_with(|op, e| (op, e.span())))
+            .ignore_then(
+                op.map_with(|op, e| (op, e.span()))
+                    .labelled("binary operator"),
+            )
             .then(elem)
             .repeated(),
         |lhs, (op, rhs)| {
@@ -192,7 +195,8 @@ where
                 span.into(),
             )
         },
-    )
+    );
+    expr.labelled("expression").as_context()
 }
 
 /// Creates a parser for expressions
@@ -210,7 +214,16 @@ where
         Token::Character(c) => Expr::Character(c),
         Token::Identifier(ident) = e => Expr::Identifier((ident, e.span())),
         Token::Directive(ident) = e => Expr::Identifier((ident, e.span())),
-    };
+    }
+    .labelled("literal");
+
+    // Operator parser similar to `select!`. For this usage (selecting exact tokens rather than
+    // patterns) `select!` has worse errors as it can't use the patterns in the errors (it just
+    // knows something else was expected)
+    macro_rules! op {
+        ($($i:expr => $o:expr),+) => { choice(($(just(Token::Operator($i)).to($o),)+)) };
+    }
+
     recursive(|expr| {
         // NOTE: newlines before atoms (literal numbers/parenthesized expressions) and operators
         // are allowed so that expressions may span multiple lines. Newlines aren't allowed after
@@ -225,16 +238,14 @@ where
                 ))
                 .map_with(|atom, e| (atom, e.span())),
         );
+        let atom = atom.labelled("expression").as_context();
 
         // Unary expressions have the highest precedence
         // Unary expression: `unary -> (\n* [+-~])* atom`
         let op = newline().ignore_then(
-            select! {
-                Token::Operator('+') => UnaryOp::Plus,
-                Token::Operator('-') => UnaryOp::Minus,
-                Token::Operator('~') => UnaryOp::Complement,
-            }
-            .map_with(|op, e| (op, e.span())),
+            op!('+' => UnaryOp::Plus, '-' => UnaryOp::Minus, '~' => UnaryOp::Complement)
+                .map_with(|op, e| (op, e.span()))
+                .labelled("unary operator"),
         );
         let unary = op
             .repeated()
@@ -247,41 +258,28 @@ where
                     },
                     span.into(),
                 )
-            });
+            })
+            .labelled("expression")
+            .as_context();
 
         // Product expressions have the second highest precedence
         // product expression: `product -> unary ([*/%] unary)*`
         let product = binary_parser(
             unary,
-            select! {
-                Token::Operator('*') => BinaryOp::Mul,
-                Token::Operator('/') => BinaryOp::Div,
-                Token::Operator('%') => BinaryOp::Rem,
-            },
+            op!('*' => BinaryOp::Mul, '/' => BinaryOp::Div, '%' => BinaryOp::Rem),
         );
 
         // Bitwise expressions have the third highest precedence
         // bitwise expression: `bitwise -> product ([|&^] product)*`
         let bitwise = binary_parser(
             product,
-            select! {
-                Token::Operator('|') => BinaryOp::BitwiseOR,
-                Token::Operator('&') => BinaryOp::BitwiseAND,
-                Token::Operator('^') => BinaryOp::BitwiseXOR,
-            },
+            op!('|' => BinaryOp::BitwiseOR, '&' => BinaryOp::BitwiseAND, '^' => BinaryOp::BitwiseXOR),
         );
 
         // Addition expressions have the lowest precedence
         // addition expression: `addition -> bitwise ([+-] bitwise)*`
-        binary_parser(
-            bitwise,
-            select! {
-                Token::Operator('+') => BinaryOp::Add,
-                Token::Operator('-') => BinaryOp::Sub,
-            },
-        )
-        .map(|(expr, _)| expr) // Remove the span from the output since we don't need it
-        .labelled("expression")
+        binary_parser(bitwise, op!('+' => BinaryOp::Add, '-' => BinaryOp::Sub))
+            .map(|(expr, _)| expr) // Remove the span from the output since we don't need it
     })
 }
 

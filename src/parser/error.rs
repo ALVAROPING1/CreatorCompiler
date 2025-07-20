@@ -55,6 +55,7 @@ impl<T: fmt::Display + std::hash::Hash + std::cmp::Eq> crate::RenderError for Ve
         let config = Config::default()
             .with_color(color)
             .with_index_type(IndexType::Byte);
+        let yellow = color.then_some(Color::Yellow);
         // Generate a report for each error
         for e in self {
             Report::build(ReportKind::Error, (filename, e.span().into_range()))
@@ -89,7 +90,7 @@ impl<T: fmt::Display + std::hash::Hash + std::cmp::Eq> crate::RenderError for Ve
                 )
                 .with_labels(e.contexts().map(|(label, span)| {
                     Label::new((filename, span.into_range()))
-                        .with_message(format!("while parsing this {label}"))
+                        .with_message(format!("While parsing this {}", Colored(label, yellow)))
                         .with_color(Color::Yellow)
                 }))
                 .finish()
