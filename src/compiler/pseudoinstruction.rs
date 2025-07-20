@@ -181,9 +181,11 @@ fn reg_name(arg: &Spanned<Expr>, origin: &SpanList) -> Result<String, ErrorData>
             expected: ArgumentType::RegisterName,
             found: ArgumentType::Expression,
         }
-        .add_span((&arg.1, origin))),
+        .add_span((arg.1, origin))),
     }
 }
+
+type Range = std::ops::Range<usize>;
 
 /// Gets the [`Span`] of a capture group
 ///
@@ -196,7 +198,7 @@ fn reg_name(arg: &Spanned<Expr>, origin: &SpanList) -> Result<String, ErrorData>
 ///
 /// Panics if the index is out of bounds
 #[must_use]
-fn capture_span(captures: &Captures, i: usize) -> Span {
+fn capture_span(captures: &Captures, i: usize) -> Range {
     captures
         .get(i)
         .expect("The capture group number given should exist")
@@ -273,7 +275,7 @@ pub fn expand<'b, 'a: 'b>(
         let name = get_arg(name).ok_or_else(|| {
             Error {
                 definition: def.clone(),
-                span: capture_span(&x, 1),
+                span: capture_span(&x, 1).into(),
                 kind: Kind::UnknownFieldName(name.to_owned()),
             }
             .compile_error(instruction, span.clone())
@@ -303,7 +305,7 @@ pub fn expand<'b, 'a: 'b>(
             .ok_or_else(|| {
                 Error {
                     definition: def.clone(),
-                    span: capture_span(&x, 1),
+                    span: capture_span(&x, 1).into(),
                     kind: Kind::UnknownFieldNumber {
                         idx: arg_num + 1,
                         size: args.len(),
@@ -318,7 +320,7 @@ pub fn expand<'b, 'a: 'b>(
         if start_bit < end_bit {
             return Err(Error {
                 definition: def.clone(),
-                span: capture_span(&x, 2).start..capture_span(&x, 3).end,
+                span: (capture_span(&x, 2).start..capture_span(&x, 3).end).into(),
                 kind: Kind::EmptyBitRange,
             }
             .compile_error(instruction, span));
@@ -355,7 +357,7 @@ pub fn expand<'b, 'a: 'b>(
             ty => {
                 return Err(Error {
                     definition: def.clone(),
-                    span: capture_span(&x, 4),
+                    span: capture_span(&x, 4).into(),
                     kind: Kind::UnknownFieldType(ty.to_owned()),
                 }
                 .compile_error(instruction, span))
@@ -365,7 +367,7 @@ pub fn expand<'b, 'a: 'b>(
         if start_bit > msb {
             return Err(Error {
                 definition: def.clone(),
-                span: capture_span(&x, 2).start..capture_span(&x, 3).end,
+                span: (capture_span(&x, 2).start..capture_span(&x, 3).end).into(),
                 kind: Kind::BitRangeOutOfBounds {
                     upper_bound: start_bit,
                     msb,
@@ -392,7 +394,7 @@ pub fn expand<'b, 'a: 'b>(
             .ok_or_else(|| {
                 Error {
                     definition: def.clone(),
-                    span: capture_span(&x, 1),
+                    span: capture_span(&x, 1).into(),
                     kind: Kind::UnknownFieldNumber {
                         idx: arg_num + 1,
                         size: args.len(),
@@ -421,7 +423,7 @@ pub fn expand<'b, 'a: 'b>(
             .ok_or_else(|| {
                 Error {
                     definition: def.clone(),
-                    span: capture_span(&x, 1),
+                    span: capture_span(&x, 1).into(),
                     kind: Kind::UnknownFieldNumber {
                         idx: arg_num + 1,
                         size: args.len(),
@@ -447,7 +449,7 @@ pub fn expand<'b, 'a: 'b>(
         js::eval_fn(code).map_err(|error| {
             Error {
                 definition: def.clone(),
-                span: capture_span(&x, 1),
+                span: capture_span(&x, 1).into(),
                 kind: Kind::EvaluationError(error),
             }
             .compile_error(instruction, span.clone())
@@ -461,7 +463,7 @@ pub fn expand<'b, 'a: 'b>(
         let result = js::eval_expr(code).map_err(|error| {
             Error {
                 definition: def.clone(),
-                span: capture_span(&x, 1),
+                span: capture_span(&x, 1).into(),
                 kind: Kind::EvaluationError(error),
             }
             .compile_error(instruction, span.clone())
@@ -486,7 +488,7 @@ pub fn expand<'b, 'a: 'b>(
         let result = js::eval_fn(&def).map_err(|error| {
             Error {
                 definition: def.clone(),
-                span: 0..def.len(),
+                span: (0..def.len()).into(),
                 kind: Kind::EvaluationError(error),
             }
             .compile_error(instruction, span.clone())
@@ -503,31 +505,35 @@ pub fn expand<'b, 'a: 'b>(
             let addr_of = |str: &str| str.as_ptr() as usize;
             // Calculate the span in the original `instructions`
             let span_start = addr_of(inst) - addr_of(def);
-            let span = span_start..(span_start + inst.len());
+            let span = (span_start..(span_start + inst.len())).into();
             // Lex the instruction
             let (name, mut args) = crate::parser::Instruction::lex(inst).map_err(|error| {
                 Error {
                     definition: def.clone(),
-                    span: span.clone(),
+                    span,
                     kind: Kind::ParseError(error),
                 }
                 .compile_error(instruction, source.span.clone())
             })?;
+            let name_span: Span = (span_start..span_start + name.len()).into();
+            let args_span: Span = (name_span.end + 1..span_start + inst.len()).into();
             // Update the spans on the tokens to be relative to the start of the definition rather
             // than relative to the start of the instruction
             for tok in &mut args {
-                tok.1.start += span_start;
-                tok.1.end += span_start;
+                tok.1.start += args_span.start;
+                tok.1.end += args_span.start;
             }
-            let name_span = span_start..span_start + name.len();
-            let args_span = name_span.end + 1..span_start + inst.len();
             let span = SpanList {
                 span,
                 source: Some(source.clone()),
             };
             // Parse the instruction
-            let (inst_def, mut args) =
-                super::parse_instruction(arch, (name.to_owned(), name_span), &(args, args_span), &span)?;
+            let (inst_def, mut args) = super::parse_instruction(
+                arch,
+                (name.to_owned(), name_span),
+                &(args, args_span),
+                &span,
+            )?;
             // Replace the argument names that match those of the pseudoinstruction being expanded
             // with the values provided by the user
             for arg in &mut args {

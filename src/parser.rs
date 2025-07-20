@@ -23,7 +23,8 @@
 //! Contains the definition of the AST, with the entry point for parsing code being the [`parse()`]
 //! function
 
-use chumsky::{prelude::*, stream::Stream};
+use chumsky::input::{Stream, ValueInput};
+use chumsky::prelude::*;
 
 use crate::span::{Span, Spanned};
 
@@ -41,8 +42,8 @@ pub use instruction::Instruction;
 
 /// Generic parser type definition
 macro_rules! Parser {
-    ($i:ty, $o:ty) => { impl Parser<$i, $o, Error = Simple<$i>> + Clone };
-    ($i:ty, $o:ty, $lt:lifetime) => { impl Parser<$i, $o, Error = Simple<$i>> + Clone + $lt };
+    ($ilt:lifetime, $i:ty, $o:ty) => { impl Parser<$ilt, $i, $o, extra::Err<Rich<$ilt, <$i as Input<$ilt>>::Token, <$i as Input<$ilt>>::Span>>> + Clone };
+    (boxed: $ilt:lifetime, $i:ty, $o:ty) => { Boxed<$ilt, $ilt, $i, $o, extra::Err<Rich<$ilt, <$i as Input<$ilt>>::Token, <$i as Input<$ilt>>::Span>>> };
 }
 use Parser;
 
@@ -94,16 +95,19 @@ pub type AST = Vec<ASTNode>;
 
 /// Creates a parser for the tokenized input
 #[must_use]
-fn parser() -> Parser!(Token, AST) {
+fn parser<'tokens, I>() -> Parser!('tokens, I, AST)
+where
+    I: ValueInput<'tokens, Token = Token, Span = Span>,
+{
     // Newline token
     let newline = || just(Token::Ctrl('\n'));
     // Identifiers
-    let ident = select! {|span| Token::Identifier(ident) => (ident, span)}.labelled("identifier");
-    let label = select! {|span| Token::Label(name) => (name, span)}
+    let ident = select! { Token::Identifier(ident) = e => (ident, e.span())}.labelled("identifier");
+    let label = select! { Token::Label(name) = e => (name, e.span())}
         .padded_by(newline().repeated())
         .labelled("label");
     let directive_name =
-        select! {|span| Token::Directive(name) => (name, span)}.labelled("directive name");
+        select! { Token::Directive(name) = e => (name, e.span())}.labelled("directive name");
 
     // Any amount of labels: `labels -> label*`
     let labels = label.repeated().collect().labelled("labels");
@@ -119,14 +123,15 @@ fn parser() -> Parser!(Token, AST) {
             // amount of newlines following it if they are followed by a comma (indicating that more
             // expressions will follow, otherwise a single newline is required as the statement end)
             newline()
+                .map_with(|_, e| (Vec::new(), e.span()))
                 .rewind()
-                .to(Vec::new())
                 .or(expression::parser()
                     .map(Data::Number)
                     .or(select! { Token::String(s) => Data::String(s) })
-                    .map_with_span(|x, span| (x, span))
-                    .separated_by(just(Token::Ctrl(',')).padded_by(newline().repeated())))
-                .map_with_span(|x, span| (x, span))
+                    .map_with(|x, e| (x, e.span()))
+                    .separated_by(just(Token::Ctrl(',')).padded_by(newline().repeated()))
+                    .collect()
+                    .map_with(|x, e| (x, e.span())))
                 .labelled("parameters"),
         )
         .map(|(name, args)| Statement::Directive(DirectiveNode { name, args }))
@@ -136,17 +141,21 @@ fn parser() -> Parser!(Token, AST) {
     let instruction = ident
         .then(
             newline()
-                .not()
-                .map_with_span(|token, span| (token, span))
-                .repeated()
-                .map_with_span(|args, span| (args, span)),
+                .map_with(|_, e| (Vec::new(), e.span()))
+                .rewind()
+                .or(any()
+                    .and_is(newline().not())
+                    .map_with(|token, e| (token, e.span()))
+                    .repeated()
+                    .collect()
+                    .map_with(|args, e| (args, e.span()))),
         )
         .map(|(name, args)| Statement::Instruction(InstructionNode { name, args }))
         .labelled("instruction");
 
     // Statement: `statement -> labels [instruction | directive]`
     let statement = labels
-        .then(directive.or(instruction).map_with_span(|x, s| (x, s)))
+        .then(directive.or(instruction).map_with(|x, e| (x, e.span())))
         .then_ignore(newline().ignored().or(end()))
         .padded_by(newline().repeated())
         .map(|(labels, statement)| ASTNode { labels, statement });
@@ -154,8 +163,25 @@ fn parser() -> Parser!(Token, AST) {
     // `code -> statement*`
     statement
         .repeated()
+        .collect()
         .padded_by(newline().repeated())
-        .then_ignore(end())
+}
+
+type TokenInput = chumsky::input::MappedInput<
+    Token,
+    Span,
+    Stream<std::vec::IntoIter<Spanned<Token>>>,
+    fn(Spanned<Token>) -> Spanned<Token>,
+>;
+
+/// Create an input of spanned tokens
+///
+/// # Parameters
+///
+/// * `end`: end of input position
+/// * `tokens`: vector of spanned tokens to use as input
+fn token_input(end: usize, tokens: Vec<Spanned<Token>>) -> TokenInput {
+    Stream::from_iter(tokens).map((end..end).into(), |x| x)
 }
 
 /// Tokenizes an input and parses it with a given parser
@@ -170,23 +196,14 @@ fn parser() -> Parser!(Token, AST) {
 ///
 /// Errors if the input either has an invalid token or it's syntactically invalid according to the
 /// given parser
-fn parse_with<T>(
-    parser: Parser!(Token, T),
+fn parse_with<'src, T>(
+    parser: Parser!('src, TokenInput, T),
     comment_prefix: &str,
     src: &str,
 ) -> Result<T, ParseError> {
-    let len = src.len();
-    // Lexer
-    // Create `Stream` manually to use byte spans instead of the default character spans
-    let src_iter = src.char_indices().map(|(i, c)| (c, i..i + c.len_utf8()));
-    #[allow(clippy::range_plus_one)] // Chumsky requires an inclusive range to avoid type errors
-    let stream = chumsky::stream::Stream::from_iter(len..len, src_iter);
-    let tokens = lexer::lexer(comment_prefix).parse(stream)?; // Tokenize the input
-
-    // Parser
-    #[allow(clippy::range_plus_one)] // Chumsky requires an inclusive range to avoid type errors
-    let stream = Stream::from_iter(len..len, tokens.into_iter());
-    Ok(parser.parse(stream)?)
+    let end = src.len();
+    let tokens = lexer::lexer(comment_prefix).parse(src).into_result()?; // Tokenize the input
+    Ok(parser.parse(token_input(end, tokens)).into_result()?)
 }
 
 /// Parses the input creating an abstract syntax tree
@@ -205,8 +222,10 @@ pub fn parse(comment_prefix: &str, src: &str) -> Result<Vec<ASTNode>, ParseError
 
 #[cfg(test)]
 mod test {
-    use super::{ASTNode, Data, DirectiveNode, Expr, InstructionNode, Statement, Token};
-    use super::{Span, Spanned};
+    use super::*;
+
+    type Range = std::ops::Range<usize>;
+    type Ranged<T> = (T, Range);
 
     fn test(test_cases: Vec<(&str, Vec<ASTNode>)>) {
         for (src, ast) in test_cases {
@@ -215,44 +234,49 @@ mod test {
     }
 
     #[must_use]
-    fn owned<O, T: ToOwned<Owned = O> + ?Sized>(x: Spanned<&T>) -> Spanned<O> {
-        (x.0.to_owned(), x.1)
+    fn into<T>(x: (T, impl Into<Span>)) -> Spanned<T> {
+        (x.0, x.1.into())
+    }
+
+    #[must_use]
+    fn owned<O, T: ToOwned<Owned = O> + ?Sized>(x: (&T, impl Into<Span>)) -> Spanned<O> {
+        (x.0.to_owned(), x.1.into())
     }
 
     #[must_use]
     fn directive(
-        labels: Vec<Spanned<&str>>,
-        name: Spanned<&str>,
-        args: Spanned<Vec<Spanned<Data>>>,
-        span: Span,
+        labels: Vec<Ranged<&str>>,
+        name: Ranged<&str>,
+        args: Ranged<Vec<Ranged<Data>>>,
+        span: Range,
     ) -> ASTNode {
         ASTNode {
             labels: labels.into_iter().map(owned).collect(),
             statement: (
                 Statement::Directive(DirectiveNode {
                     name: owned(name),
-                    args,
+                    args: (args.0.into_iter().map(into).collect(), args.1.into()),
                 }),
-                span,
+                span.into(),
             ),
         }
     }
 
     #[must_use]
     fn instruction(
-        labels: Vec<Spanned<&str>>,
-        name: Spanned<&str>,
-        args: Spanned<Vec<Spanned<Token>>>,
-        span: Span,
+        labels: Vec<Ranged<&str>>,
+        name: Ranged<&str>,
+        args: Ranged<Vec<Ranged<Token>>>,
+        span: Range,
     ) -> ASTNode {
         ASTNode {
             labels: labels.into_iter().map(owned).collect(),
             statement: (
                 Statement::Instruction(InstructionNode {
                     name: owned(name),
-                    args,
+                    args: (args.0.into_iter().map(into).collect(), args.1.into()),
                 }),
-                span,
+                span.into(),
             ),
         }
     }
@@ -295,7 +319,10 @@ mod test {
                         vec![
                             (Data::String("a".into()), 6..9),
                             (Data::Number(Expr::Integer(1u8.into())), 11..12),
-                            (Data::Number(Expr::Identifier(("b".into(), 14..15))), 14..15),
+                            (
+                                Data::Number(Expr::Identifier(("b".into(), (14..15).into()))),
+                                14..15,
+                            ),
                         ],
                         6..15,
                     ),

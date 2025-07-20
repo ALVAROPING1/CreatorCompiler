@@ -49,7 +49,7 @@ impl Number {
     /// Panics if both numbers are integers
     fn combine_origin(&self, rhs: &Self) -> Span {
         match (self, rhs) {
-            (Self::Float { origin, .. }, _) | (_, Self::Float { origin, .. }) => origin.clone(),
+            (Self::Float { origin, .. }, _) | (_, Self::Float { origin, .. }) => *origin,
             _ => unreachable!("We shouldn't try to combine the origin spans of 2 integers"),
         }
     }
@@ -93,6 +93,14 @@ impl From<Spanned<f64>> for Number {
         Self::Float {
             value: value.0,
             origin: value.1,
+        }
+    }
+}
+impl From<(f64, std::ops::Range<usize>)> for Number {
+    fn from(value: (f64, std::ops::Range<usize>)) -> Self {
+        Self::Float {
+            value: value.0,
+            origin: value.1.into(),
         }
     }
 }
@@ -211,6 +219,8 @@ impl_bin_op!(ops::BitXor, bitxor, ^, OperationKind::BitwiseXOR);
 mod test {
     use super::*;
 
+    type Range = std::ops::Range<usize>;
+
     #[test]
     #[allow(clippy::float_cmp)]
     fn to_float() {
@@ -218,7 +228,7 @@ mod test {
         assert_eq!(
             f64::from(Number::Float {
                 value: 101.5,
-                origin: 0..0
+                origin: (0..0).into()
             }),
             101.5
         );
@@ -226,7 +236,7 @@ mod test {
         assert_eq!(
             f32::from(Number::Float {
                 value: 101.5,
-                origin: 0..0
+                origin: (0..0).into()
             }),
             101.5
         );
@@ -238,9 +248,9 @@ mod test {
         assert_eq!(
             BigInt::try_from(Number::Float {
                 value: 101.5,
-                origin: 1..3
+                origin: (1..3).into()
             }),
-            Err(ErrorKind::UnallowedFloat(1..3))
+            Err(ErrorKind::UnallowedFloat((1..3).into()))
         );
     }
 
@@ -254,9 +264,9 @@ mod test {
         assert_eq!(
             BigUint::try_from(Number::Float {
                 value: 101.5,
-                origin: 1..3
+                origin: (1..3).into()
             }),
-            Err(ErrorKind::UnallowedFloat(1..3))
+            Err(ErrorKind::UnallowedFloat((1..3).into()))
         );
     }
 
@@ -266,7 +276,7 @@ mod test {
             Number::from((12.5, 1..4)),
             Number::Float {
                 value: 12.5,
-                origin: 1..4
+                origin: (1..4).into()
             }
         );
     }
@@ -294,7 +304,7 @@ mod test {
             !Number::from((1.5, 1..2)),
             Err(ErrorKind::UnallowedFloatOperation(
                 OperationKind::Complement,
-                1..2
+                (1..2).into()
             ))
         );
     }
@@ -416,7 +426,7 @@ mod test {
         let i2 = Number::from(-2);
         let f1 = Number::from((1.2, 1..3));
         let f2 = Number::from((2.5, 5..6));
-        let err = |s| ErrorKind::UnallowedFloatOperation(OperationKind::BitwiseOR, s);
+        let err = |s: Range| ErrorKind::UnallowedFloatOperation(OperationKind::BitwiseOR, s.into());
         assert_eq!(op(&i1, &i2), Ok(Number::from(12 | -2)));
         assert_eq!(op(&i1, &f2), Err(err(5..6)));
         assert_eq!(op(&f1, &i2), Err(err(1..3)));
@@ -442,7 +452,8 @@ mod test {
         let i2 = Number::from(-2);
         let f1 = Number::from((1.2, 1..3));
         let f2 = Number::from((2.5, 5..6));
-        let err = |s| ErrorKind::UnallowedFloatOperation(OperationKind::BitwiseAND, s);
+        let err =
+            |s: Range| ErrorKind::UnallowedFloatOperation(OperationKind::BitwiseAND, s.into());
         assert_eq!(op(&i1, &i2), Ok(Number::from(12 & -2)));
         assert_eq!(op(&i1, &f2), Err(err(5..6)));
         assert_eq!(op(&f1, &i2), Err(err(1..3)));
@@ -475,7 +486,8 @@ mod test {
         let i2 = Number::from(-2);
         let f1 = Number::from((1.2, 1..3));
         let f2 = Number::from((2.5, 5..6));
-        let err = |s| ErrorKind::UnallowedFloatOperation(OperationKind::BitwiseXOR, s);
+        let err =
+            |s: Range| ErrorKind::UnallowedFloatOperation(OperationKind::BitwiseXOR, s.into());
         assert_eq!(op(&i1, &i2), Ok(Number::from(12 ^ -2)));
         assert_eq!(op(&i1, &f2), Err(err(5..6)));
         assert_eq!(op(&f1, &i2), Err(err(1..3)));

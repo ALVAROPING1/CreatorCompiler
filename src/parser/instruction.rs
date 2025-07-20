@@ -22,7 +22,7 @@
 //!
 //! The main entry point is the [`Instruction`] type
 
-use chumsky::{prelude::*, stream::Stream};
+use chumsky::prelude::*;
 use regex::Regex;
 
 use std::sync::LazyLock;
@@ -42,9 +42,11 @@ pub struct ParsedArgument {
 /// Arguments parsed by the instruction
 pub type ParsedArgs = Vec<ParsedArgument>;
 
+type BoxedParser<'src> = super::Parser!(boxed: 'src, super::TokenInput, ParsedArgs);
+
 /// Instruction parser wrapper
 #[derive(Clone)]
-pub struct Instruction<'a>(BoxedParser<'a, Token, ParsedArgs, Simple<Token>>);
+pub struct Instruction(BoxedParser<'static>);
 
 /// Parses an identifier in the form `[fF]\d+` into a number
 ///
@@ -61,7 +63,7 @@ fn number(identifier: &str) -> usize {
     identifier[1..].parse().expect(MSG)
 }
 
-impl Instruction<'_> {
+impl Instruction {
     /// Creates a new [`Instruction`] parser
     ///
     /// # Parameters
@@ -95,6 +97,7 @@ impl Instruction<'_> {
         // disallows line comments
         let mut tokens = lexer::lexer("\0")
             .parse(fmt)
+            .into_result()
             .map_err(|_| "incorrect signature definition")?
             .into_iter()
             .map(|(tok, _)| tok); // We don't need the token spans
@@ -112,7 +115,7 @@ impl Instruction<'_> {
                             // NOTE: This value should never be read, we only need it to point to the
                             // opcode instruction field
                             vec![ParsedArgument {
-                                value: (Expr::Integer(0u8.into()), 0..0),
+                                value: (Expr::Integer(0u8.into()), (0..0).into()),
                                 field_idx: i,
                             }]
                         }
@@ -133,14 +136,13 @@ impl Instruction<'_> {
             parser = match token {
                 // The current token is an argument placeholder => parse an expression/identifier
                 Token::Identifier(ident) if FIELD.is_match(&ident) => {
-                    let i = field(ident, true)?; // Validate the field pointed to
+                    let field_idx = field(ident, true)?; // Validate the field pointed to
                     parser
-                        .chain(expression::parser().map_with_span(move |expr, span| {
-                            ParsedArgument {
-                                value: (expr, span),
-                                field_idx: i,
-                            }
-                        }))
+                        .then(expression::parser().map_with(|expr, e| (expr, e.span())))
+                        .map(move |(mut args, value)| {
+                            args.push(ParsedArgument { value, field_idx });
+                            args
+                        })
                         .boxed()
                 }
                 // The current token isn't an argument placeholder => parse it literally, ignoring
@@ -149,7 +151,7 @@ impl Instruction<'_> {
             }
         }
         // Check that there is no remaining input in the syntax and create the final parser
-        Ok(Self(parser.then_ignore(end()).boxed()))
+        Ok(Self(parser))
     }
 
     /// Parses the arguments of an instruction according to the syntax
@@ -162,9 +164,20 @@ impl Instruction<'_> {
     ///
     /// Errors if the code doesn't follow the syntax defined
     pub fn parse(&self, code: &Spanned<Vec<Spanned<Token>>>) -> Result<ParsedArgs, ParseError> {
-        let end = code.1.end;
-        let stream = Stream::from_iter(end..end, code.0.iter().cloned());
-        Ok(self.0.parse(stream)?)
+        let input = super::token_input(code.1.end, code.0.clone());
+        Ok(self.get().parse(input).into_result()?)
+    }
+
+    /// Get a reference to the parser. Because this function is generic over an input lifetime, the
+    /// returned parser can be used in many different contexts
+    //
+    // NOTE: implementation adapted from [`chumsky::cache::Cache`]. Since creating the parser can
+    // fail, we can't directly use that API
+    fn get<'src>(&self) -> &BoxedParser<'src> {
+        // SAFETY: This is safe because the stored parser has a lifetime of `'static`, so we will
+        // only ever reduce its lifetime. Since lifetimes are removed during monomorphisation, the
+        // parser must be valid for arbitrary lifetimes.
+        unsafe { &*(&raw const self.0).cast() }
     }
 
     /// Lexes an instruction represented as a string
@@ -178,23 +191,16 @@ impl Instruction<'_> {
     /// Errors if there is an error lexing the code
     pub fn lex(code: &str) -> Result<(&str, Vec<Spanned<Token>>), ParseError> {
         let (name, args) = code.trim().split_once(' ').unwrap_or((code, ""));
-        let len = code.len();
-        // Create `Stream` manually to use byte spans instead of the default character spans
-        let src_iter = args.char_indices().map(|(i, c)| {
-            let span = name.len() + 1 + i;
-            (c, span..span + c.len_utf8())
-        });
-        let stream = chumsky::stream::Stream::from_iter(len..len, src_iter);
         // NOTE: we use a null character as the comment prefix because we don't know what prefix
         // the architecture specifies here. Null characters can't appear in the input, so this
         // disallows line comments
-        let tokens = super::lexer::lexer("\0").parse(stream)?;
+        let tokens = super::lexer::lexer("\0").parse(args).into_result()?;
         Ok((name, tokens))
     }
 }
 
 // Boxed parsers don't implement `Debug`, so we need to implement it manually as an opaque box
-impl std::fmt::Debug for Instruction<'_> {
+impl std::fmt::Debug for Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("InstructionParser").finish()
     }
@@ -205,6 +211,10 @@ impl std::fmt::Debug for Instruction<'_> {
 mod test {
     use super::*;
     use crate::parser::expression::BinaryOp;
+    use crate::span::Span;
+
+    type Range = std::ops::Range<usize>;
+    type Ranged<T> = (T, Range);
 
     #[must_use]
     fn fields() -> [InstructionField<'static, ()>; 3] {
@@ -221,13 +231,16 @@ mod test {
     }
 
     fn parse(parser: &Instruction, src: &str) -> Result<ParsedArgs, ()> {
-        let ast = (lexer::lexer("#").parse(src).unwrap(), 0..src.len());
+        let ast = (lexer::lexer("#").parse(src).unwrap(), (0..src.len()).into());
         parser.parse(&ast).map_err(|e| eprintln!("{e:?}"))
     }
 
     #[must_use]
-    const fn arg(value: Spanned<Expr>, field_idx: usize) -> ParsedArgument {
-        ParsedArgument { value, field_idx }
+    fn arg(value: (Expr, impl Into<Span>), field_idx: usize) -> ParsedArgument {
+        ParsedArgument {
+            value: (value.0, value.1.into()),
+            field_idx,
+        }
     }
 
     #[must_use]
@@ -236,8 +249,9 @@ mod test {
     }
 
     #[must_use]
-    fn ident(name: Spanned<&str>) -> Spanned<Expr> {
-        (Expr::Identifier((name.0.into(), name.1.clone())), name.1)
+    fn ident(name: Ranged<&str>) -> Spanned<Expr> {
+        let s = name.1.into();
+        (Expr::Identifier((name.0.into(), s)), s)
     }
 
     #[must_use]
@@ -273,9 +287,9 @@ mod test {
                 arg(
                     (
                         Expr::BinaryOp {
-                            op: (BinaryOp::Add, 2..3),
-                            lhs: Box::new((Expr::Integer(1u8.into()), 0..1)),
-                            rhs: Box::new((Expr::Integer(1u8.into()), 4..5))
+                            op: (BinaryOp::Add, (2..3).into()),
+                            lhs: Box::new((Expr::Integer(1u8.into()), (0..1).into())),
+                            rhs: Box::new((Expr::Integer(1u8.into()), (4..5).into()))
                         },
                         0..5
                     ),
@@ -290,7 +304,7 @@ mod test {
                 arg(
                     (
                         Expr::BinaryOp {
-                            op: (BinaryOp::Sub, 2..3),
+                            op: (BinaryOp::Sub, (2..3).into()),
                             lhs: Box::new(ident(("c", 0..1))),
                             rhs: Box::new(ident(("a", 4..5)))
                         },

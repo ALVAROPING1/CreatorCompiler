@@ -91,7 +91,7 @@ impl fmt::Display for Token {
 
 /// Creates a lexer for integer literals
 #[must_use]
-fn int_lexer() -> Parser!(char, Token) {
+fn int_lexer<'src>() -> Parser!('src, &'src str, Token) {
     static EXPECT_MSG: &str = "The parsed string should always correspond with a valid number";
 
     // Decimal: integer not followed by a decimal part/exponent
@@ -102,24 +102,24 @@ fn int_lexer() -> Parser!(char, Token) {
         .map(|x| x.expect(EXPECT_MSG));
 
     // Generic base N literals
-    let base_n =
-        |n| text::digits(n).map(move |x: String| BigUint::from_str_radix(&x, n).expect(EXPECT_MSG));
+    let to_int = move |x, n| BigUint::from_str_radix(x, n).expect(EXPECT_MSG);
+    let base_n = |n| text::digits(n).to_slice().map(move |x| to_int(x, n));
     let hex = one_of("xX").ignore_then(base_n(16));
     let bin = one_of("bB").ignore_then(base_n(2));
     let octal = base_n(8);
     let base_n = just("0").ignore_then(choice((hex, bin, octal)));
 
     // Integer token
-    base_n.or(decimal).map(Token::Integer).labelled("integer")
+    let int = base_n.or(decimal).map(Token::Integer);
+    int.labelled("integer").as_context()
 }
 
 /// Creates a lexer for floating point literals
 #[must_use]
-fn float_lexer() -> Parser!(char, Token) {
+fn float_lexer<'src>() -> Parser!('src, &'src str, Token) {
     let int = text::int(10); // Integer part
     let frac = just('.').then(text::digits(10)); // Fractional part
-    let sign = one_of("+-").or_not().map(|sign| sign.unwrap_or('+')); // Optional sign
-    let exp = one_of("eE").then(sign).then(int); // Exponent part
+    let exp = one_of("eE").then(one_of("+-").or_not()).then(int); // Exponent part
 
     // Float literal: `float -> int [frac] [exp]`
     let float = int
@@ -127,22 +127,16 @@ fn float_lexer() -> Parser!(char, Token) {
         .then_ignore(one_of(".eE").rewind())
         .then(frac.or_not())
         .then(exp.or_not())
-        .map(|((int, frac), exp)| {
-            format!(
-                "{int}{}{}",
-                frac.map_or(String::new(), |(_, frac)| format!(".{frac}")),
-                exp.map_or(String::new(), |((_, sign), exp)| format!("e{sign}{exp}"))
-            )
-        })
+        .to_slice()
         .from_str()
         .map(|res: Result<f64, _>| res.expect("We already parsed it as a float literal"));
 
     // named constants: `inf`, `infinity`, and `nan`
-    let named_constant = text::ident().try_map(|ident: String, span| {
+    let named_constant = text::ident().try_map(|ident: &str, span| {
         Ok(match ident.to_lowercase().as_str() {
             "inf" | "infinity" => f64::INFINITY,
             "nan" => f64::NAN,
-            _ => return Err(Simple::custom(span, "Unallowed float literal")),
+            _ => return Err(Rich::custom(span, "Unallowed float literal")),
         })
     });
 
@@ -150,14 +144,20 @@ fn float_lexer() -> Parser!(char, Token) {
     choice((float, named_constant))
         .map(|x| Token::Float(x.into()))
         .labelled("float")
+        .as_context()
 }
 
 /// Creates a lexer for string and character literals
 #[must_use]
-fn str_lexer() -> (Parser!(char, Token), Parser!(char, Token)) {
+// We are using `impl Trait` types, so we can't split them into type aliases
+#[allow(clippy::type_complexity)]
+fn str_lexer<'src>() -> (
+    Parser!('src, &'src str, Token),
+    Parser!('src, &'src str, Token),
+) {
     // Escape sequences in strings
-    let escape = just('\\')
-        .ignore_then(choice((
+    let escape = just('\\').ignore_then(
+        choice((
             just('\\'),
             just('"'),
             just('\''),
@@ -169,36 +169,46 @@ fn str_lexer() -> (Parser!(char, Token), Parser!(char, Token)) {
             just('r').to('\r'),
             just('t').to('\t'),
             just('0').to('\0'),
-        )))
-        .map_err_with_span(|_, s: Span| {
+        ))
+        .map_err_with_state(|_, s: Span, ()| {
             #[allow(clippy::range_plus_one)]
-            Simple::custom(s.start..s.end + 1, "Invalid escape sequence")
-        });
+            Rich::custom((s.start - 1..s.end + 1).into(), "Invalid escape sequence")
+        }),
+    );
 
     // Characters allowed inside string/character literals: anything that isn't their delimiter,
     // a backslash, or a new line
-    let char = |delimiter| filter(move |c| *c != '\\' && *c != delimiter && *c != '\n').or(escape);
+    let char = |delimiter| none_of(['\\', '\n', delimiter]).or(escape);
 
     // Literal strings: `string -> " char* "`
     let string = char('"')
         .repeated()
+        .collect()
         .delimited_by(
             just('"'),
-            just('"')
-                .map_err_with_span(|_, s: Span| Simple::custom(s, "Unterminated string literal")),
+            just('"').map_err_with_state(|_, s: Span, ()| {
+                Rich::custom(s, "Unterminated string literal")
+            }),
         )
-        .collect::<String>()
-        .map(Token::String);
+        .map(Token::String)
+        .labelled("string")
+        .as_context();
 
     // Literal characters: `character -> ' char '`
     let character = char('\'')
         .delimited_by(
             just('\''),
-            just('\'').map_err_with_span(|_, s: Span| {
-                Simple::custom(s, "Unterminated character literal")
+            just('\'').map_err_with_state(|_, s: Span, ()| {
+                // For some reason this error gets a zero-width span instead of the span of the
+                // newline
+                #[allow(clippy::range_plus_one)]
+                let s = (s.start..s.end + 1).into();
+                Rich::custom(s, "Unterminated character literal")
             }),
         )
-        .map(Token::Character);
+        .map(Token::Character)
+        .labelled("character")
+        .as_context();
 
     (string, character)
 }
@@ -209,7 +219,9 @@ fn str_lexer() -> (Parser!(char, Token), Parser!(char, Token)) {
 ///
 /// * `comment_prefix`: string to use as line comment prefix
 #[must_use]
-pub fn lexer(comment_prefix: &str) -> Parser!(char, Vec<Spanned<Token>>, '_) {
+pub fn lexer<'src, 'arch: 'src>(
+    comment_prefix: &'arch str,
+) -> Parser!('src, &'src str, Vec<Spanned<Token>>) {
     let newline = text::newline().to('\n');
 
     // Integer literals
@@ -232,15 +244,23 @@ pub fn lexer(comment_prefix: &str) -> Parser!(char, Vec<Spanned<Token>>, '_) {
 
     // Other literal punctuation characters. This should be the last option if all other patterns
     // fail, so we don't need to be too specific to avoid ambiguities with other patterns
-    let literal = filter(|c: &char| !(c.is_ascii_alphanumeric() || "\"'_.".contains(*c)))
+    let literal = any()
+        .filter(|c: &char| !(c.is_ascii_alphanumeric() || "\"'_.".contains(*c)))
         .map(Token::Literal)
         .labelled("literal");
 
     // Generic identifiers
-    let ident = filter(|c: &char| c.is_ascii_alphabetic() || "_.".contains(*c))
-        .chain(filter(|c: &char| c.is_ascii_alphanumeric() || "_.".contains(*c)).repeated())
-        .collect::<String>()
-        .labelled("identifier");
+    let ident = any()
+        .filter(|c: &char| c.is_ascii_alphabetic() || "_.".contains(*c))
+        .then(
+            any()
+                .filter(|c: &char| c.is_ascii_alphanumeric() || "_.".contains(*c))
+                .repeated(),
+        )
+        .to_slice()
+        .map(ToString::to_string)
+        .labelled("identifier")
+        .as_context();
 
     // Identifiers (names/labels/directives)
     let identifier = ident
@@ -263,40 +283,55 @@ pub fn lexer(comment_prefix: &str) -> Parser!(char, Vec<Spanned<Token>>, '_) {
 
     // Comments
     let line_comment = just(comment_prefix)
-        .then(newline.not().repeated())
+        .then(any().and_is(newline.not()).repeated())
         .ignored();
-    let multiline_comment = just("/*").then(take_until(just("*/"))).ignored();
-    let comment = line_comment
-        .or(multiline_comment)
-        .ignored()
-        .labelled("comment");
+    let not = |x| any().and_is(just(x).not()).repeated();
+    let multiline_comment = not("*/").delimited_by(just("/*"), just("*/"));
+    let comment = line_comment.or(multiline_comment).labelled("comment");
 
     // Whitespace that isn't new lines
-    let whitespace = filter(|c: &char| c.is_whitespace() && *c != '\n')
+    let whitespace = any()
+        .filter(|c: &char| c.is_whitespace() && *c != '\n')
         .ignored()
         .labelled("whitespace");
     let padding = comment.or(whitespace).repeated();
 
     // Definition of a token
     token
-        .map_with_span(|tok, span| (tok, span))
+        .map_with(|tok, e| (tok, e.span()))
         .padded_by(padding)
         .repeated()
+        .collect()
         .padded_by(padding)
-        .then_ignore(end())
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod test {
+    use chumsky::label::LabelError;
+
     use super::*;
 
+    type Range = std::ops::Range<usize>;
+    type Ranged<T> = (T, Range);
+
     fn lex(code: &str) -> Result<Vec<Spanned<Token>>, ()> {
-        let len = code.len();
-        let code_iter = code.char_indices().map(|(i, c)| (c, i..i + c.len_utf8()));
-        #[allow(clippy::range_plus_one)] // Chumsky requires an inclusive range to avoid type errors
-        let stream = chumsky::stream::Stream::from_iter(len..len + 1, code_iter);
-        lexer("#").parse(stream).map_err(|e| eprintln!("{e:?}"))
+        lexer("#")
+            .parse(code)
+            .into_result()
+            .map_err(|e| eprintln!("{e:?}"))
+    }
+
+    fn error(err: Ranged<&str>, context: &[Ranged<&'static str>]) -> Rich<'static, char> {
+        let mut err = Rich::custom(err.1.into(), err.0);
+        for (label, span) in context {
+            <Rich<'_, _> as LabelError<'_, &str, _>>::in_context(
+                &mut err,
+                *label,
+                span.clone().into(),
+            );
+        }
+        err
     }
 
     #[test]
@@ -329,7 +364,8 @@ mod test {
         ];
         for (s, v) in test_cases {
             let v = v.into();
-            assert_eq!(lex(s), Ok(vec![(Token::Integer(v), 0..s.len())]), "`{s}`");
+            let span = (0..s.len()).into();
+            assert_eq!(lex(s), Ok(vec![(Token::Integer(v), span)]), "`{s}`");
         }
     }
 
@@ -342,7 +378,8 @@ mod test {
             "infinity", "Infinity", "INFINITY", "nan", "NAN", "NaN",
         ];
         for s in test_cases {
-            assert_eq!(lex(s), Ok(vec![(float_tok(s), 0..s.len())]), "`{s}`");
+            let span = (0..s.len()).into();
+            assert_eq!(lex(s), Ok(vec![(float_tok(s), span)]), "`{s}`");
         }
     }
 
@@ -367,27 +404,33 @@ mod test {
         for s in ["", "a", "test", "TEST", "0a", "π √  🅐 󰸞"] {
             assert_eq!(
                 lex(&format!("\"{s}\"")),
-                Ok(vec![(Token::String(s.into()), 0..s.len() + 2)])
+                Ok(vec![(Token::String(s.into()), (0..s.len() + 2).into())])
             );
         }
         // escape sequences
         for (s, res) in ESCAPE_SEQUENCES {
+            let span = (0..s.len() + 3).into();
             assert_eq!(
                 lex(&format!("\"\\{s}\"")),
-                Ok(vec![(Token::String(res.to_string()), 0..s.len() + 3)])
+                Ok(vec![(Token::String(res.to_string()), span)])
             );
         }
         let msg = "\"a string with escape sequences like newline `\\n` or tabs `\\t`, also quotes `\\\"` and literal backslashes `\\\\`\"";
-        assert_eq!(lex(msg), Ok(vec![(Token::String("a string with escape sequences like newline `\n` or tabs `\t`, also quotes `\"` and literal backslashes `\\`".into()), 0..msg.len())]));
-        let err = Simple::custom(8..10, "Invalid escape sequence").with_label("token");
-        assert_eq!(lexer("#").parse("\"invalid\\z\""), Err(vec![err]));
-        let err = Simple::custom(5..6, "Unterminated string literal").with_label("token");
-        assert_eq!(lexer("#").parse("\"test\ntest"), Err(vec![err]));
+        assert_eq!(lex(msg), Ok(vec![(Token::String("a string with escape sequences like newline `\n` or tabs `\t`, also quotes `\"` and literal backslashes `\\`".into()), (0..msg.len()).into())]));
+        let err = error(("Invalid escape sequence", 8..10), &[("string", 0..9)]);
+        assert_eq!(
+            lexer("#").parse("\"invalid\\z\"").into_result(),
+            Err(vec![err])
+        );
+        let err = error(("Unterminated string literal", 5..6), &[("string", 0..5)]);
+        assert_eq!(
+            lexer("#").parse("\"test\ntest").into_result(),
+            Err(vec![err])
+        );
     }
 
     #[test]
     fn char() {
-        // normal characters
         let ascii = ('!'..='~').filter(|c| !"\\\'".contains(*c));
         let chars = ascii
             .chain('¡'..='±')
@@ -406,19 +449,22 @@ mod test {
         for c in chars {
             assert_eq!(
                 lex(&format!("'{c}'")),
-                Ok(vec![(Token::Character(c), 0..c.len_utf8() + 2)])
+                Ok(vec![(Token::Character(c), (0..c.len_utf8() + 2).into())])
             );
         }
         for (s, res) in ESCAPE_SEQUENCES {
             assert_eq!(
                 lex(&format!("'\\{s}'")),
-                Ok(vec![(Token::Character(res), 0..s.len() + 3)])
+                Ok(vec![(Token::Character(res), (0..s.len() + 3).into())])
             );
         }
-        let err = Simple::custom(1..3, "Invalid escape sequence").with_label("token");
-        assert_eq!(lexer("#").parse("'\\z'"), Err(vec![err]));
-        let err = Simple::custom(2..3, "Unterminated character literal").with_label("token");
-        assert_eq!(lexer("#").parse("'a\ntest"), Err(vec![err]));
+        let err = error(("Invalid escape sequence", 1..3), &[("character", 0..2)]);
+        assert_eq!(lexer("#").parse("'\\z'").into_result(), Err(vec![err]));
+        let err = error(
+            ("Unterminated character literal", 2..3),
+            &[("character", 0..2)],
+        );
+        assert_eq!(lexer("#").parse("'a\ntest").into_result(), Err(vec![err]));
     }
 
     #[test]
@@ -439,7 +485,8 @@ mod test {
             ".",
         ];
         for s in test_cases {
-            assert_eq!(lex(s), Ok(vec![(Token::Identifier(s.into()), 0..s.len())]));
+            let span = (0..s.len()).into();
+            assert_eq!(lex(s), Ok(vec![(Token::Identifier(s.into()), span)]));
         }
     }
 
@@ -463,7 +510,8 @@ mod test {
         ];
         for s in test_cases {
             let l = s.len();
-            assert_eq!(lex(s), Ok(vec![(Token::Label(s[..l - 1].into()), 0..l)]));
+            let span = (0..l).into();
+            assert_eq!(lex(s), Ok(vec![(Token::Label(s[..l - 1].into()), span)]));
         }
     }
 
@@ -483,28 +531,32 @@ mod test {
             "._1_a",
         ];
         for s in test_cases {
-            assert_eq!(lex(s), Ok(vec![(Token::Directive(s.into()), 0..s.len())]));
+            let span = (0..s.len()).into();
+            assert_eq!(lex(s), Ok(vec![(Token::Directive(s.into()), span)]));
         }
     }
 
     #[test]
     fn operator() {
         for c in "+-*/%|&^~".chars() {
-            assert_eq!(lex(&c.to_string()), Ok(vec![(Token::Operator(c), 0..1)]));
+            let span = (0..1).into();
+            assert_eq!(lex(&c.to_string()), Ok(vec![(Token::Operator(c), span)]));
         }
     }
 
     #[test]
     fn ctrl() {
         for c in ",()\n".chars() {
-            assert_eq!(lex(&c.to_string()), Ok(vec![(Token::Ctrl(c), 0..1)]));
+            let span = (0..1).into();
+            assert_eq!(lex(&c.to_string()), Ok(vec![(Token::Ctrl(c), span)]));
         }
     }
 
     #[test]
     fn literal() {
         for c in "@!?=:;${}[]\\<>".chars() {
-            assert_eq!(lex(&c.to_string()), Ok(vec![(Token::Literal(c), 0..1)]));
+            let span = (0..1).into();
+            assert_eq!(lex(&c.to_string()), Ok(vec![(Token::Literal(c), span)]));
         }
     }
 
@@ -533,21 +585,22 @@ mod test {
         for (s, v) in test_cases {
             assert_eq!(
                 lex(s),
-                Ok(vec![(Token::Identifier(s[v.clone()].into()), v)]),
+                Ok(vec![(Token::Identifier(s[v.clone()].into()), v.into())]),
                 "`{s}`"
             );
         }
         assert_eq!(
             lex("#comment\ntest"),
             Ok(vec![
-                (Token::Ctrl('\n'), 8..9),
-                (Token::Identifier("test".into()), 9..13)
+                (Token::Ctrl('\n'), (8..9).into()),
+                (Token::Identifier("test".into()), (9..13).into())
             ])
         );
         for (s, v) in [("test // asd", 0..4), ("test //asd", 0..4)] {
+            let res = lexer("//").parse(s).into_result();
             assert_eq!(
-                lexer("//").parse(s).map_err(|e| eprintln!("{e:?}")),
-                Ok(vec![(Token::Identifier(s[v.clone()].into()), v)]),
+                res.map_err(|e| eprintln!("{e:?}")),
+                Ok(vec![(Token::Identifier(s[v.clone()].into()), v.into())]),
                 "`{s}`"
             );
         }
@@ -556,7 +609,7 @@ mod test {
     #[test]
     fn sequence() {
         let src = "a 1 .z +- test:  ]\t='x'\"string\"";
-        let tokens = vec![
+        let tokens = [
             (Token::Identifier("a".into()), 0..1),
             (Token::Integer(1u8.into()), 2..3),
             (Token::Directive(".z".into()), 4..6),
@@ -567,7 +620,10 @@ mod test {
             (Token::Literal('='), 19..20),
             (Token::Character('x'), 20..23),
             (Token::String("string".into()), 23..31),
-        ];
+        ]
+        .into_iter()
+        .map(|(t, s)| (t, s.into()))
+        .collect();
         assert_eq!(lex(src), Ok(tokens));
     }
 

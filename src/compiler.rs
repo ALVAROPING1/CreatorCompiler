@@ -276,9 +276,9 @@ fn parse_instruction<'a>(
     // Otherwise, return the appropriate error. If we didn't get any errors, we didn't find any
     // definitions for the instruction
     Err(if errs.is_empty() {
-        ErrorKind::UnknownInstruction(name.0).add_span((&name.1, origin))
+        ErrorKind::UnknownInstruction(name.0).add_span((name.1, origin))
     } else {
-        ErrorKind::IncorrectInstructionSyntax(errs).add_span((&args.1, origin))
+        ErrorKind::IncorrectInstructionSyntax(errs).add_span((args.1, origin))
     })
 }
 
@@ -358,7 +358,7 @@ fn process_instruction<'arch>(
                     label_table,
                     pending_instructions,
                     instruction,
-                    (user_span.clone(), span),
+                    (user_span, span),
                 )?;
             }
         }
@@ -457,7 +457,7 @@ impl DataToken {
     /// # Errors
     ///
     /// Errors if the value doesn't contain a string
-    fn into_string(self, span: &Span) -> Result<String, ErrorData> {
+    fn into_string(self, span: Span) -> Result<String, ErrorData> {
         match self {
             Self::String(s) => Ok(s),
             Self::Number(_) => Err(ErrorKind::IncorrectArgumentType {
@@ -477,7 +477,7 @@ impl DataToken {
     /// # Errors
     ///
     /// Errors if the value doesn't contain an expression
-    fn into_expr(self, span: &Span) -> Result<Expr, ErrorData> {
+    fn into_expr(self, span: Span) -> Result<Expr, ErrorData> {
         match self {
             Self::Number(expr) => Ok(expr),
             Self::String(_) => Err(ErrorKind::IncorrectArgumentType {
@@ -567,7 +567,7 @@ fn split_statements(
         match node.statement.0 {
             StatementNode::Directive(directive) => {
                 let action = arch.find_directive(&directive.name.0).ok_or_else(|| {
-                    ErrorKind::UnknownDirective(directive.name.0).add_span(&directive.name.1)
+                    ErrorKind::UnknownDirective(directive.name.0).add_span(directive.name.1)
                 })?;
                 // Execute the directive
                 match action {
@@ -589,12 +589,12 @@ fn split_statements(
                                     expected: ArgumentType::Identifier,
                                     found: ArgumentType::Expression,
                                 }
-                                .add_span(&span))?,
+                                .add_span(span))?,
                                 DataToken::String(_) => Err(ErrorKind::IncorrectArgumentType {
                                     expected: ArgumentType::Identifier,
                                     found: ArgumentType::String,
                                 }
-                                .add_span(&span))?,
+                                .add_span(span))?,
                             };
                             global_symbols.insert(label.0);
                         }
@@ -622,7 +622,7 @@ fn split_statements(
                                 section: current_section,
                                 found: DirectiveSegment::Data,
                             }
-                            .add_span(&node.statement.1));
+                            .add_span(node.statement.1));
                         }
                     },
                 }
@@ -640,7 +640,7 @@ fn split_statements(
                         section: current_section,
                         found: DirectiveSegment::Code,
                     }
-                    .add_span(&node.statement.1));
+                    .add_span(node.statement.1));
                 }
             },
         }
@@ -686,7 +686,7 @@ impl ArgumentNumber {
                 expected: self,
                 found: args.0.len(),
             }
-            .add_span(&args.1));
+            .add_span(args.1));
         }
         Ok(())
     }
@@ -766,7 +766,7 @@ fn compile_data(
         };
         // Add the labels to the label table
         for (label, span) in &labels {
-            label_table.insert(label.clone(), span.clone(), section.get().clone())?;
+            label_table.insert(label.to_owned(), *span, section.get().clone())?;
         }
         let (statement, statement_span) = data_directive.value;
         let args = statement.values;
@@ -774,8 +774,8 @@ fn compile_data(
         match statement.data_type {
             DirectiveData::Alignment(align_type) => {
                 let (value, span) = ArgumentNumber::exactly_one(args)?;
-                let value = value.into_expr(&span)?.eval_no_ident()?;
-                let value = BigUint::try_from(value).add_span(&span)?;
+                let value = value.into_expr(span)?.eval_no_ident()?;
+                let value = BigUint::try_from(value).add_span(span)?;
                 // Calculate the align size in bytes
                 let align = match align_type {
                     // Calculate 2^argument
@@ -787,14 +787,14 @@ fn compile_data(
                                 e.into_original().into(),
                                 0.into()..=u128::MAX.into(),
                             )
-                            .add_span(&span)
+                            .add_span(span)
                         })?;
                         BigUint::from(1u8) << value
                     }
                     // If the argument is already in bytes, we don't need to do anything
                     AlignmentType::Byte => value,
                 };
-                let (start, size) = section.try_align(&align).add_span(&statement_span)?;
+                let (start, size) = section.try_align(&align).add_span(statement_span)?;
                 // If we needed to add any padding, store it in the result vector
                 if size != BigUint::ZERO {
                     memory.push(PendingData {
@@ -806,10 +806,10 @@ fn compile_data(
             }
             DirectiveData::Space(size) => {
                 let (value, span) = ArgumentNumber::exactly_one(args)?;
-                let value = value.into_expr(&span)?.eval_no_ident()?;
-                let size = BigUint::try_from(value).add_span(&span)? * size;
+                let value = value.into_expr(span)?.eval_no_ident()?;
+                let size = BigUint::try_from(value).add_span(span)? * size;
                 memory.push(PendingData {
-                    address: section.try_reserve(&size).add_span(&span)?,
+                    address: section.try_reserve(&size).add_span(span)?,
                     labels: take_spanned_vec(&mut labels),
                     value: PendingValue::Space(size),
                 });
@@ -817,11 +817,11 @@ fn compile_data(
             DirectiveData::Int(size, int_type) => {
                 ArgumentNumber::new(1, true).check(&args)?;
                 for (value, span) in args.0 {
-                    let value = value.into_expr(&span)?;
+                    let value = value.into_expr(span)?;
                     memory.push(PendingData {
                         address: section
                             .try_reserve_aligned(&size.into(), word_size_bytes)
-                            .add_span(&span)?,
+                            .add_span(span)?,
                         labels: take_spanned_vec(&mut labels),
                         value: PendingValue::Integer((value, span), size, int_type),
                     });
@@ -830,7 +830,7 @@ fn compile_data(
             DirectiveData::Float(float_type) => {
                 ArgumentNumber::new(1, true).check(&args)?;
                 for (value, span) in args.0 {
-                    let value = f64::from(value.into_expr(&span)?.eval_no_ident()?);
+                    let value = f64::from(value.into_expr(span)?.eval_no_ident()?);
                     // We intentionally want to truncate the number from f64 to f32 if the user
                     // asked for an f32
                     #[allow(clippy::cast_possible_truncation)]
@@ -841,7 +841,7 @@ fn compile_data(
                     memory.push(PendingData {
                         address: section
                             .try_reserve_aligned(&size.into(), word_size_bytes)
-                            .add_span(&span)?,
+                            .add_span(span)?,
                         labels: take_spanned_vec(&mut labels),
                         value,
                     });
@@ -850,11 +850,11 @@ fn compile_data(
             DirectiveData::String(str_type) => {
                 ArgumentNumber::new(1, true).check(&args)?;
                 for (value, span) in args.0 {
-                    let data = value.into_string(&span)?;
+                    let data = value.into_string(span)?;
                     let null_terminated = str_type == StringType::AsciiNullEnd;
                     let size = BigUint::from(data.len()) + u8::from(null_terminated);
                     memory.push(PendingData {
-                        address: section.try_reserve(&size).add_span(&span)?,
+                        address: section.try_reserve(&size).add_span(span)?,
                         labels: take_spanned_vec(&mut labels),
                         value: PendingValue::String {
                             data,
@@ -903,8 +903,8 @@ fn compile_instructions<'a>(
     for mut instruction in instructions {
         let (name, span) = instruction.value.0.name;
         let args = &instruction.value.0.args;
-        let origin_span = instruction.value.1.clone();
-        let origin = SpanList::from(&instruction.value.1);
+        let origin_span = instruction.value.1;
+        let origin = SpanList::from(instruction.value.1);
         // Get the corresponding section according to where the element should be placed
         let (section, memory) = if instruction.kernel {
             &mut kernel
@@ -913,10 +913,10 @@ fn compile_instructions<'a>(
         };
         // Add the labels to the label table
         for (label, span) in &instruction.labels {
-            label_table.insert(label.clone(), span.clone(), section.get().clone())?;
+            label_table.insert(label.clone(), *span, section.get().clone())?;
         }
         // Parse the instruction, finding a valid definition to use for the compilation
-        let parsed_instruction = parse_instruction(arch, (name, span.clone()), args, &origin)?;
+        let parsed_instruction = parse_instruction(arch, (name, span), args, &origin)?;
         // Store the next index, so we can do a small post-processing to the processed instructions
         let first_idx = memory.len();
         process_instruction(
@@ -936,7 +936,7 @@ fn compile_instructions<'a>(
         // Remove the user span from all generated instructions except the first, so the source
         // isn't repeated in the UI
         for inst in iter {
-            inst.user_span = 0..0;
+            inst.user_span = (0..0).into();
         }
     }
     Ok(combine_sections(kernel, user))
@@ -991,7 +991,8 @@ fn check_main_location(
     library: bool,
     eof: usize,
 ) -> Result<(), ErrorData> {
-    let add_main_span = |e: ErrorKind, main: &Label| e.add_span(main.span().unwrap_or(&(0..0)));
+    let add_main_span =
+        |e: ErrorKind, main: &Label| e.add_span(main.span().unwrap_or_else(|| (0..0).into()));
     match (label_table.get(arch.main_label()), library) {
         // Main label wasn't used but we aren't compiling a library => main is missing
         (None, false) => Err(ErrorKind::MissingMainLabel.add_span(eof..eof)),
@@ -1051,7 +1052,7 @@ fn evaluate_instruction_field(
                     _ => value,
                 })
             })?;
-            let value = BigInt::try_from(value).add_span((&value_span, span))?;
+            let value = BigInt::try_from(value).add_span((value_span, span))?;
             // Remove the least significant bits according to the padding specified by
             // the field
             let padding = field.range.padding();
@@ -1074,7 +1075,7 @@ fn evaluate_instruction_field(
                         expected: ArgumentType::RegisterName,
                         found: ArgumentType::Expression,
                     }
-                    .add_span((&value_span, span)))
+                    .add_span((value_span, span)))
                 }
             };
             // Convert the generic field type to an specific register type
@@ -1089,7 +1090,7 @@ fn evaluate_instruction_field(
             // least one file is found
             let mut files = arch.find_reg_files(file_type).peekable();
             files.peek().ok_or_else(|| {
-                ErrorKind::UnknownRegisterFile(file_type).add_span((&value_span, span))
+                ErrorKind::UnknownRegisterFile(file_type).add_span((value_span, span))
             })?;
             let case = arch.arch_conf.sensitive_register_name;
             // Find the register with the given name
@@ -1100,13 +1101,13 @@ fn evaluate_instruction_field(
                         name: name.clone(),
                         file: file_type,
                     }
-                    .add_span((&value_span, span))
+                    .add_span((value_span, span))
                 })?;
             (i.into(), name.to_string())
         }
         // Enumerated fields
         FieldType::Enum { enum_name } => {
-            let span = (&value_span, span);
+            let span = (value_span, span);
             // Find the definition of the enum
             let enum_def = arch.enums.get(enum_name);
             let enum_def = enum_def
@@ -1164,7 +1165,7 @@ fn translate_instruction(
     let mut translated_instruction = RE.replace_all(def.syntax.output_syntax, "\0$1").to_string();
     for arg in inst.args {
         let field = &def.syntax.fields[arg.field_idx];
-        let arg_span = (&arg.value.1.clone(), &inst.span);
+        let arg_span = (arg.value.1, &inst.span);
         let (value, value_str) =
             evaluate_instruction_field(arch, label_table, &inst.address, def, arg, &inst.span)?;
         // Update the binary/translated instruction using the values obtained
@@ -1216,9 +1217,9 @@ fn translate_data(label_table: &LabelTable, data: PendingData) -> Result<Data, E
             // Evaluate the expression used as value for integer directives
             PendingValue::Integer((value, span), size, int_type) => {
                 let value = value.eval(|label| label_eval(label_table, &data.address, label))?;
-                let value = BigInt::try_from(value).add_span(&span)?;
+                let value = BigInt::try_from(value).add_span(span)?;
                 let int = Integer::build(value, size.saturating_mul(8), Some(int_type), None);
-                Value::Integer(int.add_span(&span)?)
+                Value::Integer(int.add_span(span)?)
             }
             // Copy the data from the other types of data directives
             PendingValue::Space(x) => Value::Space(x),
@@ -1324,6 +1325,8 @@ mod test {
     use super::*;
     use crate::architecture::{Architecture, BitRange, IntegerType, NonEmptyRangeInclusive};
 
+    type Range = std::ops::Range<usize>;
+
     fn compile_with(
         src: &str,
         reserved_offset: &BigUint,
@@ -1346,7 +1349,7 @@ mod test {
     }
 
     #[must_use]
-    fn label_table(labels: impl IntoIterator<Item = (&'static str, u64, Span)>) -> LabelTable {
+    fn label_table(labels: impl IntoIterator<Item = (&'static str, u64, Range)>) -> LabelTable {
         let mut tbl = LabelTable::default();
         for v in labels {
             tbl.insert(v.0.into(), v.2, v.1.into()).unwrap();
@@ -1370,20 +1373,20 @@ mod test {
     }
 
     #[must_use]
-    fn inst(address: u64, labels: &[&str], loaded: &str, binary: &str, user: Span) -> Instruction {
+    fn inst(address: u64, labels: &[&str], loaded: &str, binary: &str, user: Range) -> Instruction {
         Instruction {
             address: address.into(),
             labels: labels.iter().map(|&x| x.to_owned()).collect(),
             loaded: loaded.into(),
             binary: bitfield(binary),
-            user,
+            user: user.into(),
         }
     }
 
     static NOP_BINARY: &str = "11110000000000000000000001111111";
 
     #[must_use]
-    fn main_nop(span: Span) -> Instruction {
+    fn main_nop(span: Range) -> Instruction {
         inst(0, &["main"], "nop", NOP_BINARY, span)
     }
 
@@ -2122,7 +2125,7 @@ mod test {
         assert_eq!(
             compile(".data\nnop\n.text\nmain: nop"),
             Err(ErrorKind::UnallowedStatementType {
-                section: Some((DirectiveSegment::Data, 0..5)),
+                section: Some((DirectiveSegment::Data, (0..5).into())),
                 found: DirectiveSegment::Code,
             }
             .add_span(6..9)),
@@ -2130,7 +2133,7 @@ mod test {
         assert_eq!(
             compile(".kdata\nnop\n.text\nmain: nop"),
             Err(ErrorKind::UnallowedStatementType {
-                section: Some((DirectiveSegment::KernelData, 0..6)),
+                section: Some((DirectiveSegment::KernelData, (0..6).into())),
                 found: DirectiveSegment::Code,
             }
             .add_span(7..10)),
@@ -2138,7 +2141,7 @@ mod test {
         assert_eq!(
             compile(".text\nmain: nop\n.byte 1"),
             Err(ErrorKind::UnallowedStatementType {
-                section: Some((DirectiveSegment::Code, 0..5)),
+                section: Some((DirectiveSegment::Code, (0..5).into())),
                 found: DirectiveSegment::Data,
             }
             .add_span(16..23)),
@@ -2146,7 +2149,7 @@ mod test {
         assert_eq!(
             compile(".ktext\nmain: nop\n.byte 1"),
             Err(ErrorKind::UnallowedStatementType {
-                section: Some((DirectiveSegment::KernelCode, 0..6)),
+                section: Some((DirectiveSegment::KernelCode, (0..6).into())),
                 found: DirectiveSegment::Data,
             }
             .add_span(17..24)),
@@ -2377,13 +2380,13 @@ mod test {
             );
             assert_eq!(
                 compile(&format!(".data\n.{directive} 1.0\n.text\nmain: nop")),
-                Err(ErrorKind::UnallowedFloat(14..17).add_span(14..17)),
+                Err(ErrorKind::UnallowedFloat((14..17).into()).add_span(14..17)),
                 "{directive}"
             );
         }
         assert_eq!(
             compile(".text\nmain: imm 0, 0, 1.0"),
-            Err(ErrorKind::UnallowedFloat(22..25).add_span(22..25)),
+            Err(ErrorKind::UnallowedFloat((22..25).into()).add_span(22..25)),
         );
         assert_eq!(
             compile(".text\nmain: reg PC, 0+2, ft1, ft2"),
@@ -2525,7 +2528,7 @@ mod test {
 
     #[test]
     fn incorrect_instruction_syntax() {
-        let assert = |err, syntaxes: &[&str], expected_span: Span| match err {
+        let assert = |err, syntaxes: &[&str], expected_span: Range| match err {
             Err(ErrorData { span, kind }) => match *kind {
                 ErrorKind::IncorrectInstructionSyntax(s) => {
                     assert_eq!(span, expected_span.into());
@@ -2550,20 +2553,20 @@ mod test {
         use error::OperationKind;
         assert_eq!(
             compile(".data\n.byte 1/0\n.text\nmain: nop"),
-            Err(ErrorKind::DivisionBy0(14..15).add_span(13..14)),
+            Err(ErrorKind::DivisionBy0((14..15).into()).add_span(13..14)),
         );
         assert_eq!(
             compile(".text\nmain: imm 0, 0, 1/0"),
-            Err(ErrorKind::DivisionBy0(24..25).add_span(23..24)),
+            Err(ErrorKind::DivisionBy0((24..25).into()).add_span(23..24)),
         );
         assert_eq!(
             compile(".text\nmain: imm 0, 0, 1%0"),
-            Err(ErrorKind::RemainderWith0(24..25).add_span(23..24)),
+            Err(ErrorKind::RemainderWith0((24..25).into()).add_span(23..24)),
         );
         assert_eq!(
             compile(".data\n.float ~1.0\n.text\nmain: nop"),
             Err(
-                ErrorKind::UnallowedFloatOperation(OperationKind::Complement, 14..17)
+                ErrorKind::UnallowedFloatOperation(OperationKind::Complement, (14..17).into())
                     .add_span(13..14)
             ),
         );
@@ -2574,7 +2577,7 @@ mod test {
         ] {
             assert_eq!(
                 compile(&format!(".data\n.float 1.0 {c} 2.0\n.text\nmain: nop")),
-                Err(ErrorKind::UnallowedFloatOperation(op, 13..16).add_span(17..18)),
+                Err(ErrorKind::UnallowedFloatOperation(op, (13..16).into()).add_span(17..18)),
             );
         }
     }
@@ -2616,11 +2619,11 @@ mod test {
     fn duplicate_label() {
         assert_eq!(
             compile(".text\nmain: nop\nmain: nop"),
-            Err(ErrorKind::DuplicateLabel("main".into(), Some(6..11)).add_span(16..21)),
+            Err(ErrorKind::DuplicateLabel("main".into(), Some((6..11).into())).add_span(16..21)),
         );
         assert_eq!(
             compile(".text\nmain: nop\nlabel:\nlabel: nop"),
-            Err(ErrorKind::DuplicateLabel("label".into(), Some(16..22)).add_span(23..29)),
+            Err(ErrorKind::DuplicateLabel("label".into(), Some((16..22).into())).add_span(23..29)),
         );
     }
 
@@ -2647,7 +2650,7 @@ mod test {
         ] {
             assert_eq!(
                 compile(&format!(".data\n.zero 12\n.{directive}\n.text\nmain: nop")),
-                Err(ErrorKind::MemorySectionFull("Data").add_span(&span)),
+                Err(ErrorKind::MemorySectionFull("Data").add_span(span)),
                 "{directive}",
             );
         }
