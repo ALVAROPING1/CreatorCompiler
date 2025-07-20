@@ -29,31 +29,29 @@ use std::fmt;
 
 use super::{Parser, Span, Spanned};
 
-/// Thin wrapper for a hasheable [`f64`] value
-// NOTE: this has to be stored as an `u64` to be able to derive `Hash`. The `Hash` trait is required
-// by token types used for parsing by `chumsky`
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
-pub struct HashableFloat(u64);
+/// Thin wrapper for an [`f64`] value that implements `Eq`
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct Float(u64);
 
-impl From<HashableFloat> for f64 {
-    fn from(value: HashableFloat) -> Self {
+impl From<Float> for f64 {
+    fn from(value: Float) -> Self {
         Self::from_bits(value.0)
     }
 }
 
-impl From<f64> for HashableFloat {
+impl From<f64> for Float {
     fn from(value: f64) -> Self {
         Self(value.to_bits())
     }
 }
 
 /// Tokens created by the lexer
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Token {
     /// Integer literal
     Integer(BigUint),
     /// Floating point literal
-    Float(HashableFloat),
+    Float(Float),
     /// String literal
     String(String),
     /// Character literal
