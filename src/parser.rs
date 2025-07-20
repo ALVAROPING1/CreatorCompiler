@@ -155,15 +155,14 @@ where
     // Statement: `statement -> labels [instruction | directive]`
     let statement = labels
         .then(directive.or(instruction).map_with(|x, e| (x, e.span())))
-        .then_ignore(newline().ignored().or(end()))
-        .padded_by(newline().repeated())
         .map(|(labels, statement)| ASTNode { labels, statement });
 
     // `code -> statement*`
     statement
-        .repeated()
+        .separated_by(newline().repeated().at_least(1))
+        .allow_leading()
+        .allow_trailing()
         .collect()
-        .padded_by(newline().repeated())
 }
 
 type TokenInput = chumsky::input::MappedInput<
