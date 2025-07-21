@@ -38,8 +38,8 @@ cli = ["clap"]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["arbitrary_precision"] }
 schemars = "0.8"
-ariadne = { version = "0.5.1" }
-chumsky = "0.10.1"
+ariadne = "0.5.1"
+chumsky = { version = "0.10.1", features = ["pratt"] }
 regex = "1.11.1"
 num-bigint = "0.4.6"
 num-traits = "0.2.19"
@@ -59,6 +59,10 @@ wasm-bindgen-test = "0.3.50"
 
 [profile.release]
 opt-level = "s"
+
+[profile.profiling]
+inherits = "release"
+debug = true
 
 [package.metadata.wasm-pack.profile.profiling]
 wasm-opt = ["-O", "-g"]
