@@ -23,6 +23,7 @@
 //! The main entry point for creating the parser is the [`parser()`] function, with the evaluation
 //! of methods being defined in the methods of the [`Expr`] type
 
+use chumsky::pratt::{infix, left, prefix};
 use chumsky::{input::ValueInput, prelude::*};
 use num_bigint::{BigInt, BigUint};
 
@@ -157,48 +158,6 @@ impl Expr {
     }
 }
 
-/// Creates a new parser for a sequence of binary expressions
-///
-/// # Parameters
-///
-/// * `elem`: parser for each atomic value of the new expression
-/// * `op`: parser for the operation symbols in the expression
-#[must_use]
-fn binary_parser<'tokens, I>(
-    elem: Parser!('tokens, I, Spanned<Expr>),
-    op: Parser!('tokens, I, BinaryOp),
-) -> Parser!('tokens, I, Spanned<Expr>)
-where
-    I: ValueInput<'tokens, Token = Token, Span = Span>,
-{
-    // Expression: `expression -> element [operator element]*`
-    let expr = elem.clone().foldl(
-        // Allow operators to be prefixed by newlines
-        just(Token::Ctrl('\n'))
-            .repeated()
-            .ignore_then(
-                op.map_with(|op, e| (op, e.span()))
-                    .labelled("binary operator"),
-            )
-            .then(elem)
-            .repeated(),
-        |lhs, (op, rhs)| {
-            // Calculate the span of the new expression from the spans of its operands, since they
-            // are on the start/end of the expression
-            let span = lhs.1.start..rhs.1.end;
-            (
-                Expr::BinaryOp {
-                    op,
-                    lhs: Box::new(lhs),
-                    rhs: Box::new(rhs),
-                },
-                span.into(),
-            )
-        },
-    );
-    expr.labelled("expression").as_context()
-}
-
 /// Creates a parser for expressions
 #[must_use]
 pub fn parser<'tokens, I>() -> Parser!('tokens, I, Expr)
@@ -221,7 +180,26 @@ where
     // patterns) `select!` has worse errors as it can't use the patterns in the errors (it just
     // knows something else was expected)
     macro_rules! op {
-        ($($i:expr => $o:expr),+) => { choice(($(just(Token::Operator($i)).to($o),)+)) };
+        (:$name:literal: $($i:expr => $o:expr),+$(,)?) => { newline().ignore_then(choice(($(just(Token::Operator($i)).to($o),)+)).map_with(|x, e| (x, e.span())).labelled(concat!($name, " operator"))) };
+        ($($i:expr => $o:expr),+) => { op!(:"binary": $($i => $o,)+) };
+    }
+
+    // Folding function for binary operations. We need to define it with a macro because the
+    // closure doesn't use the generic lifetime bounds required when stored in a variable
+    macro_rules! fold {
+        () => {
+            |lhs: Spanned<Expr>, op: Spanned<BinaryOp>, rhs: Spanned<Expr>, _| {
+                let span = lhs.1.start..rhs.1.end;
+                (
+                    Expr::BinaryOp {
+                        op,
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                    },
+                    span.into(),
+                )
+            }
+        };
     }
 
     recursive(|expr| {
@@ -240,46 +218,28 @@ where
         );
         let atom = atom.labelled("expression").as_context();
 
-        // Unary expressions have the highest precedence
-        // Unary expression: `unary -> (\n* [+-~])* atom`
-        let op = newline().ignore_then(
-            op!('+' => UnaryOp::Plus, '-' => UnaryOp::Minus, '~' => UnaryOp::Complement)
-                .map_with(|op, e| (op, e.span()))
-                .labelled("unary operator"),
-        );
-        let unary = op
-            .repeated()
-            .foldr(atom, |op: Spanned<UnaryOp>, rhs: Spanned<Expr>| {
-                let span = op.1.start..rhs.1.end;
-                (
-                    Expr::UnaryOp {
-                        op,
-                        operand: Box::new(rhs),
-                    },
-                    span.into(),
-                )
-            })
+        let expr = atom.pratt((
+            prefix(
+                4,
+                op!(:"unary": '+' => UnaryOp::Plus, '-' => UnaryOp::Minus, '~' => UnaryOp::Complement),
+                |op: Spanned<UnaryOp>, rhs: Spanned<Expr>, _| {
+                    let span = op.1.start..rhs.1.end;
+                    (
+                        Expr::UnaryOp {
+                            op,
+                            operand: Box::new(rhs),
+                        },
+                        Span::from(span),
+                    )
+                },
+            ),
+            infix(left(3), op!('*' => BinaryOp::Mul, '/' => BinaryOp::Div, '%' => BinaryOp::Rem), fold!()),
+            infix(left(2), op!('|' => BinaryOp::BitwiseOR, '&' => BinaryOp::BitwiseAND, '^' => BinaryOp::BitwiseXOR), fold!()),
+            infix(left(1), op!('+' => BinaryOp::Add, '-' => BinaryOp::Sub), fold!())
+        ));
+        expr.map(|(expr, _)| expr) // Remove the span from the output since we don't need it
             .labelled("expression")
-            .as_context();
-
-        // Product expressions have the second highest precedence
-        // product expression: `product -> unary ([*/%] unary)*`
-        let product = binary_parser(
-            unary,
-            op!('*' => BinaryOp::Mul, '/' => BinaryOp::Div, '%' => BinaryOp::Rem),
-        );
-
-        // Bitwise expressions have the third highest precedence
-        // bitwise expression: `bitwise -> product ([|&^] product)*`
-        let bitwise = binary_parser(
-            product,
-            op!('|' => BinaryOp::BitwiseOR, '&' => BinaryOp::BitwiseAND, '^' => BinaryOp::BitwiseXOR),
-        );
-
-        // Addition expressions have the lowest precedence
-        // addition expression: `addition -> bitwise ([+-] bitwise)*`
-        binary_parser(bitwise, op!('+' => BinaryOp::Add, '-' => BinaryOp::Sub))
-            .map(|(expr, _)| expr) // Remove the span from the output since we don't need it
+            .as_context()
     })
 }
 
