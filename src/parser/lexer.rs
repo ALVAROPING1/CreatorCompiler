@@ -277,7 +277,7 @@ pub fn lexer<'src, 'arch: 'src>(
     let (string, character) = str_lexer();
 
     // Any of the previous patterns can be a token
-    let token = choice((num, op, ctrl, identifier, string, character, literal)).labelled("token");
+    let token = choice((num, op, ctrl, identifier, string, character, literal));
 
     // Comments
     let line_comment = just(comment_prefix)
@@ -285,13 +285,12 @@ pub fn lexer<'src, 'arch: 'src>(
         .ignored();
     let not = |x| any().and_is(just(x).not()).repeated();
     let multiline_comment = not("*/").delimited_by(just("/*"), just("*/"));
-    let comment = line_comment.or(multiline_comment).labelled("comment");
+    let comment = line_comment.or(multiline_comment);
 
     // Whitespace that isn't new lines
     let whitespace = any()
         .filter(|c: &char| c.is_whitespace() && *c != '\n')
-        .ignored()
-        .labelled("whitespace");
+        .ignored();
     let padding = comment.or(whitespace).repeated();
 
     // Definition of a token
