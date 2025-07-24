@@ -285,13 +285,12 @@ pub fn lexer<'src, 'arch: 'src>(
         .ignored();
     let not = |x| any().and_is(just(x).not()).repeated();
     let multiline_comment = not("*/").delimited_by(just("/*"), just("*/"));
-    let comment = line_comment.or(multiline_comment);
-
     // Whitespace that isn't new lines
     let whitespace = any()
         .filter(|c: &char| c.is_whitespace() && *c != '\n')
         .ignored();
-    let padding = comment.or(whitespace).repeated();
+
+    let padding = choice((line_comment, multiline_comment, whitespace)).repeated();
 
     // Definition of a token
     token
