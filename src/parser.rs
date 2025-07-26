@@ -283,15 +283,12 @@ mod test {
 
     #[test]
     fn directives() {
+        let empty = vec![directive(vec![], (".name", 0..5), (vec![], 5..5), 0..5)];
         test(vec![
-            (
-                ".name\n",
-                vec![directive(vec![], (".name", 0..5), (vec![], 5..5), 0..5)],
-            ),
-            (
-                ".name",
-                vec![directive(vec![], (".name", 0..5), (vec![], 5..5), 0..5)],
-            ),
+            (".name\n", empty.clone()),
+            (".name\r", empty.clone()),
+            (".name\r\n", empty.clone()),
+            (".name", empty),
             (
                 ".name \"a\"\n",
                 vec![directive(
@@ -418,15 +415,12 @@ mod test {
 
     #[test]
     fn instructions() {
+        let empty = vec![instruction(vec![], ("name", 0..4), (vec![], 4..4), 0..4)];
         test(vec![
-            (
-                "name\n",
-                vec![instruction(vec![], ("name", 0..4), (vec![], 4..4), 0..4)],
-            ),
-            (
-                "name",
-                vec![instruction(vec![], ("name", 0..4), (vec![], 4..4), 0..4)],
-            ),
+            ("name\n", empty.clone()),
+            ("name\r", empty.clone()),
+            ("name\r\n", empty.clone()),
+            ("name", empty),
             (
                 "name a\n",
                 vec![instruction(
@@ -493,6 +487,13 @@ mod test {
                 ],
             ),
             (
+                "name\r\n .dir\r\n",
+                vec![
+                    instruction(vec![], ("name", 0..4), (vec![], 4..4), 0..4),
+                    directive(vec![], (".dir", 7..11), (vec![], 11..11), 7..11),
+                ],
+            ),
+            (
                 ".dir\n name\n",
                 vec![
                     directive(vec![], (".dir", 0..4), (vec![], 4..4), 0..4),
@@ -521,6 +522,13 @@ mod test {
 
     #[test]
     fn empty() {
-        test(vec![("", vec![]), ("\n", vec![]), ("\n\n", vec![])]);
+        test(vec![
+            ("", vec![]),
+            ("\n", vec![]),
+            ("\r", vec![]),
+            ("\r\n", vec![]),
+            ("\n\n", vec![]),
+            ("\r\n\n\r", vec![]),
+        ]);
     }
 }
