@@ -2338,7 +2338,7 @@ mod test {
                     expected: ArgumentNumber::new(1, false),
                     found: 0
                 }
-                .add_span(13..14)),
+                .add_span(13..13)),
                 "{directive}"
             );
             assert_eq!(
@@ -2415,7 +2415,7 @@ mod test {
                     expected: ArgumentNumber::new(1, true),
                     found: 0
                 }
-                .add_span(13..14)),
+                .add_span(13..13)),
                 "{directive}"
             );
         }
