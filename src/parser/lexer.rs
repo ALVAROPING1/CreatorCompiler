@@ -22,7 +22,7 @@
 //!
 //! The main entry point for creating the parser is the [`lexer()`] function
 
-use chumsky::prelude::*;
+use chumsky::{prelude::*, text::Char as _};
 use num_bigint::BigUint;
 use num_traits::Num as _;
 use std::fmt;
@@ -287,7 +287,7 @@ pub fn lexer<'src, 'arch: 'src>(
     let multiline_comment = not("*/").delimited_by(just("/*"), just("*/"));
     // Whitespace that isn't new lines
     let whitespace = any()
-        .filter(|c: &char| c.is_whitespace() && *c != '\n')
+        .filter(|c: &char| c.is_whitespace() && !c.is_newline())
         .ignored();
 
     let padding = choice((line_comment, multiline_comment, whitespace)).repeated();
@@ -419,10 +419,8 @@ mod test {
             Err(vec![err])
         );
         let err = error(("Unterminated string literal", 5..6), &[("string", 0..5)]);
-        assert_eq!(
-            lexer("#").parse("\"test\ntest").into_result(),
-            Err(vec![err])
-        );
+        let res = lexer("#").parse("\"test\ntest").into_result();
+        assert_eq!(res, Err(vec![err]));
     }
 
     #[test]
@@ -542,9 +540,17 @@ mod test {
 
     #[test]
     fn ctrl() {
-        for c in ",()\n".chars() {
+        for c in ",()".chars() {
             let span = (0..1).into();
             assert_eq!(lex(&c.to_string()), Ok(vec![(Token::Ctrl(c), span)]));
+        }
+    }
+
+    #[test]
+    fn newline() {
+        for s in ["\n", "\r", "\r\n"] {
+            let span = (0..s.len()).into();
+            assert_eq!(lex(s), Ok(vec![(Token::Ctrl('\n'), span)]), "{s:?}");
         }
     }
 
@@ -561,13 +567,15 @@ mod test {
         let utf8_len = "/* π √  🅐 󰸞 */".len();
         let test_cases = [
             ("  a", 2..3),
+            ("\u{A0}a", 2..3),
             ("a  ", 0..1),
             ("  abc    ", 2..5),
             ("  \ta\t\t", 3..4),
             ("\t\t\ta", 3..4),
-            ("a\t\r\t", 0..1),
+            ("a\t\u{A0}\t\u{1680}", 0..1),
             ("\ta\t\t", 1..2),
-            (" \t\ttest  \r \t \t", 3..7),
+            (" \t\ttest  \u{2000}\u{2001}\u{2002}\u{2003}\u{2004}\u{2005}\u{2006}\u{2007}\u{2008}\u{2009}\u{200A} \t \t", 3..7),
+            (" \t\ttest\u{202F}\u{205F}\u{3000}", 3..7),
             ("/* inline comment */ test", 21..25),
             ("test /* inline comment */", 0..4),
             ("/* inline comment */ test  /* inline comment */", 21..25),
