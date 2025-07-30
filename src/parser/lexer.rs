@@ -176,7 +176,18 @@ fn str_lexer<'src>() -> (
 
     // Characters allowed inside string/character literals: anything that isn't their delimiter,
     // a backslash, or a new line
-    let char = |delimiter| none_of(['\\', '\n', delimiter]).or(escape);
+    let char = |delimiter| {
+        // This would be better written with `.filter()` and `Char::is_newline()`, but `.filter()`
+        // doesn't give the correct span due to a bug, so we need to manually copy over the newline
+        // list from `Char::is_newline()`
+        // TODO: replace with `any().filter(|c| !['\\', delimiter].contains(c) && !c.is_newline())`
+        // on chumsky 0.10.2
+        none_of([
+            '\\', delimiter, '\n', '\r', '\x0B', '\x0C', '\u{0085}', '\u{2028}', '\u{2029}',
+        ])
+        .or(escape)
+    };
+    let err = |msg| move |e: Rich<'_, _>| Rich::custom(*e.span(), msg);
 
     // Literal strings: `string -> " char* "`
     let string = char('"')
@@ -184,9 +195,7 @@ fn str_lexer<'src>() -> (
         .collect()
         .delimited_by(
             just('"'),
-            just('"').map_err_with_state(|_, s: Span, ()| {
-                Rich::custom(s, "Unterminated string literal")
-            }),
+            just('"').map_err(err("Unterminated string literal")),
         )
         .map(Token::String)
         .labelled("string")
@@ -196,13 +205,7 @@ fn str_lexer<'src>() -> (
     let character = char('\'')
         .delimited_by(
             just('\''),
-            just('\'').map_err_with_state(|_, s: Span, ()| {
-                // For some reason this error gets a zero-width span instead of the span of the
-                // newline
-                #[allow(clippy::range_plus_one)]
-                let s = (s.start..s.end + 1).into();
-                Rich::custom(s, "Unterminated character literal")
-            }),
+            just('\'').map_err(err("Unterminated character literal")),
         )
         .map(Token::Character)
         .labelled("character")
@@ -379,7 +382,6 @@ mod test {
         }
     }
 
-    // escape sequences
     const ESCAPE_SEQUENCES: [(&str, char); 11] = [
         ("\"", '\"'),
         ("\'", '\''),
@@ -392,6 +394,15 @@ mod test {
         ("b", '\x08'),
         ("e", '\x1B'),
         ("f", '\x0C'),
+    ];
+
+    const NEWLINES: [char; 7] = [
+        '\n', '\r',       // Common newlines
+        '\x0B',     // Vertical tab
+        '\x0C',     // Form feed
+        '\u{0085}', // Next line
+        '\u{2028}', // Line separator
+        '\u{2029}', // Paragraph separator
     ];
 
     #[test]
@@ -418,9 +429,13 @@ mod test {
             lexer("#").parse("\"invalid\\z\"").into_result(),
             Err(vec![err])
         );
-        let err = error(("Unterminated string literal", 5..6), &[("string", 0..5)]);
-        let res = lexer("#").parse("\"test\ntest").into_result();
-        assert_eq!(res, Err(vec![err]));
+        for newline in NEWLINES {
+            let s = 5..5 + newline.len_utf8();
+            let err = error(("Unterminated string literal", s), &[("string", 0..5)]);
+            let src = format!("\"test{newline}test");
+            let res = lexer("#").parse(&src).into_result();
+            assert_eq!(res, Err(vec![err]), "{newline:?}");
+        }
     }
 
     #[test]
@@ -459,6 +474,16 @@ mod test {
             &[("character", 0..2)],
         );
         assert_eq!(lexer("#").parse("'a\ntest").into_result(), Err(vec![err]));
+        for newline in NEWLINES {
+            let s = 2..2 + newline.len_utf8();
+            let err = error(
+                ("Unterminated character literal", s),
+                &[("character", 0..2)],
+            );
+            let src = format!("'a{newline}test");
+            let res = lexer("#").parse(&src).into_result();
+            assert_eq!(res, Err(vec![err]), "{newline:?}");
+        }
     }
 
     #[test]
@@ -548,10 +573,12 @@ mod test {
 
     #[test]
     fn newline() {
-        for s in ["\n", "\r", "\r\n"] {
-            let span = (0..s.len()).into();
-            assert_eq!(lex(s), Ok(vec![(Token::Ctrl('\n'), span)]), "{s:?}");
+        for s in NEWLINES {
+            let span = (0..s.len_utf8()).into();
+            let src = s.to_string();
+            assert_eq!(lex(&src), Ok(vec![(Token::Ctrl('\n'), span)]), "{s:?}");
         }
+        assert_eq!(lex("\r\n"), Ok(vec![(Token::Ctrl('\n'), (0..2).into())]));
     }
 
     #[test]
