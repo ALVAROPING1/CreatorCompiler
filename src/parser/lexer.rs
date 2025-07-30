@@ -27,7 +27,7 @@ use num_bigint::BigUint;
 use num_traits::Num as _;
 use std::fmt;
 
-use super::{Parser, Span, Spanned};
+use super::{Parser, Spanned};
 
 /// Thin wrapper for an [`f64`] value that implements `Eq`
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -168,9 +168,10 @@ fn str_lexer<'src>() -> (
             just('t').to('\t'),
             just('0').to('\0'),
         ))
-        .map_err_with_state(|_, s: Span, ()| {
-            #[allow(clippy::range_plus_one)]
-            Rich::custom((s.start - 1..s.end + 1).into(), "Invalid escape sequence")
+        .map_err(|e: Rich<'_, char>| {
+            let mut s = *e.span();
+            s.start -= 1; // Include the `\` prefix in the span
+            Rich::custom(s, "Invalid escape sequence")
         }),
     );
 
