@@ -196,15 +196,23 @@ fn token_input(end: usize, tokens: Vec<Spanned<Token>>) -> TokenInput {
 ///
 /// Errors if the input either has an invalid token or it's syntactically invalid according to the
 /// given parser
-fn parse_with<'src, T>(
-    parser: Parser!('src, TokenInput, T),
-    comment_prefix: &str,
-    src: &str,
-) -> Result<T, ParseError> {
-    let end = src.len();
-    let tokens = lexer::lexer(comment_prefix).parse(src).into_result()?; // Tokenize the input
-    Ok(parser.parse(token_input(end, tokens)).into_result()?)
+// NOTE: this has to be implemented with a macro in order for type inference to be able to get the
+// correct types, since we can't specify them ourselves in a function signature
+macro_rules! parse_with {
+    ($parser:expr, $comment_prefix:expr, $src:expr) => {{
+        use $crate::parser::{lexer, ParseError};
+        let end = $src.len();
+        || -> Result<_, ParseError> {
+            let tokens = lexer::lexer($comment_prefix).parse($src).into_result()?;
+            // TODO: replace with `chumsky::input::IterInput` on chumsky 0.10.2 (on 0.10.1 it
+            // doesn't implement the correct traits)
+            let tokens = tokens.map((end..end).into(), |(x, s)| (x, s));
+            let res = $parser.parse(tokens).into_result()?;
+            Ok(res)
+        }()
+    }};
 }
+use parse_with;
 
 /// Parses the input creating an abstract syntax tree
 ///
@@ -217,7 +225,7 @@ fn parse_with<'src, T>(
 ///
 /// Errors if the input is syntactically invalid
 pub fn parse(comment_prefix: &str, src: &str) -> Result<Vec<ASTNode>, ParseError> {
-    parse_with(parser(), comment_prefix, src)
+    parse_with!(parser(), comment_prefix, src)
 }
 
 #[cfg(test)]

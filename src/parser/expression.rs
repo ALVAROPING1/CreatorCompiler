@@ -249,7 +249,7 @@ mod test {
     use crate::compiler::error::OperationKind;
 
     fn parse(code: &str) -> Result<Expr, ()> {
-        super::super::parse_with(super::parser(), "#", code).map_err(|_| ())
+        super::super::parse_with!(super::parser(), "#", code).map_err(|_| ())
     }
 
     type ExprResult = Result<Number, ErrorData>;
