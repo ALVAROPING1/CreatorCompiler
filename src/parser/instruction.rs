@@ -22,12 +22,13 @@
 //!
 //! The main entry point is the [`Instruction`] type
 
+use chumsky::input::{MappedInput, Stream};
 use chumsky::prelude::*;
 use regex::Regex;
 
 use std::sync::LazyLock;
 
-use super::{expression, expression::Expr, lexer, ParseError, Spanned, Token};
+use super::{expression, expression::Expr, lexer, ParseError, Span, Spanned, Token};
 use crate::architecture::{FieldType, InstructionField};
 
 /// Value of a parsed argument
@@ -42,7 +43,20 @@ pub struct ParsedArgument {
 /// Arguments parsed by the instruction
 pub type ParsedArgs = Vec<ParsedArgument>;
 
-type BoxedParser<'src> = super::Parser!(boxed: 'src, super::TokenInput, ParsedArgs);
+/// Input type to be used with instruction argument parsers
+// NOTE: we need to name this input type to be able to box the parsers, which is required to store
+// them on a struct
+// TODO: replace with `chumsky::input::IterInput` on chumsky 0.10.2 (on 0.10.1 it doesn't implement
+// the correct traits)
+type TokenInput = MappedInput<
+    Token,
+    Span,
+    Stream<std::vec::IntoIter<Spanned<Token>>>,
+    fn(Spanned<Token>) -> Spanned<Token>,
+>;
+
+/// Parser type used internally by instruction argument parsers
+type BoxedParser<'src> = super::Parser!(boxed: 'src, TokenInput, ParsedArgs);
 
 /// Instruction parser wrapper
 #[derive(Clone)]
@@ -164,8 +178,11 @@ impl Instruction {
     ///
     /// Errors if the code doesn't follow the syntax defined
     pub fn parse(&self, code: &Spanned<Vec<Spanned<Token>>>) -> Result<ParsedArgs, ParseError> {
-        let input = super::token_input(code.1.end, code.0.clone());
-        Ok(self.get().parse(input).into_result()?)
+        let end = code.1.end;
+        Ok(self
+            .get()
+            .parse(Stream::from_iter(code.0.clone()).map((end..end).into(), |x| x))
+            .into_result()?)
     }
 
     /// Get a reference to the parser. Because this function is generic over an input lifetime, the

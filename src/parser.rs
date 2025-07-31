@@ -23,8 +23,7 @@
 //! Contains the definition of the AST, with the entry point for parsing code being the [`parse()`]
 //! function
 
-use chumsky::input::{Stream, ValueInput};
-use chumsky::prelude::*;
+use chumsky::{input::ValueInput, prelude::*};
 
 use crate::span::{Span, Spanned};
 
@@ -165,23 +164,6 @@ where
         .allow_leading()
         .allow_trailing()
         .collect()
-}
-
-type TokenInput = chumsky::input::MappedInput<
-    Token,
-    Span,
-    Stream<std::vec::IntoIter<Spanned<Token>>>,
-    fn(Spanned<Token>) -> Spanned<Token>,
->;
-
-/// Create an input of spanned tokens
-///
-/// # Parameters
-///
-/// * `end`: end of input position
-/// * `tokens`: vector of spanned tokens to use as input
-fn token_input(end: usize, tokens: Vec<Spanned<Token>>) -> TokenInput {
-    Stream::from_iter(tokens).map((end..end).into(), |x| x)
 }
 
 /// Tokenizes an input and parses it with a given parser
