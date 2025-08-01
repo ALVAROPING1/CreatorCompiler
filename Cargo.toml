@@ -56,6 +56,7 @@ js-sys = { version = "0.3.77", optional = true }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.50"
+criterion = "0.7"
 
 [profile.release]
 opt-level = "s"
@@ -66,3 +67,7 @@ debug = true
 
 [package.metadata.wasm-pack.profile.profiling]
 wasm-opt = ["-O", "-g"]
+
+[[bench]]
+name = "benchmark"
+harness = false
