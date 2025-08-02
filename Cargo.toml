@@ -60,6 +60,8 @@ criterion = "0.7"
 
 [profile.release]
 opt-level = "s"
+lto = "thin"
+codegen-units = 1
 
 [profile.profiling]
 inherits = "release"
