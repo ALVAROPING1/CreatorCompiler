@@ -521,9 +521,13 @@ pub fn expand<'b, 'a: 'b>(
             }
             let name_span = span_start..span_start + name.len();
             let args_span = name_span.end + 1..span_start + inst.len();
+            let span = SpanList {
+                span,
+                source: Some(source.clone()),
+            };
             // Parse the instruction
             let (inst_def, mut args) =
-                super::parse_instruction(arch, (name.to_owned(), name_span), &(args, args_span))?;
+                super::parse_instruction(arch, (name.to_owned(), name_span), &(args, args_span), &span)?;
             // Replace the argument names that match those of the pseudoinstruction being expanded
             // with the values provided by the user
             for arg in &mut args {
@@ -534,10 +538,6 @@ pub fn expand<'b, 'a: 'b>(
                     }
                 }
             }
-            let span = SpanList {
-                span,
-                source: Some(source.clone()),
-            };
             Ok(((inst_def, args), span))
         })
         .collect::<Result<Vec<_>, _>>()

@@ -196,6 +196,7 @@ enum InstructionDefinition<'arch> {
 /// * `arch`: architecture definition
 /// * `name`: name of the instruction
 /// * `args`: vector of tokens that form the instruction arguments
+/// * `origin`: origin span of the instruction
 ///
 /// # Errors
 ///
@@ -205,6 +206,7 @@ fn parse_instruction<'a>(
     arch: &'a Architecture,
     name: Spanned<String>,
     args: &Spanned<Vec<Spanned<Token>>>,
+    origin: &SpanList,
 ) -> Result<(InstructionDefinition<'a>, ParsedArgs), ErrorData> {
     let mut possible_def = None;
     // Errors produced on each of the attempted parses
@@ -274,9 +276,9 @@ fn parse_instruction<'a>(
     // Otherwise, return the appropriate error. If we didn't get any errors, we didn't find any
     // definitions for the instruction
     Err(if errs.is_empty() {
-        ErrorKind::UnknownInstruction(name.0).add_span(&name.1)
+        ErrorKind::UnknownInstruction(name.0).add_span((&name.1, origin))
     } else {
-        ErrorKind::IncorrectInstructionSyntax(errs).add_span(&args.1)
+        ErrorKind::IncorrectInstructionSyntax(errs).add_span((&args.1, origin))
     })
 }
 
@@ -903,6 +905,9 @@ fn compile_instructions<'a>(
 
     for mut instruction in instructions {
         let (name, span) = instruction.value.0.name;
+        let args = &instruction.value.0.args;
+        let origin_span = instruction.value.1.clone();
+        let origin = SpanList::from(&instruction.value.1);
         // Get the corresponding section according to where the element should be placed
         let (section, memory) = if instruction.kernel {
             &mut kernel
@@ -917,8 +922,7 @@ fn compile_instructions<'a>(
             )?;
         }
         // Parse the instruction, finding a valid definition to use for the compilation
-        let parsed_instruction =
-            parse_instruction(arch, (name, span.clone()), &instruction.value.0.args)?;
+        let parsed_instruction = parse_instruction(arch, (name, span.clone()), args, &origin)?;
         // Store the next index, so we can do a small post-processing to the processed instructions
         let first_idx = memory.len();
         process_instruction(
@@ -927,7 +931,7 @@ fn compile_instructions<'a>(
             label_table,
             memory,
             parsed_instruction,
-            (instruction.value.1.clone(), instruction.value.1.into()),
+            (origin_span, origin),
         )?;
         let mut iter = memory[first_idx..].iter_mut().fuse();
         // Add the labels attached to the instruction in the assembly code to the first generated
