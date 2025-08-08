@@ -22,8 +22,7 @@
 //!
 //! The main entry point is the [`Instruction`] type
 
-use chumsky::input::{MappedInput, Stream};
-use chumsky::prelude::*;
+use chumsky::{prelude::*, input::MappedInput};
 use regex::Regex;
 
 use std::sync::LazyLock;
@@ -48,15 +47,11 @@ pub type ParsedArgs = Vec<ParsedArgument>;
 // them on a struct
 // TODO: replace with `chumsky::input::IterInput` on chumsky 0.10.2 (on 0.10.1 it doesn't implement
 // the correct traits)
-type TokenInput = MappedInput<
-    Token,
-    Span,
-    Stream<std::vec::IntoIter<Spanned<Token>>>,
-    fn(Spanned<Token>) -> Spanned<Token>,
->;
+type TokenInput<'src> =
+    MappedInput<Token, Span, &'src [Spanned<Token>], fn(&Spanned<Token>) -> (&Token, &Span)>;
 
 /// Parser type used internally by instruction argument parsers
-type BoxedParser<'src> = super::Parser!(boxed: 'src, TokenInput, ParsedArgs);
+type BoxedParser<'src> = super::Parser!(boxed: 'src, TokenInput<'src>, ParsedArgs);
 
 /// Instruction parser wrapper
 #[derive(Clone)]
@@ -181,7 +176,7 @@ impl Instruction {
         let end = code.1.end;
         Ok(self
             .get()
-            .parse(Stream::from_iter(code.0.clone()).map((end..end).into(), |x| x))
+            .parse(code.0.map((end..end).into(), |(x, s)| (x, s)))
             .into_result()?)
     }
 
