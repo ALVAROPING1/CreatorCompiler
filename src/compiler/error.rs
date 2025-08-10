@@ -676,7 +676,7 @@ impl crate::RenderError for PseudoinstructionError {
             .expect("Writing to an in-memory vector shouldn't fail");
         writeln!(&mut buffer).expect("Writing to an in-memory vector can't fail");
         if let PseudoinstructionErrorKind::ParseError(err) = &self.kind {
-            err.format(FILENAME, &src[self.span.into_range()], buffer, color);
+            err.format(FILENAME, src, buffer, color);
         }
     }
 }

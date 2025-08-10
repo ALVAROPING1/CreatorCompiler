@@ -57,6 +57,9 @@ type BoxedParser<'src> = super::Parser!(boxed: 'src, TokenInput<'src>, ParsedArg
 #[derive(Clone)]
 pub struct Instruction(BoxedParser<'static>);
 
+/// Instruction statement AST node with references to data
+pub type InstructionNodeRef<'src> = (Spanned<&'src str>, Spanned<&'src [Spanned<Token>]>);
+
 /// Parses an identifier in the form `[fF]\d+` into a number
 ///
 /// # Parameters
@@ -172,7 +175,7 @@ impl Instruction {
     /// # Errors
     ///
     /// Errors if the code doesn't follow the syntax defined
-    pub fn parse(&self, code: &Spanned<Vec<Spanned<Token>>>) -> Result<ParsedArgs, ParseError> {
+    pub fn parse(&self, code: Spanned<&[Spanned<Token>]>) -> Result<ParsedArgs, ParseError> {
         let end = code.1.end;
         Ok(self
             .get()
@@ -201,13 +204,33 @@ impl Instruction {
     /// # Errors
     ///
     /// Errors if there is an error lexing the code
-    pub fn lex(code: &str) -> Result<(&str, Vec<Spanned<Token>>), ParseError> {
-        let (name, args) = code.trim().split_once(' ').unwrap_or((code, ""));
+    pub fn lex(code: &str) -> Result<Vec<Spanned<Token>>, ParseError> {
         // NOTE: we use a null character as the comment prefix because we don't know what prefix
         // the architecture specifies here. Null characters can't appear in the input, so this
         // disallows line comments
-        let tokens = super::lexer::lexer("\0").parse(args).into_result()?;
-        Ok((name, tokens))
+        Ok(super::lexer::lexer("\0").parse(code).into_result()?)
+    }
+
+    /// Parses an instruction into a pair of name and arguments
+    ///
+    /// # Parameters
+    ///
+    /// * `end`: end of input position
+    /// * `tokens`: list of tokens to parse
+    ///
+    /// # Errors
+    ///
+    /// Errors if the tokens don't match the syntax
+    pub fn parse_name(
+        end: usize,
+        tokens: &[Spanned<Token>],
+    ) -> Result<InstructionNodeRef, ParseError> {
+        let args = any::<_, extra::Err<Rich<_, _>>>().repeated().to_slice();
+        let parser = select_ref! { Token::Identifier(name) = e => (name.as_str(), e.span()) }
+            .labelled("identifier")
+            .then(args.map_with(|x, e| (x, e.span())));
+        let input = tokens.map((end..end).into(), |(x, s)| (x, s));
+        Ok(parser.parse(input).into_result()?)
     }
 }
 
@@ -243,8 +266,8 @@ mod test {
     }
 
     fn parse(parser: &Instruction, src: &str) -> Result<ParsedArgs, ()> {
-        let ast = (lexer::lexer("#").parse(src).unwrap(), (0..src.len()).into());
-        parser.parse(&ast).map_err(|e| eprintln!("{e:?}"))
+        let (ast, span) = (lexer::lexer("#").parse(src).unwrap(), (0..src.len()).into());
+        parser.parse((&ast, span)).map_err(|e| eprintln!("{e:?}"))
     }
 
     #[must_use]
