@@ -36,7 +36,7 @@ use std::sync::LazyLock;
 
 use crate::architecture::{Architecture, FloatType, Pseudoinstruction, RegisterType};
 use crate::number::Number;
-use crate::parser::ParseError;
+use crate::parser::{ParseError, Token};
 
 use super::{ArgumentType, ErrorData, ErrorKind, InstructionDefinition, LabelTable};
 use super::{Expr, ParsedArgs};
@@ -496,44 +496,32 @@ pub fn expand<'b, 'a: 'b>(
         def = js::to_string(result);
     }
 
-    // Process the resulting instruction sequence
+    // Lex the instructions
     let source = Rc::new(Source { code: def, span });
     let def = &source.code;
-    def.split_terminator(';')
-        .map(|inst| {
-            // Gets the address of the start of a string
-            let addr_of = |str: &str| str.as_ptr() as usize;
-            // Calculate the span in the original `instructions`
-            let span_start = addr_of(inst) - addr_of(def);
-            let span = (span_start..(span_start + inst.len())).into();
-            // Lex the instruction
-            let (name, mut args) = crate::parser::Instruction::lex(inst).map_err(|error| {
-                Error {
-                    definition: def.clone(),
-                    span,
-                    kind: Kind::ParseError(error),
-                }
-                .compile_error(instruction, source.span.clone())
-            })?;
-            let name_span: Span = (span_start..span_start + name.len()).into();
-            let args_span: Span = (name_span.end + 1..span_start + inst.len()).into();
-            // Update the spans on the tokens to be relative to the start of the definition rather
-            // than relative to the start of the instruction
-            for tok in &mut args {
-                tok.1.start += args_span.start;
-                tok.1.end += args_span.start;
-            }
+    let parse_err = |error| {
+        Error {
+            definition: def.clone(),
+            span: (0..def.len()).into(),
+            kind: Kind::ParseError(error),
+        }
+        .compile_error(instruction, source.span.clone())
+    };
+    let tokens = crate::parser::Instruction::lex(def).map_err(parse_err)?;
+    // Process the resulting instruction sequence
+    tokens
+        .split(|(t, _)| *t == Token::Literal(';'))
+        .filter(|t| !t.is_empty()) // split leaves an empty element after the last `;`
+        .map(|tokens| {
+            let (name, args) = crate::parser::Instruction::parse_name(source.code.len(), tokens)
+                .map_err(parse_err)?;
+            let span = (name.1.start..args.1.end).into();
             let span = SpanList {
                 span,
                 source: Some(source.clone()),
             };
             // Parse the instruction
-            let (inst_def, mut args) = super::parse_instruction(
-                arch,
-                (name.to_owned(), name_span),
-                &(args, args_span),
-                &span,
-            )?;
+            let (inst_def, mut args) = super::parse_instruction(arch, name, args, &span)?;
             // Replace the argument names that match those of the pseudoinstruction being expanded
             // with the values provided by the user
             for arg in &mut args {
@@ -546,5 +534,5 @@ pub fn expand<'b, 'a: 'b>(
             }
             Ok(((inst_def, args), span))
         })
-        .collect::<Result<Vec<_>, _>>()
+        .collect()
 }

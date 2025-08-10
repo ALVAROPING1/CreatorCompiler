@@ -204,14 +204,14 @@ enum InstructionDefinition<'arch> {
 /// any of the instruction definitions for this instruction name
 fn parse_instruction<'a>(
     arch: &'a Architecture,
-    name: Spanned<String>,
-    args: &Spanned<Vec<Spanned<Token>>>,
+    name: Spanned<&str>,
+    args: Spanned<&[Spanned<Token>]>,
     origin: &SpanList,
 ) -> Result<(InstructionDefinition<'a>, ParsedArgs), ErrorData> {
     let mut possible_def = None;
     // Errors produced on each of the attempted parses
     let mut errs = Vec::new();
-    for inst in arch.find_instructions(&name.0) {
+    for inst in arch.find_instructions(name.0) {
         match inst.syntax.parser.parse(args) {
             Ok(parsed_args) => {
                 // Check if all the arguments fit in the current instruction definition
@@ -261,7 +261,7 @@ fn parse_instruction<'a>(
             Err(e) => errs.push((inst.syntax.user_syntax.to_string(), e)),
         }
     }
-    for inst in arch.find_pseudoinstructions(&name.0) {
+    for inst in arch.find_pseudoinstructions(name.0) {
         match inst.syntax.parser.parse(args) {
             // If parsing is successful, assume this definition is the correct one and return it
             Ok(parsed_args) => return Ok((InstructionDefinition::Pseudo(inst), parsed_args)),
@@ -276,7 +276,7 @@ fn parse_instruction<'a>(
     // Otherwise, return the appropriate error. If we didn't get any errors, we didn't find any
     // definitions for the instruction
     Err(if errs.is_empty() {
-        ErrorKind::UnknownInstruction(name.0).add_span((name.1, origin))
+        ErrorKind::UnknownInstruction(name.0.to_owned()).add_span((name.1, origin))
     } else {
         ErrorKind::IncorrectInstructionSyntax(errs).add_span((args.1, origin))
     })
@@ -901,8 +901,8 @@ fn compile_instructions<'a>(
     user.0.try_reserve(reserved_offset).add_span(0..0)?;
 
     for mut instruction in instructions {
-        let (name, span) = instruction.value.0.name;
-        let args = &instruction.value.0.args;
+        let (name, name_span) = instruction.value.0.name;
+        let (args, args_span) = instruction.value.0.args;
         let origin_span = instruction.value.1;
         let origin = SpanList::from(instruction.value.1);
         // Get the corresponding section according to where the element should be placed
@@ -916,7 +916,8 @@ fn compile_instructions<'a>(
             label_table.insert(label.clone(), *span, section.get().clone())?;
         }
         // Parse the instruction, finding a valid definition to use for the compilation
-        let parsed_instruction = parse_instruction(arch, (name, span), args, &origin)?;
+        let parsed_instruction =
+            parse_instruction(arch, (&name, name_span), (&args, args_span), &origin)?;
         // Store the next index, so we can do a small post-processing to the processed instructions
         let first_idx = memory.len();
         process_instruction(
