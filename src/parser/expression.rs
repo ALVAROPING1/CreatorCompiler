@@ -160,7 +160,7 @@ impl Expr {
 
 /// Creates a parser for expressions
 #[must_use]
-pub fn parser<'tokens, I>() -> Parser!('tokens, I, Expr)
+pub fn parser<'tokens, I>() -> Parser!('tokens, I, Spanned<Expr>)
 where
     I: ValueInput<'tokens, Token = Token, Span = Span>,
 {
@@ -214,7 +214,8 @@ where
         // atom: `atom -> \n* (literal | ( expression ))`
         let atom = newline().ignore_then(
             literal
-                .or(expr.delimited_by(
+                // Remove span to replace it with one including the parenthesis
+                .or(expr.map(|(x, _)| x).delimited_by(
                     just(Token::Ctrl('(')),
                     newline().ignore_then(just(Token::Ctrl(')'))),
                 ))
@@ -241,9 +242,7 @@ where
             infix(left(2), op!('|' => BinaryOp::BitwiseOR, '&' => BinaryOp::BitwiseAND, '^' => BinaryOp::BitwiseXOR), fold!()),
             infix(left(1), op!('+' => BinaryOp::Add, '-' => BinaryOp::Sub), fold!())
         ));
-        expr.map(|(expr, _)| expr) // Remove the span from the output since we don't need it
-            .labelled("expression")
-            .as_context()
+        expr.labelled("expression").as_context()
     })
 }
 
@@ -252,7 +251,7 @@ mod test {
     use super::*;
     use crate::compiler::error::OperationKind;
 
-    fn parse(code: &str) -> Result<Expr, ()> {
+    fn parse(code: &str) -> Result<Spanned<Expr>, ()> {
         super::super::parse_with!(super::parser(), "#", code).map_err(|_| ())
     }
 
@@ -267,9 +266,11 @@ mod test {
             }
         };
         for (src, expr, expected) in test_cases {
-            assert_eq!(parse(src), Ok(expr.clone()), "`{src}`");
+            let start = (src.trim_start().as_ptr() as usize) - (src.as_ptr() as usize);
+            let span = (start..src.len()).into();
+            assert_eq!(parse(src), Ok((expr.clone(), span)), "`{src:?}`");
             let res = expr.eval(ident_eval);
-            assert_eq!(res, expected, "`{src}`\n{expr:?}");
+            assert_eq!(res, expected, "`{src:?}`\n{expr:?}");
         }
     }
 
