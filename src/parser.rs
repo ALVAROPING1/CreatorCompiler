@@ -130,7 +130,7 @@ where
                 })
                 .rewind()
                 .or(expression::parser()
-                    .map(Data::Number)
+                    .map(|(expr, _)| Data::Number(expr))
                     .or(select! { Token::String(s) => Data::String(s) }.labelled("string"))
                     .map_with(|x, e| (x, e.span()))
                     .separated_by(just(Token::Ctrl(',')).padded_by(newline().repeated()))

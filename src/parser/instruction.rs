@@ -150,7 +150,7 @@ impl Instruction {
                 Token::Identifier(ident) if FIELD.is_match(&ident) => {
                     let field_idx = field(ident, true)?; // Validate the field pointed to
                     parser
-                        .then(expression::parser().map_with(|expr, e| (expr, e.span())))
+                        .then(expression::parser())
                         .map(move |(mut args, value)| {
                             args.push(ParsedArgument { value, field_idx });
                             args
