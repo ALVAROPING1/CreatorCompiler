@@ -176,11 +176,15 @@ where
     }
     .labelled("literal");
 
-    // Operator parser similar to `select!`. For this usage (selecting exact tokens rather than
-    // patterns) `select!` has worse errors as it can't use the patterns in the errors (it just
-    // knows something else was expected)
+    // Operator parser
     macro_rules! op {
-        (:$name:literal: $($i:expr => $o:expr),+$(,)?) => { newline().ignore_then(choice(($(just(Token::Operator($i)).to($o),)+)).map_with(|x, e| (x, e.span())).labelled(concat!($name, " operator"))) };
+        (:$name:literal: $($i:expr => $o:expr),+$(,)?) => {
+            newline().ignore_then(
+                select! { $(Token::Operator($i) => $o,)+ }
+                    .map_with(|x, e| (x, e.span()))
+                    .labelled(concat!($name, " operator"))
+            )
+        };
         ($($i:expr => $o:expr),+) => { op!(:"binary": $($i => $o,)+) };
     }
 
