@@ -33,24 +33,10 @@ pub struct Label {
     address: BigUint,
     /// Location of the definition of the label in the assembly. [`None`] if the label comes from a
     /// library
-    definition: Option<Span>,
+    span: Option<Span>,
 }
 
 impl Label {
-    /// Creates a new [`Label`] with the given data
-    ///
-    /// # Parameters
-    ///
-    /// * `address`: memory address the label points at
-    /// * `definition`: [`Span`] where the label was defined
-    #[must_use]
-    pub const fn new(address: BigUint, definition: Span) -> Self {
-        Self {
-            address,
-            definition: Some(definition),
-        }
-    }
-
     /// Gets the address this label is pointing in
     #[must_use]
     pub const fn address(&self) -> &BigUint {
@@ -60,7 +46,7 @@ impl Label {
     /// Gets the [`Span`] where the label was defined
     #[must_use]
     pub const fn span(&self) -> Option<&Span> {
-        self.definition.as_ref()
+        self.span.as_ref()
     }
 }
 
@@ -78,7 +64,7 @@ impl<S: std::hash::BuildHasher> From<HashMap<String, BigUint, S>> for Table {
                         name,
                         Label {
                             address,
-                            definition: None,
+                            span: None,
                         },
                     )
                 })
@@ -101,22 +87,22 @@ impl Table {
     /// # Parameters
     ///
     /// * `label`: Label name to insert
-    /// * `data`: Data associated with the label
+    /// * `span`: [`Span`] where the label was defined
+    /// * `address`: memory address the label points at
     ///
     /// # Errors
     ///
     /// Errors with [`ErrorKind::DuplicateLabel`] if the label has already been inserted
-    pub fn insert(&mut self, label: String, data: Label) -> Result<(), ErrorData> {
+    pub fn insert(&mut self, label: String, span: Span, address: BigUint) -> Result<(), ErrorData> {
         match self.0.entry(label) {
             Entry::Vacant(e) => {
-                e.insert(data);
+                let span = Some(span);
+                e.insert(Label { address, span });
                 Ok(())
             }
-            Entry::Occupied(e) => Err(ErrorKind::DuplicateLabel(
-                e.key().clone(),
-                e.get().definition.clone(),
-            )
-            .add_span(data.definition.unwrap_or_default())),
+            Entry::Occupied(e) => {
+                Err(ErrorKind::DuplicateLabel(e.key().clone(), e.get().span.clone()).add_span(span))
+            }
         }
     }
 
@@ -147,7 +133,7 @@ mod test {
                 s.into(),
                 Label {
                     address: x.into(),
-                    definition: None,
+                    span: None,
                 },
             )
         };
@@ -161,20 +147,14 @@ mod test {
     #[test]
     fn insert() {
         let mut table = Table::default();
+        assert_eq!(table.insert("test".to_string(), 0..2, 12u8.into()), Ok(()));
+        assert_eq!(table.insert("test2".to_string(), 6..10, 0u8.into()), Ok(()));
         assert_eq!(
-            table.insert("test".to_string(), Label::new(12u8.into(), 0..2)),
-            Ok(())
-        );
-        assert_eq!(
-            table.insert("test2".to_string(), Label::new(0u8.into(), 6..10)),
-            Ok(())
-        );
-        assert_eq!(
-            table.insert("test".to_string(), Label::new(4u8.into(), 13..17)),
+            table.insert("test".to_string(), 13..17, 4u8.into()),
             Err(ErrorKind::DuplicateLabel("test".to_string(), Some(0..2)).add_span(13..17))
         );
         assert_eq!(
-            table.insert("test2".to_string(), Label::new(128u8.into(), 20..22)),
+            table.insert("test2".to_string(), 20..22, 128u8.into()),
             Err(ErrorKind::DuplicateLabel("test2".to_string(), Some(6..10)).add_span(20..22))
         );
     }
@@ -182,16 +162,18 @@ mod test {
     #[test]
     fn get() {
         let mut table = Table::default();
-        assert_eq!(
-            table.insert("test".to_string(), Label::new(12u8.into(), 2..4)),
-            Ok(())
-        );
-        assert_eq!(
-            table.insert("test2".to_string(), Label::new(0u8.into(), 5..10)),
-            Ok(())
-        );
-        assert_eq!(table.get("test"), Some(&Label::new(12u8.into(), 2..4)));
-        assert_eq!(table.get("test2"), Some(&Label::new(0u8.into(), 5..10)));
+        assert_eq!(table.insert("test".to_string(), 2..4, 12u8.into()), Ok(()));
+        assert_eq!(table.insert("test2".to_string(), 5..10, 0u8.into()), Ok(()));
+        let label = Label {
+            address: 12u8.into(),
+            span: Some(2..4),
+        };
+        assert_eq!(table.get("test"), Some(&label));
+        let label = Label {
+            address: 0u8.into(),
+            span: Some(5..10),
+        };
+        assert_eq!(table.get("test2"), Some(&label));
         assert_eq!(table.get("none"), None);
     }
 }

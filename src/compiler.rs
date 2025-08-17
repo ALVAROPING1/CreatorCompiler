@@ -766,10 +766,7 @@ fn compile_data(
         };
         // Add the labels to the label table
         for (label, span) in &labels {
-            label_table.insert(
-                label.to_owned(),
-                Label::new(section.get().clone(), span.clone()),
-            )?;
+            label_table.insert(label.clone(), span.clone(), section.get().clone())?;
         }
         let (statement, statement_span) = data_directive.value;
         let args = statement.values;
@@ -916,10 +913,7 @@ fn compile_instructions<'a>(
         };
         // Add the labels to the label table
         for (label, span) in &instruction.labels {
-            label_table.insert(
-                label.clone(),
-                Label::new(section.get().clone(), span.clone()),
-            )?;
+            label_table.insert(label.clone(), span.clone(), section.get().clone())?;
         }
         // Parse the instruction, finding a valid definition to use for the compilation
         let parsed_instruction = parse_instruction(arch, (name, span.clone()), args, &origin)?;
@@ -1355,7 +1349,7 @@ mod test {
     fn label_table(labels: impl IntoIterator<Item = (&'static str, u64, Span)>) -> LabelTable {
         let mut tbl = LabelTable::default();
         for v in labels {
-            tbl.insert(v.0.into(), Label::new(v.1.into(), v.2)).unwrap();
+            tbl.insert(v.0.into(), v.2, v.1.into()).unwrap();
         }
         tbl
     }
@@ -2679,9 +2673,7 @@ mod test {
             let labels = HashMap::from([("test".into(), val.into())]);
             let x = compile_with(src, &BigUint::ZERO, labels.clone(), false).unwrap();
             let mut labels = LabelTable::from(labels);
-            labels
-                .insert("main".into(), Label::new(BigUint::ZERO, 23..28))
-                .unwrap();
+            labels.insert("main".into(), 23..28, BigUint::ZERO).unwrap();
             assert_eq!(x.label_table, labels);
             assert_eq!(x.instructions, vec![main_nop(29..32)]);
             let val = val.into();
