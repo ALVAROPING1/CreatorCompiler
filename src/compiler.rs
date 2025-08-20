@@ -135,6 +135,7 @@
 // matter, since the symbol table isn't modified). This process is precisely a summary of the full
 // compilation process described above
 
+use chumsky::span::Span as _;
 use num_bigint::{BigInt, BigUint};
 use regex::{NoExpand, Regex};
 
@@ -149,7 +150,7 @@ use crate::parser::instruction::{ParsedArgs, ParsedArgument};
 use crate::parser::{
     ASTNode, Data as DataToken, Expr, InstructionNode, Statement as StatementNode, Token, AST,
 };
-use crate::span::{Source, Span, SpanList, Spanned};
+use crate::span::{Range, Span, Spanned, DEFAULT_SPAN};
 
 mod label;
 pub use label::{Label, Table as LabelTable};
@@ -169,6 +170,9 @@ pub use integer::Integer;
 
 mod pseudoinstruction;
 pub use pseudoinstruction::{Error as PseudoinstructionError, Kind as PseudoinstructionErrorKind};
+
+mod file_cache;
+pub use file_cache::{FileCache, FileID};
 
 /* TODO:
 *  - Combine `crate::parser::Error` with `crate::compiler::Error`
@@ -206,7 +210,6 @@ fn parse_instruction<'a>(
     arch: &'a Architecture,
     name: Spanned<&str>,
     args: Spanned<&[Spanned<Token>]>,
-    origin: &SpanList,
 ) -> Result<(InstructionDefinition<'a>, ParsedArgs), ErrorData> {
     let mut possible_def = None;
     // Errors produced on each of the attempted parses
@@ -229,7 +232,7 @@ fn parse_instruction<'a>(
                         | FieldType::OffsetBytes
                         | FieldType::OffsetWords => match value
                             .eval_no_ident()
-                            .and_then(|x| BigInt::try_from(x).add_span(span))
+                            .and_then(|x| BigInt::try_from(x).add_span(*span))
                         {
                             Ok(val) => val,
                             // If there was any error, assume the argument fits. This should be
@@ -276,9 +279,9 @@ fn parse_instruction<'a>(
     // Otherwise, return the appropriate error. If we didn't get any errors, we didn't find any
     // definitions for the instruction
     Err(if errs.is_empty() {
-        ErrorKind::UnknownInstruction(name.0.to_owned()).add_span((name.1, origin))
+        ErrorKind::UnknownInstruction(name.0.to_owned()).add_span(name.1)
     } else {
-        ErrorKind::IncorrectInstructionSyntax(errs).add_span((args.1, origin))
+        ErrorKind::IncorrectInstructionSyntax(errs).add_span(args.1)
     })
 }
 
@@ -290,9 +293,9 @@ struct PendingInstruction<'arch> {
     /// Labels pointing to this instruction
     labels: Vec<String>,
     /// Span of the instruction in the user's assembly code
-    user_span: Span,
+    user_span: Range,
     /// Span of the instruction in pseudoinstruction expansions
-    span: SpanList,
+    span: Span,
     /// Instruction definition selected
     definition: &'arch crate::architecture::Instruction<'arch>,
     /// Arguments parsed for this instruction
@@ -306,11 +309,12 @@ struct PendingInstruction<'arch> {
 ///
 /// * `arch`: architecture definition
 /// * `section`: memory section in which the instructions should be stored
+/// * `file_cache`: pseudoinstruction definition cache
 /// * `label_table`: symbol table for labels
 /// * `pending_instructions`: vector in which to append the real instructions
 /// * `instruction`: instruction definition with its arguments
-/// * `span`: span of the instruction, in the user's assembly code and in pseudoinstruction
-///   expansions
+/// * `span`: span of the instruction, range in the user's assembly code and span in
+///   pseudoinstruction expansions
 ///
 /// # Errors
 ///
@@ -319,10 +323,11 @@ struct PendingInstruction<'arch> {
 fn process_instruction<'arch>(
     arch: &'arch Architecture,
     section: &mut Section,
+    file_cache: &mut FileCache,
     label_table: &LabelTable,
     pending_instructions: &mut Vec<PendingInstruction<'arch>>,
     instruction: (InstructionDefinition<'arch>, ParsedArgs),
-    span: (Span, SpanList),
+    span: (Range, Span),
 ) -> Result<(), ErrorData> {
     let (user_span, span) = span;
     match instruction.0 {
@@ -331,7 +336,7 @@ fn process_instruction<'arch>(
             let word_size = BigUint::from(arch.word_size().div_ceil(8));
             let address = section
                 .try_reserve(&(word_size * definition.nwords))
-                .add_span(span.clone())?;
+                .add_span(span)?;
             pending_instructions.push(PendingInstruction {
                 labels: Vec::new(),
                 args: instruction.1,
@@ -347,6 +352,7 @@ fn process_instruction<'arch>(
             let instructions = pseudoinstruction::expand(
                 arch,
                 label_table,
+                file_cache,
                 section.get(),
                 (def, span),
                 &instruction.1,
@@ -355,10 +361,11 @@ fn process_instruction<'arch>(
                 process_instruction(
                     arch,
                     section,
+                    file_cache,
                     label_table,
                     pending_instructions,
                     instruction,
-                    (user_span, span),
+                    (user_span.clone(), span),
                 )?;
             }
         }
@@ -378,7 +385,7 @@ pub struct Instruction {
     /// Instruction encoded in binary
     pub binary: BitField,
     /// Span of the instruction in the assembly code
-    pub user: Span,
+    pub user: Range,
 }
 
 /// Value to add to the data segment pending argument evaluation
@@ -874,6 +881,7 @@ fn compile_data(
 ///
 /// * `arch`: architecture definition
 /// * `label_table`: symbol table for labels
+/// * `file_cache`: pseudoinstruction definition cache
 /// * `elements`: instructions to compile
 /// * `reserved_offset`: amount of addresses reserved by the library
 ///
@@ -883,6 +891,7 @@ fn compile_data(
 fn compile_instructions<'a>(
     arch: &'a Architecture,
     label_table: &mut LabelTable,
+    file_cache: &mut FileCache,
     instructions: Vec<Statement<InstructionNode>>,
     reserved_offset: &BigUint,
 ) -> Result<Vec<PendingInstruction<'a>>, ErrorData> {
@@ -898,13 +907,12 @@ fn compile_instructions<'a>(
         Vec::with_capacity(size),
     );
     // Reserve space in the user section for the library instructions
-    user.0.try_reserve(reserved_offset).add_span(0..0)?;
+    user.0.try_reserve(reserved_offset).add_span(DEFAULT_SPAN)?;
 
     for mut instruction in instructions {
         let (name, name_span) = instruction.value.0.name;
         let (args, args_span) = instruction.value.0.args;
-        let origin_span = instruction.value.1;
-        let origin = SpanList::from(instruction.value.1);
+        let span = instruction.value.1;
         // Get the corresponding section according to where the element should be placed
         let (section, memory) = if instruction.kernel {
             &mut kernel
@@ -916,17 +924,17 @@ fn compile_instructions<'a>(
             label_table.insert(label.clone(), *span, section.get().clone())?;
         }
         // Parse the instruction, finding a valid definition to use for the compilation
-        let parsed_instruction =
-            parse_instruction(arch, (&name, name_span), (&args, args_span), &origin)?;
+        let parsed_instruction = parse_instruction(arch, (&name, name_span), (&args, args_span))?;
         // Store the next index, so we can do a small post-processing to the processed instructions
         let first_idx = memory.len();
         process_instruction(
             arch,
             section,
+            file_cache,
             label_table,
             memory,
             parsed_instruction,
-            (origin_span, origin),
+            (span.into_range(), span),
         )?;
         let mut iter = memory[first_idx..].iter_mut().fuse();
         // Add the labels attached to the instruction in the assembly code to the first generated
@@ -937,7 +945,7 @@ fn compile_instructions<'a>(
         // Remove the user span from all generated instructions except the first, so the source
         // isn't repeated in the UI
         for inst in iter {
-            inst.user_span = (0..0).into();
+            inst.user_span = 0..0;
         }
     }
     Ok(combine_sections(kernel, user))
@@ -993,10 +1001,12 @@ fn check_main_location(
     eof: usize,
 ) -> Result<(), ErrorData> {
     let add_main_span =
-        |e: ErrorKind, main: &Label| e.add_span(main.span().unwrap_or_else(|| (0..0).into()));
+        |e: ErrorKind, main: &Label| e.add_span(main.span().unwrap_or(DEFAULT_SPAN));
     match (label_table.get(arch.main_label()), library) {
         // Main label wasn't used but we aren't compiling a library => main is missing
-        (None, false) => Err(ErrorKind::MissingMainLabel.add_span(eof..eof)),
+        (None, false) => {
+            Err(ErrorKind::MissingMainLabel.add_span(Span::new(FileID::SRC, eof..eof)))
+        }
         // Main label was used but we are compiling a library => main shouldn't be used
         (Some(main), true) => Err(add_main_span(ErrorKind::MainInLibrary, main)),
         // Main label was used and we aren't compiling a library, but it doesn't point to an
@@ -1018,7 +1028,6 @@ fn check_main_location(
 /// * `address`: address of the instruction
 /// * `definition`: definition of the instruction
 /// * `arg`: expression containing the argument to evaluate
-/// * `span`: span of the instruction
 ///
 /// # Errors
 ///
@@ -1029,10 +1038,8 @@ fn evaluate_instruction_field(
     address: &BigUint,
     def: &crate::architecture::Instruction,
     arg: ParsedArgument,
-    span: &SpanList,
 ) -> Result<(BigInt, String), ErrorData> {
     let field = &def.syntax.fields[arg.field_idx];
-    let (value, value_span) = arg.value;
     Ok(match &field.r#type {
         FieldType::Cop { .. } => unreachable!("Cop shouldn't be used in instruction args"),
         FieldType::Co => (def.co.0.clone().into(), def.name.to_string()),
@@ -1042,7 +1049,7 @@ fn evaluate_instruction_field(
         | FieldType::ImmUnsigned
         | FieldType::OffsetBytes
         | FieldType::OffsetWords => {
-            let value = value.eval(|label: &str| {
+            let value = arg.value.0.eval(|label: &str| {
                 let value = label_eval(label_table, address, label)?;
                 // Function to calculate the offset between a given address and the
                 // address in which the value is being compiled into
@@ -1053,7 +1060,7 @@ fn evaluate_instruction_field(
                     _ => value,
                 })
             })?;
-            let value = BigInt::try_from(value).add_span((value_span, span))?;
+            let value = BigInt::try_from(value).add_span(arg.value.1)?;
             // Remove the least significant bits according to the padding specified by
             // the field
             let padding = field.range.padding();
@@ -1068,7 +1075,7 @@ fn evaluate_instruction_field(
         | FieldType::DoubleFPReg => {
             // Get the name of the register. We only allow identifiers and integers to
             // be used as register names
-            let name = match value {
+            let name = match arg.value.0 {
                 Expr::Identifier((name, _)) => name,
                 Expr::Integer(x) => x.to_string(),
                 _ => {
@@ -1076,7 +1083,7 @@ fn evaluate_instruction_field(
                         expected: ArgumentType::RegisterName,
                         found: ArgumentType::Expression,
                     }
-                    .add_span((value_span, span)))
+                    .add_span(arg.value.1))
                 }
             };
             // Convert the generic field type to an specific register type
@@ -1090,9 +1097,9 @@ fn evaluate_instruction_field(
             // Find the register files with the requested type, and verify that at
             // least one file is found
             let mut files = arch.find_reg_files(file_type).peekable();
-            files.peek().ok_or_else(|| {
-                ErrorKind::UnknownRegisterFile(file_type).add_span((value_span, span))
-            })?;
+            files
+                .peek()
+                .ok_or_else(|| ErrorKind::UnknownRegisterFile(file_type).add_span(arg.value.1))?;
             let case = arch.arch_conf.sensitive_register_name;
             // Find the register with the given name
             let (i, _, name) = files
@@ -1102,25 +1109,24 @@ fn evaluate_instruction_field(
                         name: name.clone(),
                         file: file_type,
                     }
-                    .add_span((value_span, span))
+                    .add_span(arg.value.1)
                 })?;
             (i.into(), name.to_string())
         }
         // Enumerated fields
         FieldType::Enum { enum_name } => {
-            let span = (value_span, span);
             // Find the definition of the enum
             let enum_def = arch.enums.get(enum_name);
             let enum_def = enum_def
                 .ok_or_else(|| ErrorKind::UnknownEnumType((*enum_name).to_string()))
-                .add_span(span)?;
+                .add_span(arg.value.1)?;
             // Get the identifier used
-            let Expr::Identifier((name, _)) = value else {
+            let Expr::Identifier((name, _)) = arg.value.0 else {
                 return Err(ErrorKind::IncorrectArgumentType {
                     expected: ArgumentType::Identifier,
                     found: ArgumentType::Expression,
                 }
-                .add_span(span));
+                .add_span(arg.value.1));
             };
             // Map the identifier to its value according to the definition of the enum
             let Some(value) = enum_def.get(name.as_str()) else {
@@ -1128,7 +1134,7 @@ fn evaluate_instruction_field(
                     value: name,
                     enum_name: (*enum_name).to_string(),
                 })
-                .add_span(span);
+                .add_span(arg.value.1);
             };
             (value.0.clone().into(), name)
         }
@@ -1166,9 +1172,9 @@ fn translate_instruction(
     let mut translated_instruction = RE.replace_all(def.syntax.output_syntax, "\0$1").to_string();
     for arg in inst.args {
         let field = &def.syntax.fields[arg.field_idx];
-        let arg_span = (arg.value.1, &inst.span);
+        let span = arg.value.1;
         let (value, value_str) =
-            evaluate_instruction_field(arch, label_table, &inst.address, def, arg, &inst.span)?;
+            evaluate_instruction_field(arch, label_table, &inst.address, def, arg)?;
         // Update the binary/translated instruction using the values obtained
         let signed = matches!(
             field.r#type,
@@ -1176,7 +1182,7 @@ fn translate_instruction(
         );
         binary_instruction
             .replace(&field.range, value, signed)
-            .add_span(arg_span)?;
+            .add_span(span)?;
         translated_instruction = FIELD
             .replace(&translated_instruction, NoExpand(&value_str))
             .to_string();
@@ -1189,7 +1195,7 @@ fn translate_instruction(
     }) {
         binary_instruction
             .replace(range, value.0.clone().into(), false)
-            .add_span(inst.span.clone())?;
+            .add_span(inst.span)?;
     }
     Ok(Instruction {
         labels: inst.labels,
@@ -1243,9 +1249,9 @@ fn translate_data(label_table: &LabelTable, data: PendingData) -> Result<Data, E
 ///
 /// # Parameters
 ///
-/// * `arch`: architecture definition
+/// * `context`: compilation context to use, including the architecture definition, symbol table
+///   for labels, and file cache
 /// * `ast`: AST of the assembly code
-/// * `label_table`: symbol table for labels
 /// * `reserved_offset`: amount of addresses reserved for the instructions of the library used
 /// * `library`: whether to compile the assembly code as a library (`true`) or executable (`false`)
 ///
@@ -1253,19 +1259,19 @@ fn translate_data(label_table: &LabelTable, data: PendingData) -> Result<Data, E
 ///
 /// Errors if there is any problem compiling the assembly code
 fn compile_inner(
-    arch: &Architecture,
+    context: (&Architecture, &mut LabelTable, &mut FileCache),
     ast: Vec<ASTNode>,
-    label_table: &mut LabelTable,
     reserved_offset: &BigUint,
     library: bool,
 ) -> Result<(GlobalSymbols, Vec<Instruction>, Vec<Data>), ErrorData> {
+    let (arch, label_table, file_cache) = context;
     // Split the statements into different sections
     let (instructions, data_directives, global_symbols) = split_statements(arch, ast)?;
     // Compile each of the sections
     let instruction_eof = instructions.last().map_or(0, |inst| inst.value.1.end);
     let pending_data = compile_data(arch, label_table, data_directives)?;
     let pending_instructions =
-        compile_instructions(arch, label_table, instructions, reserved_offset)?;
+        compile_instructions(arch, label_table, file_cache, instructions, reserved_offset)?;
     check_main_location(arch, label_table, library, instruction_eof)?;
     // Perform the 2nd pass of instruction processing
     let instructions = pending_instructions
@@ -1302,10 +1308,12 @@ pub fn compile<'arch, S: std::hash::BuildHasher>(
     library: bool,
 ) -> Result<CompiledCode, CompileError<'arch>> {
     let mut label_table = LabelTable::from(labels);
+    let mut file_cache = FileCache::default();
+    let context = (arch, &mut label_table, &mut file_cache);
     // Wrap the result of the inner compilation function. We need to wrap the internal compilation
     // function to add extra metadata added to all error types that isn't directly related with
-    // the errors (the architecture definition and the label table)
-    match compile_inner(arch, ast, &mut label_table, reserved_offset, library) {
+    // the errors (like the architecture definition and the label table)
+    match compile_inner(context, ast, reserved_offset, library) {
         Ok((global_symbols, instructions, data_memory)) => Ok(CompiledCode {
             label_table,
             global_symbols,
@@ -1315,6 +1323,7 @@ pub fn compile<'arch, S: std::hash::BuildHasher>(
         Err(error) => Err(CompileError {
             arch,
             label_table,
+            file_cache,
             error,
         }),
     }
@@ -1325,8 +1334,7 @@ pub fn compile<'arch, S: std::hash::BuildHasher>(
 mod test {
     use super::*;
     use crate::architecture::{Architecture, BitRange, IntegerType, NonEmptyRangeInclusive};
-
-    type Range = std::ops::Range<usize>;
+    use crate::span::test::*;
 
     fn compile_with(
         src: &str,
@@ -1353,7 +1361,7 @@ mod test {
     fn label_table(labels: impl IntoIterator<Item = (&'static str, u64, Range)>) -> LabelTable {
         let mut tbl = LabelTable::default();
         for v in labels {
-            tbl.insert(v.0.into(), v.2, v.1.into()).unwrap();
+            tbl.insert(v.0.into(), v.2.span(), v.1.into()).unwrap();
         }
         tbl
     }
@@ -1380,7 +1388,7 @@ mod test {
             labels: labels.iter().map(|&x| x.to_owned()).collect(),
             loaded: loaded.into(),
             binary: bitfield(binary),
-            user: user.into(),
+            user,
         }
     }
 
@@ -2126,34 +2134,34 @@ mod test {
         assert_eq!(
             compile(".data\nnop\n.text\nmain: nop"),
             Err(ErrorKind::UnallowedStatementType {
-                section: Some((DirectiveSegment::Data, (0..5).into())),
+                section: Some((DirectiveSegment::Data, (0..5).span())),
                 found: DirectiveSegment::Code,
             }
-            .add_span(6..9)),
+            .add_span((6..9).span())),
         );
         assert_eq!(
             compile(".kdata\nnop\n.text\nmain: nop"),
             Err(ErrorKind::UnallowedStatementType {
-                section: Some((DirectiveSegment::KernelData, (0..6).into())),
+                section: Some((DirectiveSegment::KernelData, (0..6).span())),
                 found: DirectiveSegment::Code,
             }
-            .add_span(7..10)),
+            .add_span((7..10).span())),
         );
         assert_eq!(
             compile(".text\nmain: nop\n.byte 1"),
             Err(ErrorKind::UnallowedStatementType {
-                section: Some((DirectiveSegment::Code, (0..5).into())),
+                section: Some((DirectiveSegment::Code, (0..5).span())),
                 found: DirectiveSegment::Data,
             }
-            .add_span(16..23)),
+            .add_span((16..23).span())),
         );
         assert_eq!(
             compile(".ktext\nmain: nop\n.byte 1"),
             Err(ErrorKind::UnallowedStatementType {
-                section: Some((DirectiveSegment::KernelCode, (0..6).into())),
+                section: Some((DirectiveSegment::KernelCode, (0..6).span())),
                 found: DirectiveSegment::Data,
             }
-            .add_span(17..24)),
+            .add_span((17..24).span())),
         );
         assert_eq!(
             compile("nop\n.text\nmain: nop"),
@@ -2161,7 +2169,7 @@ mod test {
                 section: None,
                 found: DirectiveSegment::Code,
             }
-            .add_span(0..3)),
+            .add_span((0..3).span())),
         );
         assert_eq!(
             compile(".byte 1\n.text\nmain: nop"),
@@ -2169,7 +2177,7 @@ mod test {
                 section: None,
                 found: DirectiveSegment::Data,
             }
-            .add_span(0..7)),
+            .add_span((0..7).span())),
         );
     }
 
@@ -2177,7 +2185,7 @@ mod test {
     fn unknown_directive() {
         assert_eq!(
             compile(".test\n.text\nmain: nop"),
-            Err(ErrorKind::UnknownDirective(".test".into()).add_span(0..5)),
+            Err(ErrorKind::UnknownDirective(".test".into()).add_span((0..5).span())),
         );
     }
 
@@ -2185,7 +2193,7 @@ mod test {
     fn unknown_instruction() {
         assert_eq!(
             compile(".text\nmain: test"),
-            Err(ErrorKind::UnknownInstruction("test".into()).add_span(12..16)),
+            Err(ErrorKind::UnknownInstruction("test".into()).add_span((12..16).span())),
         );
     }
 
@@ -2193,7 +2201,7 @@ mod test {
     fn unknown_label() {
         assert_eq!(
             compile(".text\nmain: imm 0, 0, test"),
-            Err(ErrorKind::UnknownLabel("test".into()).add_span(22..26)),
+            Err(ErrorKind::UnknownLabel("test".into()).add_span((22..26).span())),
         );
     }
 
@@ -2202,20 +2210,20 @@ mod test {
         let arch = include_str!("../tests/architecture2.json");
         assert_eq!(
             compile_arch(".text\nmain: ctrl pc", arch),
-            Err(ErrorKind::UnknownRegisterFile(RegisterType::Ctrl).add_span(17..19)),
+            Err(ErrorKind::UnknownRegisterFile(RegisterType::Ctrl).add_span((17..19).span())),
         );
         assert_eq!(
             compile_arch(".text\nmain: float ft0", arch),
             Err(
                 ErrorKind::UnknownRegisterFile(RegisterType::Float(FloatType::Float))
-                    .add_span(18..21)
+                    .add_span((18..21).span())
             ),
         );
         assert_eq!(
             compile_arch(".text\nmain: double ft0", arch),
             Err(
                 ErrorKind::UnknownRegisterFile(RegisterType::Float(FloatType::Double))
-                    .add_span(19..22)
+                    .add_span((19..22).span())
             ),
         );
     }
@@ -2228,7 +2236,7 @@ mod test {
                 name: "x0".into(),
                 file: RegisterType::Ctrl,
             }
-            .add_span(16..18)),
+            .add_span((16..18).span())),
         );
         assert_eq!(
             compile(".text\nmain: reg 2, x0, ft1, ft2"),
@@ -2236,7 +2244,7 @@ mod test {
                 name: "2".into(),
                 file: RegisterType::Ctrl,
             }
-            .add_span(16..17)),
+            .add_span((16..17).span())),
         );
         // Register names should be case sensitive if enabled in the architecture
         assert_eq!(
@@ -2245,7 +2253,7 @@ mod test {
                 name: "pc".into(),
                 file: RegisterType::Ctrl,
             }
-            .add_span(16..18)),
+            .add_span((16..18).span())),
         );
         assert_eq!(
             compile(".text\nmain: reg PC, PC, ft1, ft2"),
@@ -2253,7 +2261,7 @@ mod test {
                 name: "PC".into(),
                 file: RegisterType::Int,
             }
-            .add_span(20..22)),
+            .add_span((20..22).span())),
         );
         assert_eq!(
             compile(".text\nmain: reg PC, x0, x0, ft2"),
@@ -2261,7 +2269,7 @@ mod test {
                 name: "x0".into(),
                 file: RegisterType::Float(FloatType::Float),
             }
-            .add_span(24..26)),
+            .add_span((24..26).span())),
         );
         assert_eq!(
             compile(".text\nmain: reg PC, x0, FD1, ft2"),
@@ -2269,7 +2277,7 @@ mod test {
                 name: "FD1".into(),
                 file: RegisterType::Float(FloatType::Float),
             }
-            .add_span(24..27)),
+            .add_span((24..27).span())),
         );
         assert_eq!(
             compile(".text\nmain: reg PC, x0, ft1, fs2"),
@@ -2277,7 +2285,7 @@ mod test {
                 name: "fs2".into(),
                 file: RegisterType::Float(FloatType::Double),
             }
-            .add_span(29..32)),
+            .add_span((29..32).span())),
         );
     }
 
@@ -2289,7 +2297,7 @@ mod test {
                 value: "wrong".into(),
                 enum_name: "test".into(),
             }
-            .add_span(30..35)),
+            .add_span((30..35).span())),
         );
         assert_eq!(
             compile(".text\nmain: enum a, b, value, a"),
@@ -2297,7 +2305,7 @@ mod test {
                 value: "a".into(),
                 enum_name: "test".into(),
             }
-            .add_span(30..31)),
+            .add_span((30..31).span())),
         );
         assert_eq!(
             compile(".text\nmain: enum a, c, value, last"),
@@ -2305,7 +2313,7 @@ mod test {
                 value: "c".into(),
                 enum_name: "enum1".into(),
             }
-            .add_span(20..21)),
+            .add_span((20..21).span())),
         );
         // Enum names should be case sensitive
         assert_eq!(
@@ -2314,7 +2322,7 @@ mod test {
                 value: "OTHER".into(),
                 enum_name: "test".into(),
             }
-            .add_span(30..35)),
+            .add_span((30..35).span())),
         );
     }
 
@@ -2326,7 +2334,7 @@ mod test {
                 expected: ArgumentNumber::new(0, false),
                 found: 1
             }
-            .add_span(6..7)),
+            .add_span((6..7).span())),
         );
     }
 
@@ -2339,7 +2347,7 @@ mod test {
                     expected: ArgumentNumber::new(1, false),
                     found: 0
                 }
-                .add_span(13..13)),
+                .add_span((13..13).span())),
                 "{directive}"
             );
             assert_eq!(
@@ -2348,7 +2356,7 @@ mod test {
                     expected: ArgumentNumber::new(1, false),
                     found: 2
                 }
-                .add_span(14..18)),
+                .add_span((14..18).span())),
                 "{directive}"
             );
         }
@@ -2359,7 +2367,7 @@ mod test {
         for directive in ["zero  ", "align ", "balign"] {
             assert_eq!(
                 compile(&format!(".data\n.{directive} -1\n.text\nmain: nop")),
-                Err(ErrorKind::UnallowedNegativeValue((-1).into()).add_span(14..16)),
+                Err(ErrorKind::UnallowedNegativeValue((-1).into()).add_span((14..16).span())),
                 "{directive}"
             );
         }
@@ -2376,18 +2384,18 @@ mod test {
                     expected: ArgumentType::Expression,
                     found: ArgumentType::String
                 }
-                .add_span(14..17)),
+                .add_span((14..17).span())),
                 "{directive}"
             );
             assert_eq!(
                 compile(&format!(".data\n.{directive} 1.0\n.text\nmain: nop")),
-                Err(ErrorKind::UnallowedFloat((14..17).into()).add_span(14..17)),
+                Err(ErrorKind::UnallowedFloat((14..17).span()).add_span((14..17).span())),
                 "{directive}"
             );
         }
         assert_eq!(
             compile(".text\nmain: imm 0, 0, 1.0"),
-            Err(ErrorKind::UnallowedFloat((22..25).into()).add_span(22..25)),
+            Err(ErrorKind::UnallowedFloat((22..25).span()).add_span((22..25).span())),
         );
         assert_eq!(
             compile(".text\nmain: reg PC, 0+2, ft1, ft2"),
@@ -2395,7 +2403,7 @@ mod test {
                 expected: ArgumentType::RegisterName,
                 found: ArgumentType::Expression,
             }
-            .add_span(20..23)),
+            .add_span((20..23).span())),
         );
         assert_eq!(
             compile(".text\nmain: enum a, b, value, 0"),
@@ -2403,7 +2411,7 @@ mod test {
                 expected: ArgumentType::Identifier,
                 found: ArgumentType::Expression,
             }
-            .add_span(30..31)),
+            .add_span((30..31).span())),
         );
     }
 
@@ -2416,7 +2424,7 @@ mod test {
                     expected: ArgumentNumber::new(1, true),
                     found: 0
                 }
-                .add_span(13..13)),
+                .add_span((13..13).span())),
                 "{directive}"
             );
         }
@@ -2437,7 +2445,7 @@ mod test {
                     address: 17u8.into(),
                     alignment: size.into(),
                 }
-                .add_span(22..23)),
+                .add_span((22..23).span())),
                 "{directive}",
             );
         }
@@ -2450,36 +2458,39 @@ mod test {
         // Data directives
         assert_eq!(
             compile(".data\n.byte 256\n.text\nmain: nop"),
-            Err(ErrorKind::IntegerOutOfRange(256.into(), range(-128..256)).add_span(12..15)),
+            Err(ErrorKind::IntegerOutOfRange(256.into(), range(-128..256))
+                .add_span((12..15).span())),
         );
+        let s = (12..16).span();
         assert_eq!(
             compile(".data\n.byte -129\n.text\nmain: nop"),
-            Err(ErrorKind::IntegerOutOfRange((-129).into(), range(-128..256)).add_span(12..16)),
+            Err(ErrorKind::IntegerOutOfRange((-129).into(), range(-128..256)).add_span(s)),
         );
+        let s = (12..17).span();
         assert_eq!(
             compile(".data\n.half 65536\n.text\nmain: nop"),
-            Err(ErrorKind::IntegerOutOfRange(65536.into(), range(-32768..65536)).add_span(12..17)),
+            Err(ErrorKind::IntegerOutOfRange(65536.into(), range(-32768..65536)).add_span(s)),
         );
         // Instruction arguments
         assert_eq!(
             compile(".text\nmain: imm 8, 0, 0"),
-            Err(ErrorKind::IntegerOutOfRange(8.into(), range(-8..8)).add_span(16..17)),
+            Err(ErrorKind::IntegerOutOfRange(8.into(), range(-8..8)).add_span((16..17).span())),
         );
         assert_eq!(
             compile(".text\nmain: imm -9, 0, 0"),
-            Err(ErrorKind::IntegerOutOfRange((-9).into(), range(-8..8)).add_span(16..18)),
+            Err(ErrorKind::IntegerOutOfRange((-9).into(), range(-8..8)).add_span((16..18).span())),
         );
         assert_eq!(
             compile(".text\nmain: imm 0, 256, 0"),
-            Err(ErrorKind::IntegerOutOfRange(256.into(), range(0..256)).add_span(19..22)),
+            Err(ErrorKind::IntegerOutOfRange(256.into(), range(0..256)).add_span((19..22).span())),
         );
         assert_eq!(
             compile(".text\nmain: imm 0, -1, 0"),
-            Err(ErrorKind::IntegerOutOfRange((-1).into(), range(0..256)).add_span(19..21)),
+            Err(ErrorKind::IntegerOutOfRange((-1).into(), range(0..256)).add_span((19..21).span())),
         );
         assert_eq!(
             compile(".text\nmain: imm 0, 0, 20"),
-            Err(ErrorKind::IntegerOutOfRange(20.into(), range(0..16)).add_span(22..24)),
+            Err(ErrorKind::IntegerOutOfRange(20.into(), range(0..16)).add_span((22..24).span())),
         );
     }
 
@@ -2491,7 +2502,7 @@ mod test {
                 expected: ArgumentType::Expression,
                 found: ArgumentType::String
             }
-            .add_span(13..16)),
+            .add_span((13..16).span())),
         );
     }
 
@@ -2503,7 +2514,7 @@ mod test {
                 expected: ArgumentType::String,
                 found: ArgumentType::Expression
             }
-            .add_span(14..15)),
+            .add_span((14..15).span())),
         );
     }
 
@@ -2515,7 +2526,7 @@ mod test {
                 expected: ArgumentType::Identifier,
                 found: ArgumentType::String
             }
-            .add_span(8..14)),
+            .add_span((8..14).span())),
         );
         assert_eq!(
             compile(".global 123\n.text\nmain: nop"),
@@ -2523,7 +2534,7 @@ mod test {
                 expected: ArgumentType::Identifier,
                 found: ArgumentType::Expression
             }
-            .add_span(8..11)),
+            .add_span((8..11).span())),
         );
     }
 
@@ -2532,7 +2543,7 @@ mod test {
         let assert = |err, syntaxes: &[&str], expected_span: Range| match err {
             Err(ErrorData { span, kind }) => match *kind {
                 ErrorKind::IncorrectInstructionSyntax(s) => {
-                    assert_eq!(span, expected_span.into());
+                    assert_eq!(span, (expected_span).span());
                     assert_eq!(s.into_iter().map(|x| x.0).collect::<Vec<_>>(), syntaxes);
                 }
                 x => panic!(
@@ -2554,21 +2565,21 @@ mod test {
         use error::OperationKind;
         assert_eq!(
             compile(".data\n.byte 1/0\n.text\nmain: nop"),
-            Err(ErrorKind::DivisionBy0((14..15).into()).add_span(13..14)),
+            Err(ErrorKind::DivisionBy0((14..15).span()).add_span((13..14).span())),
         );
         assert_eq!(
             compile(".text\nmain: imm 0, 0, 1/0"),
-            Err(ErrorKind::DivisionBy0((24..25).into()).add_span(23..24)),
+            Err(ErrorKind::DivisionBy0((24..25).span()).add_span((23..24).span())),
         );
         assert_eq!(
             compile(".text\nmain: imm 0, 0, 1%0"),
-            Err(ErrorKind::RemainderWith0((24..25).into()).add_span(23..24)),
+            Err(ErrorKind::RemainderWith0((24..25).span()).add_span((23..24).span())),
         );
         assert_eq!(
             compile(".data\n.float ~1.0\n.text\nmain: nop"),
             Err(
-                ErrorKind::UnallowedFloatOperation(OperationKind::Complement, (14..17).into())
-                    .add_span(13..14)
+                ErrorKind::UnallowedFloatOperation(OperationKind::Complement, (14..17).span())
+                    .add_span((13..14).span())
             ),
         );
         for (op, c) in [
@@ -2578,7 +2589,8 @@ mod test {
         ] {
             assert_eq!(
                 compile(&format!(".data\n.float 1.0 {c} 2.0\n.text\nmain: nop")),
-                Err(ErrorKind::UnallowedFloatOperation(op, (13..16).into()).add_span(17..18)),
+                Err(ErrorKind::UnallowedFloatOperation(op, (13..16).span())
+                    .add_span((17..18).span())),
             );
         }
     }
@@ -2587,11 +2599,11 @@ mod test {
     fn missing_main() {
         assert_eq!(
             compile(".text\nnop"),
-            Err(ErrorKind::MissingMainLabel.add_span(9..9)),
+            Err(ErrorKind::MissingMainLabel.add_span((9..9).span())),
         );
         assert_eq!(
             compile(".text\nnop\n.data"),
-            Err(ErrorKind::MissingMainLabel.add_span(9..9)),
+            Err(ErrorKind::MissingMainLabel.add_span((9..9).span())),
         );
     }
 
@@ -2599,32 +2611,35 @@ mod test {
     fn main_outside_code() {
         assert_eq!(
             compile(".data\nmain: .byte 1\n.text\nnop"),
-            Err(ErrorKind::MainOutsideCode.add_span(6..11)),
+            Err(ErrorKind::MainOutsideCode.add_span((6..11).span())),
         );
         assert_eq!(
             compile(".kdata\nmain: .byte 1\n.text\nnop"),
-            Err(ErrorKind::MainOutsideCode.add_span(7..12)),
+            Err(ErrorKind::MainOutsideCode.add_span((7..12).span())),
         );
         assert_eq!(
             compile(".ktext\nmain: nop\n.text\nnop"),
-            Err(ErrorKind::MainOutsideCode.add_span(7..12)),
+            Err(ErrorKind::MainOutsideCode.add_span((7..12).span())),
         );
     }
 
     #[test]
     fn empty_code() {
-        assert_eq!(compile(""), Err(ErrorKind::MissingMainLabel.add_span(0..0)),);
+        let s = DEFAULT_SPAN;
+        assert_eq!(compile(""), Err(ErrorKind::MissingMainLabel.add_span(s)));
     }
 
     #[test]
     fn duplicate_label() {
+        let s = (16..21).span();
         assert_eq!(
             compile(".text\nmain: nop\nmain: nop"),
-            Err(ErrorKind::DuplicateLabel("main".into(), Some((6..11).into())).add_span(16..21)),
+            Err(ErrorKind::DuplicateLabel("main".into(), Some((6..11).span())).add_span(s)),
         );
+        let s = (23..29).span();
         assert_eq!(
             compile(".text\nmain: nop\nlabel:\nlabel: nop"),
-            Err(ErrorKind::DuplicateLabel("label".into(), Some((16..22).into())).add_span(23..29)),
+            Err(ErrorKind::DuplicateLabel("label".into(), Some((16..22).span())).add_span(s)),
         );
     }
 
@@ -2633,11 +2648,11 @@ mod test {
         // Instructions
         assert_eq!(
             compile(".text\nmain: nop\nnop\nnop\nnop\nimm 0, 0, 0"),
-            Err(ErrorKind::MemorySectionFull("Instructions").add_span(28..39)),
+            Err(ErrorKind::MemorySectionFull("Instructions").add_span((28..39).span())),
         );
         assert_eq!(
             compile(".text\nmain: nop\nnop\nnop\nnop2"),
-            Err(ErrorKind::MemorySectionFull("Instructions").add_span(24..28)),
+            Err(ErrorKind::MemorySectionFull("Instructions").add_span((24..28).span())),
         );
         // Data directives
         for (directive, span) in [
@@ -2651,7 +2666,7 @@ mod test {
         ] {
             assert_eq!(
                 compile(&format!(".data\n.zero 12\n.{directive}\n.text\nmain: nop")),
-                Err(ErrorKind::MemorySectionFull("Data").add_span(span)),
+                Err(ErrorKind::MemorySectionFull("Data").add_span((span).span())),
                 "{directive}",
             );
         }
@@ -2662,11 +2677,11 @@ mod test {
         let compile = |src| compile_arch(src, include_str!("../tests/architecture_no_kernel.json"));
         assert_eq!(
             compile(".ktext\nfoo: nop\n.text\nmain: nop"),
-            Err(ErrorKind::MemorySectionFull("KernelInstructions").add_span(12..15)),
+            Err(ErrorKind::MemorySectionFull("KernelInstructions").add_span((12..15).span())),
         );
         assert_eq!(
             compile(".kdata\n.zero 1\n.text\nmain: nop"),
-            Err(ErrorKind::MemorySectionFull("KernelData").add_span(13..14)),
+            Err(ErrorKind::MemorySectionFull("KernelData").add_span((13..14).span())),
         );
     }
 
@@ -2677,7 +2692,9 @@ mod test {
             let labels = HashMap::from([("test".into(), val.into())]);
             let x = compile_with(src, &BigUint::ZERO, labels.clone(), false).unwrap();
             let mut labels = LabelTable::from(labels);
-            labels.insert("main".into(), 23..28, BigUint::ZERO).unwrap();
+            labels
+                .insert("main".into(), (23..28).span(), BigUint::ZERO)
+                .unwrap();
             assert_eq!(x.label_table, labels);
             assert_eq!(x.instructions, vec![main_nop(29..32)]);
             let val = val.into();
@@ -2716,12 +2733,12 @@ mod test {
     fn main_in_library() {
         assert_eq!(
             compile_with(".text\nmain: nop", &BigUint::ZERO, HashMap::new(), true),
-            Err(ErrorKind::MainInLibrary.add_span(6..11))
+            Err(ErrorKind::MainInLibrary.add_span((6..11).span()))
         );
         let labels = HashMap::from([("main".into(), 4u8.into())]);
         assert_eq!(
             compile_with(".text\ntest: nop", &BigUint::ZERO, labels, true),
-            Err(ErrorKind::MainInLibrary.add_span(0..0))
+            Err(ErrorKind::MainInLibrary.add_span(DEFAULT_SPAN))
         );
     }
 }

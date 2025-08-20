@@ -156,7 +156,7 @@ impl ArchitectureJS {
                 labels: x.labels,
                 loaded: x.loaded,
                 binary: x.binary.into(),
-                user: src[x.user.into_range()].to_owned(),
+                user: src[x.user].to_owned(),
             })
             .collect();
         // Wrap the data elements in a type that can be returned to `JS`

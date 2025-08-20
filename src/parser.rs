@@ -123,10 +123,11 @@ where
             // expressions will follow, otherwise a single newline is required as the statement end)
             newline()
                 .map_with(|_, e| {
-                    let s: Span = e.span();
+                    let mut s: Span = e.span();
                     // Don't include the newline in the span. We need to do this manually here
                     // because getting the span after `.rewind()` gives the wrong span
-                    (Vec::new(), (s.start..s.start).into())
+                    s.end = s.start;
+                    (Vec::new(), s)
                 })
                 .rewind()
                 .or(expression::parser()
@@ -183,12 +184,14 @@ where
 macro_rules! parse_with {
     ($parser:expr, $comment_prefix:expr, $src:expr) => {{
         use $crate::parser::{lexer, ParseError};
-        let end = $src.len();
+        use $crate::span::FileID;
+        let end = Span::new(FileID::SRC, $src.len()..$src.len());
+        let src = $src.with_context(FileID::SRC);
         || -> Result<_, ParseError> {
-            let tokens = lexer::lexer($comment_prefix).parse($src).into_result()?;
+            let tokens = lexer::lexer($comment_prefix).parse(src).into_result()?;
             // TODO: replace with `chumsky::input::IterInput` on chumsky 0.10.2 (on 0.10.1 it
             // doesn't implement the correct traits)
-            let tokens = tokens.map((end..end).into(), |(x, s)| (x, s));
+            let tokens = tokens.map(end, |(x, s)| (x, s));
             let res = $parser.parse(tokens).into_result()?;
             Ok(res)
         }()
@@ -213,9 +216,7 @@ pub fn parse(comment_prefix: &str, src: &str) -> Result<Vec<ASTNode>, ParseError
 #[cfg(test)]
 mod test {
     use super::*;
-
-    type Range = std::ops::Range<usize>;
-    type Ranged<T> = (T, Range);
+    use crate::span::test::*;
 
     fn test(test_cases: Vec<(&str, Vec<ASTNode>)>) {
         for (src, ast) in test_cases {
@@ -224,13 +225,13 @@ mod test {
     }
 
     #[must_use]
-    fn into<T>(x: (T, impl Into<Span>)) -> Spanned<T> {
-        (x.0, x.1.into())
+    fn into<T>(x: Ranged<T>) -> Spanned<T> {
+        (x.0, x.1.span())
     }
 
     #[must_use]
-    fn owned<O, T: ToOwned<Owned = O> + ?Sized>(x: (&T, impl Into<Span>)) -> Spanned<O> {
-        (x.0.to_owned(), x.1.into())
+    fn owned<O, T: ToOwned<Owned = O> + ?Sized>(x: Ranged<&T>) -> Spanned<O> {
+        (x.0.to_owned(), x.1.span())
     }
 
     #[must_use]
@@ -245,9 +246,9 @@ mod test {
             statement: (
                 Statement::Directive(DirectiveNode {
                     name: owned(name),
-                    args: (args.0.into_iter().map(into).collect(), args.1.into()),
+                    args: (args.0.into_iter().map(into).collect(), args.1.span()),
                 }),
-                span.into(),
+                span.span(),
             ),
         }
     }
@@ -264,9 +265,9 @@ mod test {
             statement: (
                 Statement::Instruction(InstructionNode {
                     name: owned(name),
-                    args: (args.0.into_iter().map(into).collect(), args.1.into()),
+                    args: (args.0.into_iter().map(into).collect(), args.1.span()),
                 }),
-                span.into(),
+                span.span(),
             ),
         }
     }
@@ -307,7 +308,7 @@ mod test {
                             (Data::String("a".into()), 6..9),
                             (Data::Number(Expr::Integer(1u8.into())), 11..12),
                             (
-                                Data::Number(Expr::Identifier(("b".into(), (14..15).into()))),
+                                Data::Number(Expr::Identifier(("b".into(), (14..15).span()))),
                                 14..15,
                             ),
                         ],
