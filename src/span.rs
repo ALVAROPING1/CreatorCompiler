@@ -21,55 +21,40 @@
 //! Module containing the definition of the spans used to track regions of the assembly source code
 //! throughout the crate
 
+pub use crate::compiler::FileID;
+
 /// Range of characters in the source code of an element
-pub type Span = chumsky::span::SimpleSpan<usize>;
+pub type Span = chumsky::span::SimpleSpan<usize, FileID>;
 /// Value with an attached [`Span`]
 pub type Spanned<T> = (T, Span);
+/// Simple range of elements
+pub type Range = std::ops::Range<usize>;
 
-/// Dynamically generated source code for a [`Span`]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Source {
-    /// Source assembly code
-    pub code: String,
-    /// Span of this dynamically generated code
-    pub span: SpanList,
-}
+pub const DEFAULT_SPAN: Span = Span {
+    start: 0,
+    end: 0,
+    context: FileID::SRC,
+};
 
-/// [`Span`] that carries its source code, used to point into dynamically generated source code
-#[allow(clippy::module_name_repetitions)]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SpanList {
-    /// [`Span`] of the element in its source code
-    pub span: Span,
-    /// Source of the element, [`None`] if it comes from the user's assembly source code
-    pub source: Option<std::rc::Rc<Source>>,
-}
+#[cfg(test)]
+pub mod test {
+    pub use super::{FileID, Range, Span, Spanned};
 
-impl From<Span> for SpanList {
-    fn from(span: Span) -> Self {
-        Self { span, source: None }
+    pub type Ranged<T> = (T, Range);
+
+    pub trait IntoSpan {
+        fn span(self) -> Span;
     }
-}
 
-impl From<&Span> for SpanList {
-    fn from(span: &Span) -> Self {
-        (*span).into()
+    impl IntoSpan for Span {
+        fn span(self) -> Span {
+            self
+        }
     }
-}
 
-type Range = std::ops::Range<usize>;
-
-impl From<Range> for SpanList {
-    fn from(span: Range) -> Self {
-        Span::from(span).into()
-    }
-}
-
-impl From<(Span, &Self)> for SpanList {
-    fn from(value: (Span, &Self)) -> Self {
-        Self {
-            span: value.0,
-            source: value.1.source.clone(),
+    impl IntoSpan for Range {
+        fn span(self) -> Span {
+            chumsky::span::Span::new(FileID::SRC, self)
         }
     }
 }

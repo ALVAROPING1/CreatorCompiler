@@ -29,6 +29,7 @@ use std::sync::LazyLock;
 
 use super::{expression, expression::Expr, lexer, ParseError, Span, Spanned, Token};
 use crate::architecture::{FieldType, InstructionField};
+use crate::span::FileID;
 
 /// Value of a parsed argument
 #[derive(Debug, Clone, PartialEq)]
@@ -108,7 +109,7 @@ impl Instruction {
         // the architecture specifies here. Null characters can't appear in the input, so this
         // disallows line comments
         let mut tokens = lexer::lexer("\0")
-            .parse(fmt)
+            .parse(fmt.with_context(FileID::SRC))
             .into_result()
             .map_err(|_| "incorrect signature definition")?
             .into_iter()
@@ -127,7 +128,7 @@ impl Instruction {
                             // NOTE: This value should never be read, we only need it to point to the
                             // opcode instruction field
                             vec![ParsedArgument {
-                                value: (Expr::Integer(0u8.into()), (0..0).into()),
+                                value: (Expr::Integer(0u8.into()), crate::span::DEFAULT_SPAN),
                                 field_idx: i,
                             }]
                         }
@@ -176,10 +177,10 @@ impl Instruction {
     ///
     /// Errors if the code doesn't follow the syntax defined
     pub fn parse(&self, code: Spanned<&[Spanned<Token>]>) -> Result<ParsedArgs, ParseError> {
-        let end = code.1.end;
+        let end = Span::new(code.1.context, code.1.end..code.1.end);
         Ok(self
             .get()
-            .parse(code.0.map((end..end).into(), |(x, s)| (x, s)))
+            .parse(code.0.map(end, |(x, s)| (x, s)))
             .into_result()?)
     }
 
@@ -200,36 +201,39 @@ impl Instruction {
     /// # Parameters
     ///
     /// * `code`: code to lex
+    /// * `file_id`: ID of the file with the code
     ///
     /// # Errors
     ///
     /// Errors if there is an error lexing the code
-    pub fn lex(code: &str) -> Result<Vec<Spanned<Token>>, ParseError> {
+    pub fn lex(code: &str, file_id: FileID) -> Result<Vec<Spanned<Token>>, ParseError> {
+        let src = code.with_context(file_id);
         // NOTE: we use a null character as the comment prefix because we don't know what prefix
         // the architecture specifies here. Null characters can't appear in the input, so this
         // disallows line comments
-        Ok(super::lexer::lexer("\0").parse(code).into_result()?)
+        Ok(super::lexer::lexer("\0").parse(src).into_result()?)
     }
 
     /// Parses an instruction into a pair of name and arguments
     ///
     /// # Parameters
     ///
-    /// * `end`: end of input position
+    /// * `end`: position of the end of input
     /// * `tokens`: list of tokens to parse
     ///
     /// # Errors
     ///
     /// Errors if the tokens don't match the syntax
     pub fn parse_name(
-        end: usize,
+        end: (usize, FileID),
         tokens: &[Spanned<Token>],
     ) -> Result<InstructionNodeRef, ParseError> {
         let args = any::<_, extra::Err<Rich<_, _>>>().repeated().to_slice();
         let parser = select_ref! { Token::Identifier(name) = e => (name.as_str(), e.span()) }
             .labelled("identifier")
             .then(args.map_with(|x, e| (x, e.span())));
-        let input = tokens.map((end..end).into(), |(x, s)| (x, s));
+        let end = Span::new(end.1, end.0..end.0);
+        let input = tokens.map(end, |(x, s)| (x, s));
         Ok(parser.parse(input).into_result()?)
     }
 }
@@ -246,10 +250,7 @@ impl std::fmt::Debug for Instruction {
 mod test {
     use super::*;
     use crate::parser::expression::BinaryOp;
-    use crate::span::Span;
-
-    type Range = std::ops::Range<usize>;
-    type Ranged<T> = (T, Range);
+    use crate::span::test::*;
 
     #[must_use]
     fn fields() -> [InstructionField<'static, ()>; 3] {
@@ -266,26 +267,28 @@ mod test {
     }
 
     fn parse(parser: &Instruction, src: &str) -> Result<ParsedArgs, ()> {
-        let (ast, span) = (lexer::lexer("#").parse(src).unwrap(), (0..src.len()).into());
+        let span = (0..src.len()).span();
+        let src = src.with_context(FileID::SRC);
+        let ast = lexer::lexer("#").parse(src).unwrap();
         parser.parse((&ast, span)).map_err(|e| eprintln!("{e:?}"))
     }
 
     #[must_use]
-    fn arg(value: (Expr, impl Into<Span>), field_idx: usize) -> ParsedArgument {
+    fn arg(value: (Expr, impl IntoSpan), field_idx: usize) -> ParsedArgument {
         ParsedArgument {
-            value: (value.0, value.1.into()),
+            value: (value.0, value.1.span()),
             field_idx,
         }
     }
 
     #[must_use]
     fn co_arg() -> ParsedArgument {
-        arg((Expr::Integer(0u8.into()), 0..0), 0)
+        arg((Expr::Integer(0u8.into()), crate::span::DEFAULT_SPAN), 0)
     }
 
     #[must_use]
     fn ident(name: Ranged<&str>) -> Spanned<Expr> {
-        let s = name.1.into();
+        let s = name.1.span();
         (Expr::Identifier((name.0.into(), s)), s)
     }
 
@@ -322,9 +325,9 @@ mod test {
                 arg(
                     (
                         Expr::BinaryOp {
-                            op: (BinaryOp::Add, (2..3).into()),
-                            lhs: Box::new((Expr::Integer(1u8.into()), (0..1).into())),
-                            rhs: Box::new((Expr::Integer(1u8.into()), (4..5).into()))
+                            op: (BinaryOp::Add, (2..3).span()),
+                            lhs: Box::new((Expr::Integer(1u8.into()), (0..1).span())),
+                            rhs: Box::new((Expr::Integer(1u8.into()), (4..5).span()))
                         },
                         0..5
                     ),
@@ -339,7 +342,7 @@ mod test {
                 arg(
                     (
                         Expr::BinaryOp {
-                            op: (BinaryOp::Sub, (2..3).into()),
+                            op: (BinaryOp::Sub, (2..3).span()),
                             lhs: Box::new(ident(("c", 0..1))),
                             rhs: Box::new(ident(("a", 4..5)))
                         },

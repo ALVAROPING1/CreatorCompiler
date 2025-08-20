@@ -96,14 +96,6 @@ impl From<Spanned<f64>> for Number {
         }
     }
 }
-impl From<(f64, std::ops::Range<usize>)> for Number {
-    fn from(value: (f64, std::ops::Range<usize>)) -> Self {
-        Self::Float {
-            value: value.0,
-            origin: value.1.into(),
-        }
-    }
-}
 
 impl TryFrom<Number> for BigInt {
     type Error = ErrorKind;
@@ -218,8 +210,16 @@ impl_bin_op!(ops::BitXor, bitxor, ^, OperationKind::BitwiseXOR);
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::span::test::*;
 
-    type Range = std::ops::Range<usize>;
+    impl From<Ranged<f64>> for Number {
+        fn from(value: Ranged<f64>) -> Self {
+            Self::Float {
+                value: value.0,
+                origin: value.1.span(),
+            }
+        }
+    }
 
     #[test]
     #[allow(clippy::float_cmp)]
@@ -228,7 +228,7 @@ mod test {
         assert_eq!(
             f64::from(Number::Float {
                 value: 101.5,
-                origin: (0..0).into()
+                origin: (0..0).span()
             }),
             101.5
         );
@@ -236,7 +236,7 @@ mod test {
         assert_eq!(
             f32::from(Number::Float {
                 value: 101.5,
-                origin: (0..0).into()
+                origin: (0..0).span()
             }),
             101.5
         );
@@ -248,9 +248,9 @@ mod test {
         assert_eq!(
             BigInt::try_from(Number::Float {
                 value: 101.5,
-                origin: (1..3).into()
+                origin: (1..3).span()
             }),
-            Err(ErrorKind::UnallowedFloat((1..3).into()))
+            Err(ErrorKind::UnallowedFloat((1..3).span()))
         );
     }
 
@@ -264,9 +264,9 @@ mod test {
         assert_eq!(
             BigUint::try_from(Number::Float {
                 value: 101.5,
-                origin: (1..3).into()
+                origin: (1..3).span()
             }),
-            Err(ErrorKind::UnallowedFloat((1..3).into()))
+            Err(ErrorKind::UnallowedFloat((1..3).span()))
         );
     }
 
@@ -276,7 +276,7 @@ mod test {
             Number::from((12.5, 1..4)),
             Number::Float {
                 value: 12.5,
-                origin: (1..4).into()
+                origin: (1..4).span()
             }
         );
     }
@@ -304,7 +304,7 @@ mod test {
             !Number::from((1.5, 1..2)),
             Err(ErrorKind::UnallowedFloatOperation(
                 OperationKind::Complement,
-                (1..2).into()
+                (1..2).span()
             ))
         );
     }
@@ -426,7 +426,7 @@ mod test {
         let i2 = Number::from(-2);
         let f1 = Number::from((1.2, 1..3));
         let f2 = Number::from((2.5, 5..6));
-        let err = |s: Range| ErrorKind::UnallowedFloatOperation(OperationKind::BitwiseOR, s.into());
+        let err = |s: Range| ErrorKind::UnallowedFloatOperation(OperationKind::BitwiseOR, s.span());
         assert_eq!(op(&i1, &i2), Ok(Number::from(12 | -2)));
         assert_eq!(op(&i1, &f2), Err(err(5..6)));
         assert_eq!(op(&f1, &i2), Err(err(1..3)));
@@ -453,7 +453,7 @@ mod test {
         let f1 = Number::from((1.2, 1..3));
         let f2 = Number::from((2.5, 5..6));
         let err =
-            |s: Range| ErrorKind::UnallowedFloatOperation(OperationKind::BitwiseAND, s.into());
+            |s: Range| ErrorKind::UnallowedFloatOperation(OperationKind::BitwiseAND, s.span());
         assert_eq!(op(&i1, &i2), Ok(Number::from(12 & -2)));
         assert_eq!(op(&i1, &f2), Err(err(5..6)));
         assert_eq!(op(&f1, &i2), Err(err(1..3)));
@@ -487,7 +487,7 @@ mod test {
         let f1 = Number::from((1.2, 1..3));
         let f2 = Number::from((2.5, 5..6));
         let err =
-            |s: Range| ErrorKind::UnallowedFloatOperation(OperationKind::BitwiseXOR, s.into());
+            |s: Range| ErrorKind::UnallowedFloatOperation(OperationKind::BitwiseXOR, s.span());
         assert_eq!(op(&i1, &i2), Ok(Number::from(12 ^ -2)));
         assert_eq!(op(&i1, &f2), Err(err(5..6)));
         assert_eq!(op(&f1, &i2), Err(err(1..3)));

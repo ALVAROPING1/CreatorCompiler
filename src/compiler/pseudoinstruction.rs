@@ -31,16 +31,16 @@ use num_bigint::{BigInt, BigUint};
 use regex::{Captures, Regex};
 
 use std::fmt::Write as _;
-use std::rc::Rc;
 use std::sync::LazyLock;
 
 use crate::architecture::{Architecture, FloatType, Pseudoinstruction, RegisterType};
 use crate::number::Number;
 use crate::parser::{ParseError, Token};
+use crate::span::Range;
 
 use super::{ArgumentType, ErrorData, ErrorKind, InstructionDefinition, LabelTable};
 use super::{Expr, ParsedArgs};
-use super::{Source, Span, SpanList, Spanned, SpannedErr};
+use super::{FileCache, Span, Spanned, SpannedErr};
 
 /// Pseudoinstruction evaluation error kind
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,7 +60,7 @@ pub struct Error {
     /// Definition of the string at the point of the error
     pub definition: String,
     /// Location in the definition that caused the error
-    pub span: Span,
+    pub span: Range,
     /// Type of the error
     pub kind: Kind,
 }
@@ -73,7 +73,7 @@ impl Error {
     /// * `def`: definition of the pseudoinstruction
     /// * `span`: location in the assembly code that caused the error
     #[must_use]
-    fn compile_error(self, def: &Pseudoinstruction, span: impl Into<SpanList>) -> ErrorData {
+    fn compile_error(self, def: &Pseudoinstruction, span: Span) -> ErrorData {
         ErrorKind::PseudoinstructionError {
             name: def.name.to_owned(),
             error: Box::new(self),
@@ -173,7 +173,7 @@ mod js {
 /// # Errors
 ///
 /// Errors if the expression doesn't contain a register name
-fn reg_name(arg: &Spanned<Expr>, origin: &SpanList) -> Result<String, ErrorData> {
+fn reg_name(arg: &Spanned<Expr>) -> Result<String, ErrorData> {
     match &arg.0 {
         Expr::Identifier((name, _)) => Ok(name.clone()),
         Expr::Integer(i) => Ok(i.to_string()),
@@ -181,11 +181,9 @@ fn reg_name(arg: &Spanned<Expr>, origin: &SpanList) -> Result<String, ErrorData>
             expected: ArgumentType::RegisterName,
             found: ArgumentType::Expression,
         }
-        .add_span((arg.1, origin))),
+        .add_span(arg.1)),
     }
 }
-
-type Range = std::ops::Range<usize>;
 
 /// Gets the [`Span`] of a capture group
 ///
@@ -206,7 +204,7 @@ fn capture_span(captures: &Captures, i: usize) -> Range {
 }
 
 /// Result of expanding a pseudoinstruction
-type ExpandedInstructions<'a> = Vec<((InstructionDefinition<'a>, ParsedArgs), SpanList)>;
+type ExpandedInstructions<'a> = Vec<Spanned<(InstructionDefinition<'a>, ParsedArgs)>>;
 
 /// Expands a pseudoinstruction to a sequence of instructions, which might be real or another
 /// pseudoinstruction
@@ -215,6 +213,7 @@ type ExpandedInstructions<'a> = Vec<((InstructionDefinition<'a>, ParsedArgs), Sp
 ///
 /// * `arch`: architecture definition
 /// * `label_table`: symbol table for labels
+/// * `file_cache`: pseudoinstruction definition cache
 /// * `address`: address in which the instruction is being compiled into
 /// * `instruction`: pseudoinstruction definition to use
 /// * `args`: arguments of the instruction being expanded
@@ -226,8 +225,9 @@ type ExpandedInstructions<'a> = Vec<((InstructionDefinition<'a>, ParsedArgs), Sp
 pub fn expand<'b, 'a: 'b>(
     arch: &'a Architecture,
     label_table: &LabelTable,
+    file_cache: &mut FileCache,
     address: &BigUint,
-    instruction: (&'b Pseudoinstruction, SpanList),
+    instruction: (&'b Pseudoinstruction, Span),
     args: &ParsedArgs,
 ) -> Result<ExpandedInstructions<'a>, ErrorData> {
     // Regex used
@@ -275,12 +275,12 @@ pub fn expand<'b, 'a: 'b>(
         let name = get_arg(name).ok_or_else(|| {
             Error {
                 definition: def.clone(),
-                span: capture_span(&x, 1).into(),
+                span: capture_span(&x, 1),
                 kind: Kind::UnknownFieldName(name.to_owned()),
             }
-            .compile_error(instruction, span.clone())
+            .compile_error(instruction, span)
         })?;
-        let name = &reg_name(&name.value, &span)?;
+        let name = &reg_name(&name.value)?;
         let i: usize = num(i);
         // Find the register name and replace it
         for file in arch.find_reg_files(RegisterType::Float(FloatType::Double)) {
@@ -305,13 +305,13 @@ pub fn expand<'b, 'a: 'b>(
             .ok_or_else(|| {
                 Error {
                     definition: def.clone(),
-                    span: capture_span(&x, 1).into(),
+                    span: capture_span(&x, 1),
                     kind: Kind::UnknownFieldNumber {
                         idx: arg_num + 1,
                         size: args.len(),
                     },
                 }
-                .compile_error(instruction, span.clone())
+                .compile_error(instruction, span)
             })?
             .value;
         // Get the range of bits requested
@@ -320,7 +320,7 @@ pub fn expand<'b, 'a: 'b>(
         if start_bit < end_bit {
             return Err(Error {
                 definition: def.clone(),
-                span: (capture_span(&x, 2).start..capture_span(&x, 3).end).into(),
+                span: capture_span(&x, 2).start..capture_span(&x, 3).end,
                 kind: Kind::EmptyBitRange,
             }
             .compile_error(instruction, span));
@@ -331,7 +331,7 @@ pub fn expand<'b, 'a: 'b>(
             "int" => {
                 // Convert the number to binary using two's complement
                 let s = BigInt::try_from(value.eval(ident_eval)?)
-                    .add_span(value_span)?
+                    .add_span(*value_span)?
                     .to_signed_bytes_be()
                     .iter()
                     .fold(String::new(), |mut s, byte| {
@@ -357,7 +357,7 @@ pub fn expand<'b, 'a: 'b>(
             ty => {
                 return Err(Error {
                     definition: def.clone(),
-                    span: capture_span(&x, 4).into(),
+                    span: capture_span(&x, 4),
                     kind: Kind::UnknownFieldType(ty.to_owned()),
                 }
                 .compile_error(instruction, span))
@@ -367,7 +367,7 @@ pub fn expand<'b, 'a: 'b>(
         if start_bit > msb {
             return Err(Error {
                 definition: def.clone(),
-                span: (capture_span(&x, 2).start..capture_span(&x, 3).end).into(),
+                span: capture_span(&x, 2).start..capture_span(&x, 3).end,
                 kind: Kind::BitRangeOutOfBounds {
                     upper_bound: start_bit,
                     msb,
@@ -394,13 +394,13 @@ pub fn expand<'b, 'a: 'b>(
             .ok_or_else(|| {
                 Error {
                     definition: def.clone(),
-                    span: capture_span(&x, 1).into(),
+                    span: capture_span(&x, 1),
                     kind: Kind::UnknownFieldNumber {
                         idx: arg_num + 1,
                         size: args.len(),
                     },
                 }
-                .compile_error(instruction, span.clone())
+                .compile_error(instruction, span)
             })?
             .value;
         // Calculate the size of the expression
@@ -423,16 +423,16 @@ pub fn expand<'b, 'a: 'b>(
             .ok_or_else(|| {
                 Error {
                     definition: def.clone(),
-                    span: capture_span(&x, 1).into(),
+                    span: capture_span(&x, 1),
                     kind: Kind::UnknownFieldNumber {
                         idx: arg_num + 1,
                         size: args.len(),
                     },
                 }
-                .compile_error(instruction, span.clone())
+                .compile_error(instruction, span)
             })?
             .value;
-        let name = reg_name(value, &span)?;
+        let name = reg_name(value)?;
         def.replace_range(capture_span(&x, 0), &format!("\"{name}\""));
     }
 
@@ -449,10 +449,10 @@ pub fn expand<'b, 'a: 'b>(
         js::eval_fn(code).map_err(|error| {
             Error {
                 definition: def.clone(),
-                span: capture_span(&x, 1).into(),
+                span: capture_span(&x, 1),
                 kind: Kind::EvaluationError(error),
             }
-            .compile_error(instruction, span.clone())
+            .compile_error(instruction, span)
         })?;
         def.replace_range(capture_span(&x, 0), "");
     }
@@ -463,10 +463,10 @@ pub fn expand<'b, 'a: 'b>(
         let result = js::eval_expr(code).map_err(|error| {
             Error {
                 definition: def.clone(),
-                span: capture_span(&x, 1).into(),
+                span: capture_span(&x, 1),
                 kind: Kind::EvaluationError(error),
             }
-            .compile_error(instruction, span.clone())
+            .compile_error(instruction, span)
         })?;
         def.replace_range(capture_span(&x, 0), &js::to_string(result));
     }
@@ -488,40 +488,35 @@ pub fn expand<'b, 'a: 'b>(
         let result = js::eval_fn(&def).map_err(|error| {
             Error {
                 definition: def.clone(),
-                span: (0..def.len()).into(),
+                span: 0..def.len(),
                 kind: Kind::EvaluationError(error),
             }
-            .compile_error(instruction, span.clone())
+            .compile_error(instruction, span)
         })?;
         def = js::to_string(result);
     }
 
     // Lex the instructions
-    let source = Rc::new(Source { code: def, span });
-    let def = &source.code;
+    let (def, file_id) = file_cache.add(def, span);
     let parse_err = |error| {
         Error {
-            definition: def.clone(),
-            span: (0..def.len()).into(),
+            definition: def.to_string(),
+            span: 0..def.len(),
             kind: Kind::ParseError(error),
         }
-        .compile_error(instruction, source.span.clone())
+        .compile_error(instruction, span)
     };
-    let tokens = crate::parser::Instruction::lex(def).map_err(parse_err)?;
+    let tokens = crate::parser::Instruction::lex(def, file_id).map_err(parse_err)?;
     // Process the resulting instruction sequence
     tokens
         .split(|(t, _)| *t == Token::Literal(';'))
         .filter(|t| !t.is_empty()) // split leaves an empty element after the last `;`
         .map(|tokens| {
-            let (name, args) = crate::parser::Instruction::parse_name(source.code.len(), tokens)
+            let (name, args) = crate::parser::Instruction::parse_name((def.len(), file_id), tokens)
                 .map_err(parse_err)?;
-            let span = (name.1.start..args.1.end).into();
-            let span = SpanList {
-                span,
-                source: Some(source.clone()),
-            };
+            let span = chumsky::span::Span::new(file_id, name.1.start..args.1.end);
             // Parse the instruction
-            let (inst_def, mut args) = super::parse_instruction(arch, name, args, &span)?;
+            let (inst_def, mut args) = super::parse_instruction(arch, name, args)?;
             // Replace the argument names that match those of the pseudoinstruction being expanded
             // with the values provided by the user
             for arg in &mut args {

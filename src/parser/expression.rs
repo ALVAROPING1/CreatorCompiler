@@ -113,7 +113,7 @@ impl Expr {
             Self::Integer(value) => Ok(value.clone().into()),
             Self::Float((value, span)) => Ok(Number::from((*value, *span))),
             Self::Character(c) => Ok((*c as u32).into()),
-            Self::Identifier((ident, span)) => Ok(ident_eval(ident).add_span(span)?.into()),
+            Self::Identifier((ident, span)) => Ok(ident_eval(ident).add_span(*span)?.into()),
             Self::UnaryOp { op, operand } => match op.0 {
                 UnaryOp::Plus => operand.0.eval(ident_eval),
                 UnaryOp::Minus => Ok(-(operand.0.eval(ident_eval)?)),
@@ -200,7 +200,7 @@ where
                         lhs: Box::new(lhs),
                         rhs: Box::new(rhs),
                     },
-                    span.into(),
+                    Span::new(op.1.context, span),
                 )
             }
         };
@@ -234,7 +234,7 @@ where
                             op,
                             operand: Box::new(rhs),
                         },
-                        Span::from(span),
+                        Span::new(op.1.context, span),
                     )
                 },
             ),
@@ -250,6 +250,7 @@ where
 mod test {
     use super::*;
     use crate::compiler::error::OperationKind;
+    use crate::span::test::*;
 
     fn parse(code: &str) -> Result<Spanned<Expr>, ()> {
         super::super::parse_with!(super::parser(), "#", code).map_err(|_| ())
@@ -267,7 +268,7 @@ mod test {
         };
         for (src, expr, expected) in test_cases {
             let start = (src.trim_start().as_ptr() as usize) - (src.as_ptr() as usize);
-            let span = (start..src.len()).into();
+            let span = (start..src.len()).span();
             assert_eq!(parse(src), Ok((expr.clone(), span)), "`{src:?}`");
             let res = expr.eval(ident_eval);
             assert_eq!(res, expected, "`{src:?}`\n{expr:?}");
@@ -275,8 +276,8 @@ mod test {
     }
 
     #[must_use]
-    fn float_op<S: Into<Span>>(op: OperationKind, float_span: S, op_span: S) -> ErrorData {
-        ErrorKind::UnallowedFloatOperation(op, float_span.into()).add_span(op_span.into())
+    fn float_op<S: IntoSpan>(op: OperationKind, float_span: S, op_span: S) -> ErrorData {
+        ErrorKind::UnallowedFloatOperation(op, float_span.span()).add_span(op_span.span())
     }
 
     #[test]
@@ -298,22 +299,22 @@ mod test {
             ("'a'", Expr::Character('a'), Ok(('a' as u32).into())),
             (
                 "a",
-                Expr::Identifier(("a".into(), (0..1).into())),
+                Expr::Identifier(("a".into(), (0..1).span())),
                 Ok(5.into()),
             ),
             (
                 "test",
-                Expr::Identifier(("test".into(), (0..4).into())),
-                Err(ErrorKind::UnknownLabel("test".into()).add_span(0..4)),
+                Expr::Identifier(("test".into(), (0..4).span())),
+                Err(ErrorKind::UnknownLabel("test".into()).add_span((0..4).span())),
             ),
             (
                 ".test",
-                Expr::Identifier((".test".into(), (0..5).into())),
-                Err(ErrorKind::UnknownLabel(".test".into()).add_span(0..5)),
+                Expr::Identifier((".test".into(), (0..5).span())),
+                Err(ErrorKind::UnknownLabel(".test".into()).add_span((0..5).span())),
             ),
             (
                 "1.0",
-                Expr::Float((1.0, (0..3).into())),
+                Expr::Float((1.0, (0..3).span())),
                 Ok((1.0, 0..3).into()),
             ),
             (
@@ -325,35 +326,35 @@ mod test {
     }
 
     #[must_use]
-    fn int(x: u32, s: impl Into<Span>) -> Spanned<Expr> {
-        (Expr::Integer(x.into()), s.into())
+    fn int(x: u32, s: impl IntoSpan) -> Spanned<Expr> {
+        (Expr::Integer(x.into()), s.span())
     }
 
     #[must_use]
-    fn float(x: f64, s: impl Into<Span>) -> Spanned<Expr> {
-        let s = s.into();
+    fn float(x: f64, s: impl IntoSpan) -> Spanned<Expr> {
+        let s = s.span();
         (Expr::Float((x, s)), s)
     }
 
     #[must_use]
-    fn un_op(op: (UnaryOp, impl Into<Span>), operand: (Expr, impl Into<Span>)) -> Expr {
+    fn un_op(op: (UnaryOp, impl IntoSpan), operand: (Expr, impl IntoSpan)) -> Expr {
         Expr::UnaryOp {
-            op: (op.0, op.1.into()),
-            operand: Box::new((operand.0, operand.1.into())),
+            op: (op.0, op.1.span()),
+            operand: Box::new((operand.0, operand.1.span())),
         }
     }
 
     #[must_use]
     fn bin_op<S1, S2, S3>(op: (BinaryOp, S1), lhs: (Expr, S2), rhs: (Expr, S3)) -> Expr
     where
-        S1: Into<Span>,
-        S2: Into<Span>,
-        S3: Into<Span>,
+        S1: IntoSpan,
+        S2: IntoSpan,
+        S3: IntoSpan,
     {
         Expr::BinaryOp {
-            op: (op.0, op.1.into()),
-            lhs: Box::new((lhs.0, lhs.1.into())),
-            rhs: Box::new((rhs.0, rhs.1.into())),
+            op: (op.0, op.1.span()),
+            lhs: Box::new((lhs.0, lhs.1.span())),
+            rhs: Box::new((rhs.0, rhs.1.span())),
         }
     }
 
@@ -449,8 +450,8 @@ mod test {
                 "d - a",
                 bin_op(
                     (BinaryOp::Sub, 2..3),
-                    (Expr::Identifier(("d".into(), (0..1).into())), 0..1),
-                    (Expr::Identifier(("a".into(), (4..5).into())), 4..5),
+                    (Expr::Identifier(("d".into(), (0..1).span())), 0..1),
+                    (Expr::Identifier(("a".into(), (4..5).span())), 4..5),
                 ),
                 Ok(3.into()),
             ),
@@ -493,7 +494,7 @@ mod test {
             (
                 "10 / 0",
                 bin_op((BinaryOp::Div, 3..4), int(10, 0..2), int(0, 5..6)),
-                Err(ErrorKind::DivisionBy0((5..6).into()).add_span(3..4)),
+                Err(ErrorKind::DivisionBy0((5..6).span()).add_span((3..4).span())),
             ),
             (
                 "10 / 0.0",
@@ -514,7 +515,7 @@ mod test {
             (
                 "7 % 0",
                 bin_op((BinaryOp::Rem, 2..3), int(7, 0..1), int(0, 4..5)),
-                Err(ErrorKind::RemainderWith0((4..5).into()).add_span(2..3)),
+                Err(ErrorKind::RemainderWith0((4..5).span()).add_span((2..3).span())),
             ),
             (
                 "7.2 % 5",

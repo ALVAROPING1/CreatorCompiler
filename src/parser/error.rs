@@ -25,29 +25,30 @@ use chumsky::error::{Rich, RichPattern, RichReason};
 
 use super::Token;
 use crate::error_rendering::{Colored, DisplayList};
+use crate::span::Span;
 
 /// Error representing a syntax error during parsing
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Error {
     /// The error happened during the lexing stage
-    Lexer(Vec<Rich<'static, char>>),
+    Lexer(Vec<Rich<'static, char, Span>>),
     /// The error happened during the parsing stage
-    Parser(Vec<Rich<'static, Token>>),
+    Parser(Vec<Rich<'static, Token, Span>>),
 }
 
-impl<'src> From<Vec<Rich<'src, char>>> for Error {
-    fn from(value: Vec<Rich<'src, char>>) -> Self {
+impl<'src> From<Vec<Rich<'src, char, Span>>> for Error {
+    fn from(value: Vec<Rich<'src, char, Span>>) -> Self {
         Self::Lexer(value.into_iter().map(Rich::into_owned).collect())
     }
 }
 
-impl<'src> From<Vec<Rich<'src, Token>>> for Error {
-    fn from(value: Vec<Rich<'src, Token>>) -> Self {
+impl<'src> From<Vec<Rich<'src, Token, Span>>> for Error {
+    fn from(value: Vec<Rich<'src, Token, Span>>) -> Self {
         Self::Parser(value.into_iter().map(Rich::into_owned).collect())
     }
 }
 
-impl<T: std::fmt::Display> crate::RenderError for Vec<Rich<'_, T>> {
+impl<T: std::fmt::Display> crate::RenderError for Vec<Rich<'_, T, Span>> {
     fn format(&self, filename: &str, src: &str, mut buffer: &mut Vec<u8>, color: bool) {
         // Configure the error reports
         let config = Config::default()

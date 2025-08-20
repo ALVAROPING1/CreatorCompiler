@@ -22,12 +22,12 @@
 //!
 //! The main entry point for creating the parser is the [`lexer()`] function
 
-use chumsky::{prelude::*, text::Char as _};
+use chumsky::{input::WithContext, prelude::*, text::Char as _};
 use num_bigint::BigUint;
 use num_traits::Num as _;
 use std::fmt;
 
-use super::{Parser, Spanned};
+use super::{Parser, Span, Spanned};
 
 /// Thin wrapper for an [`f64`] value that implements `Eq`
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -89,7 +89,7 @@ impl fmt::Display for Token {
 
 /// Creates a lexer for integer literals
 #[must_use]
-fn int_lexer<'src>() -> Parser!('src, &'src str, Token) {
+fn int_lexer<'src>() -> Parser!('src, WithContext<Span, &'src str>, Token) {
     static EXPECT_MSG: &str = "The parsed string should always correspond with a valid number";
 
     // Decimal: integer not followed by a decimal part/exponent
@@ -114,7 +114,7 @@ fn int_lexer<'src>() -> Parser!('src, &'src str, Token) {
 
 /// Creates a lexer for floating point literals
 #[must_use]
-fn float_lexer<'src>() -> Parser!('src, &'src str, Token) {
+fn float_lexer<'src>() -> Parser!('src, WithContext<Span, &'src str>, Token) {
     let int = text::int(10); // Integer part
     let frac = just('.').then(text::digits(10)); // Fractional part
     let exp = one_of("eE").then(one_of("+-").or_not()).then(int); // Exponent part
@@ -150,8 +150,8 @@ fn float_lexer<'src>() -> Parser!('src, &'src str, Token) {
 // We are using `impl Trait` types, so we can't split them into type aliases
 #[allow(clippy::type_complexity)]
 fn str_lexer<'src>() -> (
-    Parser!('src, &'src str, Token),
-    Parser!('src, &'src str, Token),
+    Parser!('src, WithContext<Span, &'src str>, Token),
+    Parser!('src, WithContext<Span, &'src str>, Token),
 ) {
     // Escape sequences in strings
     let escape = just('\\').ignore_then(
@@ -168,7 +168,7 @@ fn str_lexer<'src>() -> (
             just('t').to('\t'),
             just('0').to('\0'),
         ))
-        .map_err(|e: Rich<'_, char>| {
+        .map_err(|e: Rich<'_, char, Span>| {
             let mut s = *e.span();
             s.start -= 1; // Include the `\` prefix in the span
             Rich::custom(s, "Invalid escape sequence")
@@ -188,7 +188,7 @@ fn str_lexer<'src>() -> (
         ])
         .or(escape)
     };
-    let err = |msg| move |e: Rich<'_, _>| Rich::custom(*e.span(), msg);
+    let err = |msg| move |e: Rich<'_, _, Span>| Rich::custom(*e.span(), msg);
 
     // Literal strings: `string -> " char* "`
     let string = char('"')
@@ -223,7 +223,7 @@ fn str_lexer<'src>() -> (
 #[must_use]
 pub fn lexer<'src, 'arch: 'src>(
     comment_prefix: &'arch str,
-) -> Parser!('src, &'src str, Vec<Spanned<Token>>) {
+) -> Parser!('src, WithContext<Span, &'src str>, Vec<Spanned<Token>>) {
     let newline = text::newline().to('\n');
 
     // Integer literals
@@ -311,24 +311,22 @@ mod test {
     use chumsky::label::LabelError;
 
     use super::*;
-
-    type Range = std::ops::Range<usize>;
-    type Ranged<T> = (T, Range);
+    use crate::span::test::*;
 
     fn lex(code: &str) -> Result<Vec<Spanned<Token>>, ()> {
         lexer("#")
-            .parse(code)
+            .parse(code.with_context(FileID::SRC))
             .into_result()
             .map_err(|e| eprintln!("{e:?}"))
     }
 
-    fn error(err: Ranged<&str>, context: &[Ranged<&'static str>]) -> Rich<'static, char> {
-        let mut err = Rich::custom(err.1.into(), err.0);
+    fn error(err: Ranged<&str>, context: &[Ranged<&'static str>]) -> Rich<'static, char, Span> {
+        let mut err = Rich::custom(err.1.span(), err.0);
         for (label, span) in context {
-            <Rich<'_, _> as LabelError<'_, &str, _>>::in_context(
+            <_ as LabelError<'_, WithContext<_, &str>, _>>::in_context(
                 &mut err,
                 *label,
-                span.clone().into(),
+                span.clone().span(),
             );
         }
         err
@@ -364,7 +362,7 @@ mod test {
         ];
         for (s, v) in test_cases {
             let v = v.into();
-            let span = (0..s.len()).into();
+            let span = (0..s.len()).span();
             assert_eq!(lex(s), Ok(vec![(Token::Integer(v), span)]), "`{s}`");
         }
     }
@@ -378,7 +376,7 @@ mod test {
             "infinity", "Infinity", "INFINITY", "nan", "NAN", "NaN",
         ];
         for s in test_cases {
-            let span = (0..s.len()).into();
+            let span = (0..s.len()).span();
             assert_eq!(lex(s), Ok(vec![(float_tok(s), span)]), "`{s}`");
         }
     }
@@ -412,29 +410,28 @@ mod test {
         for s in ["", "a", "test", "TEST", "0a", "π √  🅐 󰸞"] {
             assert_eq!(
                 lex(&format!("\"{s}\"")),
-                Ok(vec![(Token::String(s.into()), (0..s.len() + 2).into())])
+                Ok(vec![(Token::String(s.into()), (0..s.len() + 2).span())])
             );
         }
         // escape sequences
         for (s, res) in ESCAPE_SEQUENCES {
-            let span = (0..s.len() + 3).into();
+            let span = (0..s.len() + 3).span();
             assert_eq!(
                 lex(&format!("\"\\{s}\"")),
                 Ok(vec![(Token::String(res.to_string()), span)])
             );
         }
         let msg = "\"a string with escape sequences like newline `\\n` or tabs `\\t`, also quotes `\\\"` and literal backslashes `\\\\`\"";
-        assert_eq!(lex(msg), Ok(vec![(Token::String("a string with escape sequences like newline `\n` or tabs `\t`, also quotes `\"` and literal backslashes `\\`".into()), (0..msg.len()).into())]));
+        assert_eq!(lex(msg), Ok(vec![(Token::String("a string with escape sequences like newline `\n` or tabs `\t`, also quotes `\"` and literal backslashes `\\`".into()), (0..msg.len()).span())]));
         let err = error(("Invalid escape sequence", 8..10), &[("string", 0..9)]);
-        assert_eq!(
-            lexer("#").parse("\"invalid\\z\"").into_result(),
-            Err(vec![err])
-        );
+        let src = "\"invalid\\z\"".with_context(FileID::SRC);
+        assert_eq!(lexer("#").parse(src).into_result(), Err(vec![err]));
         for newline in NEWLINES {
             let s = 5..5 + newline.len_utf8();
             let err = error(("Unterminated string literal", s), &[("string", 0..5)]);
             let src = format!("\"test{newline}test");
-            let res = lexer("#").parse(&src).into_result();
+            let src = src.with_context(FileID::SRC);
+            let res = lexer("#").parse(src).into_result();
             assert_eq!(res, Err(vec![err]), "{newline:?}");
         }
     }
@@ -459,22 +456,24 @@ mod test {
         for c in chars {
             assert_eq!(
                 lex(&format!("'{c}'")),
-                Ok(vec![(Token::Character(c), (0..c.len_utf8() + 2).into())])
+                Ok(vec![(Token::Character(c), (0..c.len_utf8() + 2).span())])
             );
         }
         for (s, res) in ESCAPE_SEQUENCES {
             assert_eq!(
                 lex(&format!("'\\{s}'")),
-                Ok(vec![(Token::Character(res), (0..s.len() + 3).into())])
+                Ok(vec![(Token::Character(res), (0..s.len() + 3).span())])
             );
         }
         let err = error(("Invalid escape sequence", 1..3), &[("character", 0..2)]);
-        assert_eq!(lexer("#").parse("'\\z'").into_result(), Err(vec![err]));
+        let src = "'\\z'".with_context(FileID::SRC);
+        assert_eq!(lexer("#").parse(src).into_result(), Err(vec![err]));
         let err = error(
             ("Unterminated character literal", 2..3),
             &[("character", 0..2)],
         );
-        assert_eq!(lexer("#").parse("'a\ntest").into_result(), Err(vec![err]));
+        let src = "'a\ntest".with_context(FileID::SRC);
+        assert_eq!(lexer("#").parse(src).into_result(), Err(vec![err]));
         for newline in NEWLINES {
             let s = 2..2 + newline.len_utf8();
             let err = error(
@@ -482,7 +481,8 @@ mod test {
                 &[("character", 0..2)],
             );
             let src = format!("'a{newline}test");
-            let res = lexer("#").parse(&src).into_result();
+            let src = src.with_context(FileID::SRC);
+            let res = lexer("#").parse(src).into_result();
             assert_eq!(res, Err(vec![err]), "{newline:?}");
         }
     }
@@ -505,7 +505,7 @@ mod test {
             ".",
         ];
         for s in test_cases {
-            let span = (0..s.len()).into();
+            let span = (0..s.len()).span();
             assert_eq!(lex(s), Ok(vec![(Token::Identifier(s.into()), span)]));
         }
     }
@@ -530,7 +530,7 @@ mod test {
         ];
         for s in test_cases {
             let l = s.len();
-            let span = (0..l).into();
+            let span = (0..l).span();
             assert_eq!(lex(s), Ok(vec![(Token::Label(s[..l - 1].into()), span)]));
         }
     }
@@ -551,7 +551,7 @@ mod test {
             "._1_a",
         ];
         for s in test_cases {
-            let span = (0..s.len()).into();
+            let span = (0..s.len()).span();
             assert_eq!(lex(s), Ok(vec![(Token::Directive(s.into()), span)]));
         }
     }
@@ -559,7 +559,7 @@ mod test {
     #[test]
     fn operator() {
         for c in "+-*/%|&^~".chars() {
-            let span = (0..1).into();
+            let span = (0..1).span();
             assert_eq!(lex(&c.to_string()), Ok(vec![(Token::Operator(c), span)]));
         }
     }
@@ -567,7 +567,7 @@ mod test {
     #[test]
     fn ctrl() {
         for c in ",()".chars() {
-            let span = (0..1).into();
+            let span = (0..1).span();
             assert_eq!(lex(&c.to_string()), Ok(vec![(Token::Ctrl(c), span)]));
         }
     }
@@ -575,17 +575,17 @@ mod test {
     #[test]
     fn newline() {
         for s in NEWLINES {
-            let span = (0..s.len_utf8()).into();
+            let span = (0..s.len_utf8()).span();
             let src = s.to_string();
             assert_eq!(lex(&src), Ok(vec![(Token::Ctrl('\n'), span)]), "{s:?}");
         }
-        assert_eq!(lex("\r\n"), Ok(vec![(Token::Ctrl('\n'), (0..2).into())]));
+        assert_eq!(lex("\r\n"), Ok(vec![(Token::Ctrl('\n'), (0..2).span())]));
     }
 
     #[test]
     fn literal() {
         for c in "@!?=:;${}[]\\<>".chars() {
-            let span = (0..1).into();
+            let span = (0..1).span();
             assert_eq!(lex(&c.to_string()), Ok(vec![(Token::Literal(c), span)]));
         }
     }
@@ -617,22 +617,22 @@ mod test {
         for (s, v) in test_cases {
             assert_eq!(
                 lex(s),
-                Ok(vec![(Token::Identifier(s[v.clone()].into()), v.into())]),
+                Ok(vec![(Token::Identifier(s[v.clone()].into()), v.span())]),
                 "`{s}`"
             );
         }
         assert_eq!(
             lex("#comment\ntest"),
             Ok(vec![
-                (Token::Ctrl('\n'), (8..9).into()),
-                (Token::Identifier("test".into()), (9..13).into())
+                (Token::Ctrl('\n'), (8..9).span()),
+                (Token::Identifier("test".into()), (9..13).span())
             ])
         );
         for (s, v) in [("test // asd", 0..4), ("test //asd", 0..4)] {
-            let res = lexer("//").parse(s).into_result();
+            let res = lexer("//").parse(s.with_context(FileID::SRC)).into_result();
             assert_eq!(
                 res.map_err(|e| eprintln!("{e:?}")),
-                Ok(vec![(Token::Identifier(s[v.clone()].into()), v.into())]),
+                Ok(vec![(Token::Identifier(s[v.clone()].into()), v.span())]),
                 "`{s}`"
             );
         }
@@ -654,7 +654,7 @@ mod test {
             (Token::String("string".into()), 23..31),
         ]
         .into_iter()
-        .map(|(t, s)| (t, s.into()))
+        .map(|(t, s)| (t, s.span()))
         .collect();
         assert_eq!(lex(src), Ok(tokens));
     }
