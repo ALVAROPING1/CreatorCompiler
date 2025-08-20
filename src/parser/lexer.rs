@@ -45,6 +45,29 @@ impl From<f64> for Float {
     }
 }
 
+/// Expression operator token
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Operator {
+    /// `+`
+    Plus,
+    /// `-`
+    Minus,
+    /// `*`
+    Star,
+    /// `/`
+    Slash,
+    /// `%`
+    Percent,
+    /// `|`
+    Or,
+    /// `&`
+    And,
+    /// `^`
+    Caret,
+    /// `~`
+    Tilde,
+}
+
 /// Tokens created by the lexer
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Token {
@@ -63,11 +86,27 @@ pub enum Token {
     /// Directive name
     Directive(String),
     /// Numeric expression operators
-    Operator(char),
+    Operator(Operator),
     /// Control characters
     Ctrl(char),
     /// Other literal characters
     Literal(char),
+}
+
+impl fmt::Display for Operator {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Plus => write!(f, "+"),
+            Self::Minus => write!(f, "-"),
+            Self::Star => write!(f, "*"),
+            Self::Slash => write!(f, "/"),
+            Self::Percent => write!(f, "%"),
+            Self::Or => write!(f, "|"),
+            Self::And => write!(f, "&"),
+            Self::Caret => write!(f, "^"),
+            Self::Tilde => write!(f, "~"),
+        }
+    }
 }
 
 impl fmt::Display for Token {
@@ -80,7 +119,8 @@ impl fmt::Display for Token {
             Self::Identifier(i) => write!(f, "identifier ({i})"),
             Self::Label(l) => write!(f, "label ({l})"),
             Self::Directive(d) => write!(f, "directive ({d})"),
-            Self::Ctrl(c) | Self::Operator(c) | Self::Literal(c) => {
+            Self::Operator(c) => write!(f, "{c}"),
+            Self::Ctrl(c) | Self::Literal(c) => {
                 write!(f, "{}", c.escape_debug())
             }
         }
@@ -234,9 +274,19 @@ pub fn lexer<'src, 'arch: 'src>(
     let num = int.or(float);
 
     // Expression operators
-    let op = one_of("+-*/%|&^~")
-        .map(Token::Operator)
-        .labelled("operator");
+    let op = select! {
+        '+' => Operator::Plus,
+        '-' => Operator::Minus,
+        '*' => Operator::Star,
+        '/' => Operator::Slash,
+        '%' => Operator::Percent,
+        '|' => Operator::Or,
+        '&' => Operator::And,
+        '^' => Operator::Caret,
+        '~' => Operator::Tilde,
+    }
+    .map(Token::Operator)
+    .labelled("operator");
 
     // Control characters used in the grammar
     let ctrl = one_of(",()")
@@ -558,9 +608,20 @@ mod test {
 
     #[test]
     fn operator() {
-        for c in "+-*/%|&^~".chars() {
+        let operators = [
+            ("+", Operator::Plus),
+            ("-", Operator::Minus),
+            ("*", Operator::Star),
+            ("/", Operator::Slash),
+            ("%", Operator::Percent),
+            ("|", Operator::Or),
+            ("&", Operator::And),
+            ("^", Operator::Caret),
+            ("~", Operator::Tilde),
+        ];
+        for (c, op) in operators {
             let span = (0..1).span();
-            assert_eq!(lex(&c.to_string()), Ok(vec![(Token::Operator(c), span)]));
+            assert_eq!(lex(c), Ok(vec![(Token::Operator(op), span)]));
         }
     }
 
@@ -645,8 +706,8 @@ mod test {
             (Token::Identifier("a".into()), 0..1),
             (Token::Integer(1u8.into()), 2..3),
             (Token::Directive(".z".into()), 4..6),
-            (Token::Operator('+'), 7..8),
-            (Token::Operator('-'), 8..9),
+            (Token::Operator(Operator::Plus), 7..8),
+            (Token::Operator(Operator::Minus), 8..9),
             (Token::Label("test".into()), 10..15),
             (Token::Literal(']'), 17..18),
             (Token::Literal('='), 19..20),
