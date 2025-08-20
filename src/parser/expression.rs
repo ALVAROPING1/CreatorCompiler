@@ -27,7 +27,7 @@ use chumsky::pratt::{infix, left, prefix};
 use chumsky::{input::ValueInput, prelude::*};
 use num_bigint::{BigInt, BigUint};
 
-use super::{Parser, Span, Spanned, Token};
+use super::{lexer::Operator, Parser, Span, Spanned, Token};
 use crate::compiler::error::SpannedErr;
 use crate::compiler::{ErrorData, ErrorKind};
 use crate::number::Number;
@@ -178,14 +178,14 @@ where
 
     // Operator parser
     macro_rules! op {
-        (:$name:literal: $($i:expr => $o:expr),+$(,)?) => {
+        (:$name:literal: $($i:ident => $o:expr),+$(,)?) => {
             newline().ignore_then(
-                select! { $(Token::Operator($i) => $o,)+ }
+                select! { $(Token::Operator(Operator::$i) => $o,)+ }
                     .map_with(|x, e| (x, e.span()))
                     .labelled(concat!($name, " operator"))
             )
         };
-        ($($i:expr => $o:expr),+) => { op!(:"binary": $($i => $o,)+) };
+        ($($i:ident => $o:expr),+) => { op!(:"binary": $($i => $o,)+) };
     }
 
     // Folding function for binary operations. We need to define it with a macro because the
@@ -226,7 +226,7 @@ where
         let expr = atom.pratt((
             prefix(
                 4,
-                op!(:"unary": '+' => UnaryOp::Plus, '-' => UnaryOp::Minus, '~' => UnaryOp::Complement),
+                op!(:"unary": Plus => UnaryOp::Plus, Minus => UnaryOp::Minus, Tilde => UnaryOp::Complement),
                 |op: Spanned<UnaryOp>, rhs: Spanned<Expr>, _| {
                     let span = op.1.start..rhs.1.end;
                     (
@@ -238,9 +238,9 @@ where
                     )
                 },
             ),
-            infix(left(3), op!('*' => BinaryOp::Mul, '/' => BinaryOp::Div, '%' => BinaryOp::Rem), fold!()),
-            infix(left(2), op!('|' => BinaryOp::BitwiseOR, '&' => BinaryOp::BitwiseAND, '^' => BinaryOp::BitwiseXOR), fold!()),
-            infix(left(1), op!('+' => BinaryOp::Add, '-' => BinaryOp::Sub), fold!())
+            infix(left(3), op!(Star => BinaryOp::Mul, Slash => BinaryOp::Div, Percent => BinaryOp::Rem), fold!()),
+            infix(left(2), op!(Or => BinaryOp::BitwiseOR, And => BinaryOp::BitwiseAND, Caret => BinaryOp::BitwiseXOR), fold!()),
+            infix(left(1), op!(Plus => BinaryOp::Add, Minus => BinaryOp::Sub), fold!())
         ));
         expr.labelled("expression").as_context()
     })
