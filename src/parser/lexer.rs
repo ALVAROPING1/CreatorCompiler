@@ -45,27 +45,42 @@ impl From<f64> for Float {
     }
 }
 
-/// Expression operator token
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum Operator {
-    /// `+`
-    Plus,
-    /// `-`
-    Minus,
-    /// `*`
-    Star,
-    /// `/`
-    Slash,
-    /// `%`
-    Percent,
-    /// `|`
-    Or,
-    /// `&`
-    And,
-    /// `^`
-    Caret,
-    /// `~`
-    Tilde,
+// Macro to generate the operator enum
+macro_rules! operator_token {
+    (@count) => (0usize);
+    (@count $x:tt $($xs:tt)*) => (1usize + operator_token!(@count $($xs)*));
+    ($($i:tt => $o:ident),+ $(,)?) => {
+        /// Expression operator token
+        #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+        pub enum Operator {
+            $(#[doc = concat!("`", stringify!($i), "`")] $o,)*
+        }
+
+        impl fmt::Display for Operator {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                match self {
+                    $(Self::$o => write!(f, stringify!($i)),)+
+                }
+            }
+        }
+
+        #[cfg(test)]
+        static OPERATORS: [(&'static str, Operator); operator_token!(@count $($o)+)] = [
+            $((stringify!($i), Operator::$o),)+
+        ];
+    };
+}
+
+operator_token! {
+    + => Plus,
+    - => Minus,
+    * => Star,
+    / => Slash,
+    % => Percent,
+    | => Or,
+    & => And,
+    ^ => Caret,
+    ~ => Tilde,
 }
 
 /// Tokens created by the lexer
@@ -91,22 +106,6 @@ pub enum Token {
     Ctrl(char),
     /// Other literal characters
     Literal(char),
-}
-
-impl fmt::Display for Operator {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Plus => write!(f, "+"),
-            Self::Minus => write!(f, "-"),
-            Self::Star => write!(f, "*"),
-            Self::Slash => write!(f, "/"),
-            Self::Percent => write!(f, "%"),
-            Self::Or => write!(f, "|"),
-            Self::And => write!(f, "&"),
-            Self::Caret => write!(f, "^"),
-            Self::Tilde => write!(f, "~"),
-        }
-    }
 }
 
 impl fmt::Display for Token {
@@ -608,18 +607,7 @@ mod test {
 
     #[test]
     fn operator() {
-        let operators = [
-            ("+", Operator::Plus),
-            ("-", Operator::Minus),
-            ("*", Operator::Star),
-            ("/", Operator::Slash),
-            ("%", Operator::Percent),
-            ("|", Operator::Or),
-            ("&", Operator::And),
-            ("^", Operator::Caret),
-            ("~", Operator::Tilde),
-        ];
-        for (c, op) in operators {
+        for (c, op) in OPERATORS {
             let span = (0..1).span();
             assert_eq!(lex(c), Ok(vec![(Token::Operator(op), span)]));
         }
