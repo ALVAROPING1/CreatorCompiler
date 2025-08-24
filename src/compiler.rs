@@ -179,6 +179,17 @@ pub use file_cache::{FileCache, FileID};
 *  - Add `Vec<T>` to [`Section`] type
 **/
 
+/// Global compilation context
+#[derive(Debug, Clone)]
+pub struct Context<'arch> {
+    /// Architecture used during the compilation
+    pub arch: &'arch Architecture<'arch>,
+    /// Labels defined
+    pub label_table: LabelTable,
+    /// Pseudoinstruction definitions expanded
+    pub file_cache: FileCache,
+}
+
 /// Definition of an instruction, either a real instruction or a pseudoinstruction
 #[derive(Debug)]
 enum InstructionDefinition<'arch> {
@@ -307,10 +318,8 @@ struct PendingInstruction<'arch> {
 ///
 /// # Parameters
 ///
-/// * `arch`: architecture definition
+/// * `ctx`: compilation context to use
 /// * `section`: memory section in which the instructions should be stored
-/// * `file_cache`: pseudoinstruction definition cache
-/// * `label_table`: symbol table for labels
 /// * `pending_instructions`: vector in which to append the real instructions
 /// * `instruction`: instruction definition with its arguments
 /// * `span`: span of the instruction, range in the user's assembly code and span in
@@ -321,10 +330,8 @@ struct PendingInstruction<'arch> {
 /// Errors if there is not enough space for any of the final instructions, or if there is an error
 /// while expanding a pseudoinstruction
 fn process_instruction<'arch>(
-    arch: &'arch Architecture,
+    ctx: &mut Context<'arch>,
     section: &mut Section,
-    file_cache: &mut FileCache,
-    label_table: &LabelTable,
     pending_instructions: &mut Vec<PendingInstruction<'arch>>,
     instruction: (InstructionDefinition<'arch>, ParsedArgs),
     span: (Range, Span),
@@ -333,7 +340,7 @@ fn process_instruction<'arch>(
     match instruction.0 {
         // Base case: we have a real instruction => push it to the parsed instructions normally
         InstructionDefinition::Real(definition) => {
-            let word_size = BigUint::from(arch.word_size().div_ceil(8));
+            let word_size = BigUint::from(ctx.arch.word_size().div_ceil(8));
             let address = section
                 .try_reserve(&(word_size * definition.nwords))
                 .add_span(span)?;
@@ -349,20 +356,12 @@ fn process_instruction<'arch>(
         // Recursive case: we have a pseudoinstruction => expand it into multiple instructions and
         // process each of them recursively
         InstructionDefinition::Pseudo(def) => {
-            let instructions = pseudoinstruction::expand(
-                arch,
-                label_table,
-                file_cache,
-                section.get(),
-                (def, span),
-                &instruction.1,
-            )?;
+            let inst = (def, span);
+            let instructions = pseudoinstruction::expand(ctx, section.get(), inst, &instruction.1)?;
             for (instruction, span) in instructions {
                 process_instruction(
-                    arch,
+                    ctx,
                     section,
-                    file_cache,
-                    label_table,
                     pending_instructions,
                     instruction,
                     (user_span.clone(), span),
@@ -737,8 +736,7 @@ fn combine_sections<T>(kernel: (Section, Vec<T>), user: (Section, Vec<T>)) -> Ve
 ///
 /// # Parameters
 ///
-/// * `arch`: architecture definition
-/// * `label_table`: symbol table for labels
+/// * `ctx`: compilation context to use
 /// * `elements`: data directives to compile
 ///
 /// # Errors
@@ -746,22 +744,21 @@ fn combine_sections<T>(kernel: (Section, Vec<T>), user: (Section, Vec<T>)) -> Ve
 /// Errors if there is any problem processing the data elements
 #[allow(clippy::too_many_lines)]
 fn compile_data(
-    arch: &Architecture,
-    label_table: &mut LabelTable,
+    ctx: &mut Context,
     elements: Vec<Statement<DataValue>>,
 ) -> Result<Vec<PendingData>, ErrorData> {
     let size = elements.len();
     // User data section
     let mut user = (
-        Section::new("Data", Some(arch.data_section())),
+        Section::new("Data", Some(ctx.arch.data_section())),
         Vec::with_capacity(size),
     );
     // Kernel data section
     let mut kernel = (
-        Section::new("KernelData", arch.kernel_data_section()),
+        Section::new("KernelData", ctx.arch.kernel_data_section()),
         Vec::with_capacity(size),
     );
-    let word_size_bytes = arch.word_size().div_ceil(8);
+    let word_size_bytes = ctx.arch.word_size().div_ceil(8);
 
     for data_directive in elements {
         let mut labels = data_directive.labels;
@@ -773,7 +770,8 @@ fn compile_data(
         };
         // Add the labels to the label table
         for (label, span) in &labels {
-            label_table.insert(label.to_owned(), *span, section.get().clone())?;
+            ctx.label_table
+                .insert(label.to_owned(), *span, section.get().clone())?;
         }
         let (statement, statement_span) = data_directive.value;
         let args = statement.values;
@@ -879,31 +877,27 @@ fn compile_data(
 ///
 /// # Parameters
 ///
-/// * `arch`: architecture definition
-/// * `label_table`: symbol table for labels
-/// * `file_cache`: pseudoinstruction definition cache
+/// * `ctx`: compilation context to use
 /// * `elements`: instructions to compile
 /// * `reserved_offset`: amount of addresses reserved by the library
 ///
 /// # Errors
 ///
 /// Errors if there is any problem processing the data elements
-fn compile_instructions<'a>(
-    arch: &'a Architecture,
-    label_table: &mut LabelTable,
-    file_cache: &mut FileCache,
+fn compile_instructions<'arch>(
+    ctx: &mut Context<'arch>,
     instructions: Vec<Statement<InstructionNode>>,
     reserved_offset: &BigUint,
-) -> Result<Vec<PendingInstruction<'a>>, ErrorData> {
+) -> Result<Vec<PendingInstruction<'arch>>, ErrorData> {
     let size = instructions.len();
     // User data section
     let mut user = (
-        Section::new("Instructions", Some(arch.code_section())),
+        Section::new("Instructions", Some(ctx.arch.code_section())),
         Vec::with_capacity(size),
     );
     // Kernel data section
     let mut kernel = (
-        Section::new("KernelInstructions", arch.kernel_code_section()),
+        Section::new("KernelInstructions", ctx.arch.kernel_code_section()),
         Vec::with_capacity(size),
     );
     // Reserve space in the user section for the library instructions
@@ -921,17 +915,17 @@ fn compile_instructions<'a>(
         };
         // Add the labels to the label table
         for (label, span) in &instruction.labels {
-            label_table.insert(label.clone(), *span, section.get().clone())?;
+            ctx.label_table
+                .insert(label.clone(), *span, section.get().clone())?;
         }
         // Parse the instruction, finding a valid definition to use for the compilation
-        let parsed_instruction = parse_instruction(arch, (&name, name_span), (&args, args_span))?;
+        let parsed_instruction =
+            parse_instruction(ctx.arch, (&name, name_span), (&args, args_span))?;
         // Store the next index, so we can do a small post-processing to the processed instructions
         let first_idx = memory.len();
         process_instruction(
-            arch,
+            ctx,
             section,
-            file_cache,
-            label_table,
             memory,
             parsed_instruction,
             (span.into_range(), span),
@@ -985,8 +979,7 @@ fn label_eval(
 ///
 /// # Parameters
 ///
-/// * `arch`: architecture definition
-/// * `label_table`: symbol table for labels
+/// * `ctx`: compilation context to use
 /// * `library`: whether to compile the assembly code as a library (`true`) or executable (`false`)
 /// * `eof`: byte index of the end of the last instruction statement
 ///
@@ -994,15 +987,10 @@ fn label_eval(
 ///
 /// Returns [`ErrorKind::MissingMainLabel`], [`ErrorKind::MainInLibrary`], or
 /// [`ErrorKind::MainOutsideCode`] if the main label is misplaced
-fn check_main_location(
-    arch: &Architecture,
-    label_table: &LabelTable,
-    library: bool,
-    eof: usize,
-) -> Result<(), ErrorData> {
+fn check_main_location(ctx: &Context, library: bool, eof: usize) -> Result<(), ErrorData> {
     let add_main_span =
         |e: ErrorKind, main: &Label| e.add_span(main.span().unwrap_or(DEFAULT_SPAN));
-    match (label_table.get(arch.main_label()), library) {
+    match (ctx.label_table.get(ctx.arch.main_label()), library) {
         // Main label wasn't used but we aren't compiling a library => main is missing
         (None, false) => {
             Err(ErrorKind::MissingMainLabel.add_span(Span::new(FileID::SRC, eof..eof)))
@@ -1011,7 +999,7 @@ fn check_main_location(
         (Some(main), true) => Err(add_main_span(ErrorKind::MainInLibrary, main)),
         // Main label was used and we aren't compiling a library, but it doesn't point to an
         // instruction => main is misplaced
-        (Some(main), false) if !arch.code_section().contains(main.address()) => {
+        (Some(main), false) if !ctx.arch.code_section().contains(main.address()) => {
             Err(add_main_span(ErrorKind::MainOutsideCode, main))
         }
         // Otherwise, the main label is correctly placed
@@ -1023,8 +1011,7 @@ fn check_main_location(
 ///
 /// # Parameters
 ///
-/// * `arch`: architecture definition
-/// * `label_table`: symbol table for labels
+/// * `ctx`: compilation context to use
 /// * `address`: address of the instruction
 /// * `definition`: definition of the instruction
 /// * `arg`: expression containing the argument to evaluate
@@ -1033,8 +1020,7 @@ fn check_main_location(
 ///
 /// Errors if there is any problem evaluating the argument
 fn evaluate_instruction_field(
-    arch: &Architecture,
-    label_table: &LabelTable,
+    ctx: &Context,
     address: &BigUint,
     def: &crate::architecture::Instruction,
     arg: ParsedArgument,
@@ -1050,12 +1036,12 @@ fn evaluate_instruction_field(
         | FieldType::OffsetBytes
         | FieldType::OffsetWords => {
             let value = arg.value.0.eval(|label: &str| {
-                let value = label_eval(label_table, address, label)?;
+                let value = label_eval(&ctx.label_table, address, label)?;
                 // Function to calculate the offset between a given address and the
                 // address in which the value is being compiled into
                 let offset = |x| x - BigInt::from(address.clone());
                 Ok(match field.r#type {
-                    FieldType::OffsetWords => offset(value) / arch.word_size().div_ceil(8),
+                    FieldType::OffsetWords => offset(value) / ctx.arch.word_size().div_ceil(8),
                     FieldType::OffsetBytes => offset(value),
                     _ => value,
                 })
@@ -1096,11 +1082,11 @@ fn evaluate_instruction_field(
             };
             // Find the register files with the requested type, and verify that at
             // least one file is found
-            let mut files = arch.find_reg_files(file_type).peekable();
+            let mut files = ctx.arch.find_reg_files(file_type).peekable();
             files
                 .peek()
                 .ok_or_else(|| ErrorKind::UnknownRegisterFile(file_type).add_span(arg.value.1))?;
-            let case = arch.arch_conf.sensitive_register_name;
+            let case = ctx.arch.arch_conf.sensitive_register_name;
             // Find the register with the given name
             let (i, _, name) = files
                 .find_map(|file| file.find_register(&name, case))
@@ -1116,7 +1102,7 @@ fn evaluate_instruction_field(
         // Enumerated fields
         FieldType::Enum { enum_name } => {
             // Find the definition of the enum
-            let enum_def = arch.enums.get(enum_name);
+            let enum_def = ctx.arch.enums.get(enum_name);
             let enum_def = enum_def
                 .ok_or_else(|| ErrorKind::UnknownEnumType((*enum_name).to_string()))
                 .add_span(arg.value.1)?;
@@ -1146,16 +1132,14 @@ fn evaluate_instruction_field(
 ///
 /// # Parameters
 ///
-/// * `arch`: architecture definition
-/// * `label_table`: symbol table for labels
+/// * `ctx`: compilation context to use
 /// * `inst`: instruction to translate
 ///
 /// # Errors
 ///
 /// Errors if there is any problem translating the instruction
 fn translate_instruction(
-    arch: &Architecture,
-    label_table: &LabelTable,
+    ctx: &Context,
     inst: PendingInstruction,
 ) -> Result<Instruction, ErrorData> {
     // Regex for replacement templates in the translation spec of instructions
@@ -1165,7 +1149,7 @@ fn translate_instruction(
     static RE: LazyLock<Regex> = crate::regex!(r"\b{start-half}[fF]([0-9]+)\b{end-half}");
     static FIELD: LazyLock<Regex> = crate::regex!("\0([0-9]+)");
     let def = inst.definition;
-    let mut binary_instruction = BitField::new(arch.word_size().saturating_mul(def.nwords));
+    let mut binary_instruction = BitField::new(ctx.arch.word_size().saturating_mul(def.nwords));
     // Replace the field placeholders in the translation spec with `\0N`. Since null bytes
     // shouldn't appear in the translation spec/register names, this avoids issues when a
     // placeholder is replaced with a register name with the same format as another placeholder
@@ -1173,8 +1157,7 @@ fn translate_instruction(
     for arg in inst.args {
         let field = &def.syntax.fields[arg.field_idx];
         let span = arg.value.1;
-        let (value, value_str) =
-            evaluate_instruction_field(arch, label_table, &inst.address, def, arg)?;
+        let (value, value_str) = evaluate_instruction_field(ctx, &inst.address, def, arg)?;
         // Update the binary/translated instruction using the values obtained
         let signed = matches!(
             field.r#type,
@@ -1249,8 +1232,7 @@ fn translate_data(label_table: &LabelTable, data: PendingData) -> Result<Data, E
 ///
 /// # Parameters
 ///
-/// * `context`: compilation context to use, including the architecture definition, symbol table
-///   for labels, and file cache
+/// * `ctx`: compilation context to use
 /// * `ast`: AST of the assembly code
 /// * `reserved_offset`: amount of addresses reserved for the instructions of the library used
 /// * `library`: whether to compile the assembly code as a library (`true`) or executable (`false`)
@@ -1259,29 +1241,27 @@ fn translate_data(label_table: &LabelTable, data: PendingData) -> Result<Data, E
 ///
 /// Errors if there is any problem compiling the assembly code
 fn compile_inner(
-    context: (&Architecture, &mut LabelTable, &mut FileCache),
+    ctx: &mut Context,
     ast: Vec<ASTNode>,
     reserved_offset: &BigUint,
     library: bool,
 ) -> Result<(GlobalSymbols, Vec<Instruction>, Vec<Data>), ErrorData> {
-    let (arch, label_table, file_cache) = context;
     // Split the statements into different sections
-    let (instructions, data_directives, global_symbols) = split_statements(arch, ast)?;
+    let (instructions, data_directives, global_symbols) = split_statements(ctx.arch, ast)?;
     // Compile each of the sections
     let instruction_eof = instructions.last().map_or(0, |inst| inst.value.1.end);
-    let pending_data = compile_data(arch, label_table, data_directives)?;
-    let pending_instructions =
-        compile_instructions(arch, label_table, file_cache, instructions, reserved_offset)?;
-    check_main_location(arch, label_table, library, instruction_eof)?;
+    let pending_data = compile_data(ctx, data_directives)?;
+    let pending_instructions = compile_instructions(ctx, instructions, reserved_offset)?;
+    check_main_location(ctx, library, instruction_eof)?;
     // Perform the 2nd pass of instruction processing
     let instructions = pending_instructions
         .into_iter()
-        .map(|inst| translate_instruction(arch, label_table, inst))
+        .map(|inst| translate_instruction(ctx, inst))
         .collect::<Result<Vec<_>, _>>()?;
     // Perform the 2nd pass of data directives processing
     let data_memory = pending_data
         .into_iter()
-        .map(|data| translate_data(label_table, data))
+        .map(|data| translate_data(&ctx.label_table, data))
         .collect::<Result<Vec<_>, _>>()?;
     Ok((global_symbols, instructions, data_memory))
 }
@@ -1307,25 +1287,22 @@ pub fn compile<'arch, S: std::hash::BuildHasher>(
     labels: HashMap<String, BigUint, S>,
     library: bool,
 ) -> Result<CompiledCode, CompileError<'arch>> {
-    let mut label_table = LabelTable::from(labels);
-    let mut file_cache = FileCache::default();
-    let context = (arch, &mut label_table, &mut file_cache);
+    let mut ctx = Context {
+        arch,
+        label_table: LabelTable::from(labels),
+        file_cache: FileCache::default(),
+    };
     // Wrap the result of the inner compilation function. We need to wrap the internal compilation
     // function to add extra metadata added to all error types that isn't directly related with
     // the errors (like the architecture definition and the label table)
-    match compile_inner(context, ast, reserved_offset, library) {
+    match compile_inner(&mut ctx, ast, reserved_offset, library) {
         Ok((global_symbols, instructions, data_memory)) => Ok(CompiledCode {
-            label_table,
+            label_table: ctx.label_table,
             global_symbols,
             instructions,
             data_memory,
         }),
-        Err(error) => Err(CompileError {
-            arch,
-            label_table,
-            file_cache,
-            error,
-        }),
+        Err(error) => Err(CompileError { ctx, error }),
     }
 }
 

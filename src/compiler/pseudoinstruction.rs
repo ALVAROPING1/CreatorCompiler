@@ -33,14 +33,14 @@ use regex::{Captures, Regex};
 use std::fmt::Write as _;
 use std::sync::LazyLock;
 
-use crate::architecture::{Architecture, FloatType, Pseudoinstruction, RegisterType};
+use crate::architecture::{FloatType, Pseudoinstruction, RegisterType};
 use crate::number::Number;
 use crate::parser::{ParseError, Token};
 use crate::span::Range;
 
-use super::{ArgumentType, ErrorData, ErrorKind, InstructionDefinition, LabelTable};
+use super::{ArgumentType, Context, ErrorData, ErrorKind, InstructionDefinition};
 use super::{Expr, ParsedArgs};
-use super::{FileCache, Span, Spanned, SpannedErr};
+use super::{Span, Spanned, SpannedErr};
 
 /// Pseudoinstruction evaluation error kind
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -211,9 +211,7 @@ type ExpandedInstructions<'a> = Vec<Spanned<(InstructionDefinition<'a>, ParsedAr
 ///
 /// # Parameters
 ///
-/// * `arch`: architecture definition
-/// * `label_table`: symbol table for labels
-/// * `file_cache`: pseudoinstruction definition cache
+/// * `ctx`: compilation context to use
 /// * `address`: address in which the instruction is being compiled into
 /// * `instruction`: pseudoinstruction definition to use
 /// * `args`: arguments of the instruction being expanded
@@ -222,14 +220,12 @@ type ExpandedInstructions<'a> = Vec<Spanned<(InstructionDefinition<'a>, ParsedAr
 ///
 /// Errors if there is any problem expanding the pseudoinstruction
 #[allow(clippy::too_many_lines)]
-pub fn expand<'b, 'a: 'b>(
-    arch: &'a Architecture,
-    label_table: &LabelTable,
-    file_cache: &mut FileCache,
+pub fn expand<'arch>(
+    ctx: &mut Context<'arch>,
     address: &BigUint,
-    instruction: (&'b Pseudoinstruction, Span),
+    instruction: (&'arch Pseudoinstruction, Span),
     args: &ParsedArgs,
-) -> Result<ExpandedInstructions<'a>, ErrorData> {
+) -> Result<ExpandedInstructions<'arch>, ErrorData> {
     // Regex used
     // Register name should be replaced with the register name of the i-th register forming this
     // double precision register
@@ -249,7 +245,7 @@ pub fn expand<'b, 'a: 'b>(
     static INSTRUCTIONS: LazyLock<Regex> = crate::regex!(r"\{(.*?)\}");
 
     // Function to evaluate a label within an expression
-    let ident_eval = |label: &str| super::label_eval(label_table, address, label);
+    let ident_eval = |label: &str| super::label_eval(&ctx.label_table, address, label);
 
     // Parse a number from a string that already matched a number regex
     let num = |x: &str| {
@@ -257,6 +253,7 @@ pub fn expand<'b, 'a: 'b>(
             .expect("This should have already matched a number")
     };
     let (instruction, span) = instruction;
+    let arch = ctx.arch;
 
     // Get the argument corresponding to the field with the given name
     let get_arg = |name: &str| {
@@ -497,7 +494,7 @@ pub fn expand<'b, 'a: 'b>(
     }
 
     // Lex the instructions
-    let (def, file_id) = file_cache.add(def, span);
+    let (def, file_id) = ctx.file_cache.add(def, span);
     let parse_err = |error| {
         Error {
             definition: def.to_string(),

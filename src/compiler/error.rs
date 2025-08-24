@@ -30,15 +30,13 @@ use std::fmt;
 use std::ops::RangeInclusive;
 use std::{fmt::Write as _, io::Write as _};
 
-use crate::architecture::{
-    Architecture, DirectiveAction, DirectiveSegment, FloatType, RegisterType,
-};
+use crate::architecture::{DirectiveAction, DirectiveSegment, FloatType, RegisterType};
 use crate::error_rendering as utils;
 use crate::error_rendering::{ArgNum, Colored, DisplayList};
 use crate::parser::ParseError;
 use crate::span::{Span, Spanned};
 
-use super::{ArgumentNumber, FileCache, LabelTable};
+use super::{ArgumentNumber, Context, FileCache};
 use super::{PseudoinstructionError, PseudoinstructionErrorKind};
 
 /// Type of arguments for directives/instructions
@@ -122,12 +120,8 @@ pub struct Data {
 /// Compiler error type
 #[derive(Debug, Clone)]
 pub struct Error<'arch> {
-    /// Architecture used during the compilation
-    pub arch: &'arch Architecture<'arch>,
-    /// Labels defined
-    pub label_table: LabelTable,
-    /// Pseudoinstruction definitions expanded
-    pub file_cache: FileCache,
+    /// Global compilation context
+    pub ctx: Context<'arch>,
     /// Information about the error
     pub error: Data,
 }
@@ -292,21 +286,22 @@ impl Info for Error<'_> {
     fn hint(&self, color: bool) -> Option<String> {
         Some(match self.error.kind.as_ref() {
             Kind::UnknownDirective(s) => {
-                let names = utils::get_similar(s, self.arch.directives.iter().map(|d| d.name));
+                let names = utils::get_similar(s, self.ctx.arch.directives.iter().map(|d| d.name));
                 format!("Did you mean {}?", DisplayList::non_empty(names, color)?)
             }
             Kind::UnknownInstruction(s) => {
-                let inst_names = self.arch.instructions.iter().map(|i| i.name);
-                let pseudo_names = self.arch.pseudoinstructions.iter().map(|i| i.name);
+                let inst_names = self.ctx.arch.instructions.iter().map(|i| i.name);
+                let pseudo_names = self.ctx.arch.pseudoinstructions.iter().map(|i| i.name);
                 let names = utils::get_similar(s, inst_names.chain(pseudo_names));
                 format!("Did you mean {}?", DisplayList::non_empty(names, color)?)
             }
             Kind::UnknownLabel(s) => {
-                let names = utils::get_similar(s, self.label_table.iter().map(|(n, _)| n.as_str()));
+                let names =
+                    utils::get_similar(s, self.ctx.label_table.iter().map(|(n, _)| n.as_str()));
                 format!("Did you mean {}?", DisplayList::non_empty(names, color)?)
             }
             Kind::UnknownRegister { name, file } => {
-                let files = self.arch.find_reg_files(*file);
+                let files = self.ctx.arch.find_reg_files(*file);
                 let registers = files.flat_map(|file| {
                     file.elements
                         .iter()
@@ -316,7 +311,7 @@ impl Info for Error<'_> {
                 format!("Did you mean {}?", DisplayList::non_empty(names, color)?)
             }
             Kind::UnknownEnumValue { value, enum_name } => {
-                let enums = &self.arch.enums;
+                let enums = &self.ctx.arch.enums;
                 let default = HashMap::default();
                 let enum_def = enums.get(enum_name.as_str()).unwrap_or(&default);
                 let names = utils::get_similar(value, enum_def.keys().copied());
@@ -338,7 +333,7 @@ impl Info for Error<'_> {
                 format!("Consider {msg} {}", ArgNum(n, color))
             }
             Kind::UnallowedStatementType { found, .. } => {
-                let names: Vec<_> = self.arch.directives.iter()
+                let names: Vec<_> = self.ctx.arch.directives.iter()
                     .filter(|dir| matches!(dir.action, DirectiveAction::Segment(s) if s.is_code() == found.is_code()))
                     .map(|dir| dir.name)
                     .collect();
@@ -401,7 +396,7 @@ impl Info for Error<'_> {
             }
             Kind::DuplicateLabel(..) => "Duplicate label".into(),
             Kind::MissingMainLabel => {
-                let main = Colored(self.arch.main_label(), color.then_some(Color::Green));
+                let main = Colored(self.ctx.arch.main_label(), color.then_some(Color::Green));
                 format!("Consider adding a label called {main} to an instruction")
             }
             Kind::MainInLibrary | Kind::MainOutsideCode => "Label defined here".into(),
@@ -424,7 +419,7 @@ impl Info for Error<'_> {
     fn msg(&self, color: bool) -> String {
         let red = color.then_some(Color::Red);
         let blue = color.then_some(Color::BrightBlue);
-        let main = Colored(self.arch.main_label(), red);
+        let main = Colored(self.ctx.arch.main_label(), red);
         match self.error.kind.as_ref() {
             Kind::UnknownDirective(s) => {
                 format!("Directive {} isn't defined", Colored(s, red))
@@ -474,7 +469,7 @@ impl Info for Error<'_> {
                 "Data at address {} isn't aligned to size {} nor word size {}",
                 Colored(format!("{address:#X}"), red),
                 Colored(alignment, blue),
-                Colored(self.arch.word_size().div_ceil(8), blue),
+                Colored(self.ctx.arch.word_size().div_ceil(8), blue),
             ),
             Kind::UnallowedStatementType { section, found } => {
                 let found = if found.is_code() {
@@ -561,7 +556,7 @@ impl<'src, 'name> SourceCache<'src, 'name> {
 
 impl crate::RenderError for Error<'_> {
     fn format(&self, filename: &str, src: &str, mut buffer: &mut Vec<u8>, color: bool) {
-        let mut sources = SourceCache::new(&self.file_cache, src, filename, self.error.span);
+        let mut sources = SourceCache::new(&self.ctx.file_cache, src, filename, self.error.span);
         let file_id = 0;
         let span = sources.0[file_id].1.into_range();
         let blue = color.then_some(Color::BrightBlue);
