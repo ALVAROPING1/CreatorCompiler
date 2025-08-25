@@ -148,7 +148,7 @@ use crate::architecture::{
 };
 use crate::parser::instruction::{ParsedArgs, ParsedArgument};
 use crate::parser::{
-    ASTNode, Data as DataToken, Expr, InstructionNode, Statement as StatementNode, Token, AST,
+    Data as DataToken, Expr, InstructionNode, Statement as StatementNode, Token, AST,
 };
 use crate::span::{Range, Span, Spanned, DEFAULT_SPAN};
 
@@ -557,7 +557,7 @@ pub type GlobalSymbols = HashSet<String>;
 /// Errors if there is any error while processing any of the statements
 fn split_statements(
     arch: &Architecture,
-    ast: Vec<ASTNode>,
+    ast: AST,
 ) -> Result<(Instructions, DataDirectives, GlobalSymbols), ErrorData> {
     // Section currently being processed
     let mut current_section: Option<Spanned<DirectiveSegment>> = None;
@@ -1242,7 +1242,7 @@ fn translate_data(label_table: &LabelTable, data: PendingData) -> Result<Data, E
 /// Errors if there is any problem compiling the assembly code
 fn compile_inner(
     ctx: &mut Context,
-    ast: Vec<ASTNode>,
+    ast: AST,
     reserved_offset: &BigUint,
     library: bool,
 ) -> Result<(GlobalSymbols, Vec<Instruction>, Vec<Data>), ErrorData> {

@@ -209,7 +209,7 @@ use parse_with;
 /// # Errors
 ///
 /// Errors if the input is syntactically invalid
-pub fn parse(comment_prefix: &str, src: &str) -> Result<Vec<ASTNode>, ParseError> {
+pub fn parse(comment_prefix: &str, src: &str) -> Result<AST, ParseError> {
     parse_with!(parser(), comment_prefix, src)
 }
 
@@ -218,7 +218,7 @@ mod test {
     use super::*;
     use crate::span::test::*;
 
-    fn test(test_cases: Vec<(&str, Vec<ASTNode>)>) {
+    fn test(test_cases: Vec<(&str, AST)>) {
         for (src, ast) in test_cases {
             assert_eq!(super::parse("#", src), Ok(ast), "`{src}`");
         }
