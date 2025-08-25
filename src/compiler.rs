@@ -148,7 +148,7 @@ use crate::architecture::{
 };
 use crate::parser::instruction::{ParsedArgs, ParsedArgument};
 use crate::parser::{
-    Data as DataToken, Expr, InstructionNode, Statement as StatementNode, Token, AST,
+    Data as DataNode, Expr, InstructionNode, Statement as StatementNode, Token, AST,
 };
 use crate::span::{Range, Span, Spanned, DEFAULT_SPAN};
 
@@ -453,7 +453,7 @@ pub struct Data {
     pub value: Value,
 }
 
-impl DataToken {
+impl DataNode {
     /// Convert the value to a string
     ///
     /// # Parameters
@@ -534,7 +534,7 @@ struct DataValue {
     /// Expected type of the values
     data_type: DirectiveData,
     /// Values to be added to the data segment
-    values: Spanned<Vec<Spanned<DataToken>>>,
+    values: Spanned<Vec<Spanned<DataNode>>>,
 }
 
 /// Vector of instruction statements
@@ -590,13 +590,13 @@ fn split_statements(
                         for (label, span) in directive.args.0 {
                             // Extract the name from the argument, should be an identifier
                             let label = match label {
-                                DataToken::Number(Expr::Identifier(label)) => label,
-                                DataToken::Number(_) => Err(ErrorKind::IncorrectArgumentType {
+                                DataNode::Number(Expr::Identifier(label)) => label,
+                                DataNode::Number(_) => Err(ErrorKind::IncorrectArgumentType {
                                     expected: ArgumentType::Identifier,
                                     found: ArgumentType::Expression,
                                 }
                                 .add_span(span))?,
-                                DataToken::String(_) => Err(ErrorKind::IncorrectArgumentType {
+                                DataNode::String(_) => Err(ErrorKind::IncorrectArgumentType {
                                     expected: ArgumentType::Identifier,
                                     found: ArgumentType::String,
                                 }
