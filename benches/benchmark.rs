@@ -19,15 +19,12 @@ fn parse(arch: &Architecture) -> AST {
         .unwrap()
 }
 
-pub fn benchmark_parse(c: &mut Criterion) {
+pub fn benchmark_crate(c: &mut Criterion) {
     let arch = Architecture::from_json(ARCH_JSON).unwrap();
     c.bench_function("parse-only", |b| {
         b.iter(|| black_box(parse(&arch)));
     });
-}
 
-pub fn benchmark_compile_only(c: &mut Criterion) {
-    let arch = Architecture::from_json(ARCH_JSON).unwrap();
     let ast = parse(&arch);
     c.bench_function("compile-only", |b| {
         b.iter_batched(
@@ -46,10 +43,7 @@ pub fn benchmark_compile_only(c: &mut Criterion) {
             BatchSize::SmallInput,
         );
     });
-}
 
-pub fn benchmark_full(c: &mut Criterion) {
-    let arch = Architecture::from_json(ARCH_JSON).unwrap();
     c.bench_function("full-process", |b| {
         b.iter(|| {
             let ast = black_box(parse(&arch));
@@ -69,6 +63,6 @@ pub fn benchmark_full(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default().warm_up_time(Duration::from_secs(5)).measurement_time(Duration::from_secs(15));
-    targets = benchmark_parse, benchmark_compile_only, benchmark_full
+    targets = benchmark_crate
 }
 criterion_main!(benches);
