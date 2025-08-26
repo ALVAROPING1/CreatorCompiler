@@ -1,4 +1,4 @@
-name: Build and Test
+name: Rust
 
 on:
   push:
@@ -10,11 +10,27 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  check:
+    name: Check
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      - uses: actions/checkout@v4
+      - name: Run cargo check
+        run: cargo check --benches --tests --all-features
+      - name: Run cargo clippy
+        run: cargo clippy --benches --tests --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery -W clippy::unwrap_used --no-deps
+      - name: Run cargo fmt
+        run: cargo fmt --check
+      - name: Run cargo doc
+        run: cargo doc --all-features --no-deps
+        env:
+            RUSTDOCFLAGS: --cfg docsrs
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run cargo test
+        run: cargo test --all-features
+        env:
+            RUSTDOCFLAGS: --cfg docsrs
