@@ -227,7 +227,7 @@ impl Instruction {
     pub fn parse_name(
         end: (usize, FileID),
         tokens: &[Spanned<Token>],
-    ) -> Result<InstructionNodeRef, ParseError> {
+    ) -> Result<InstructionNodeRef<'_>, ParseError> {
         let args = any::<_, extra::Err<Rich<_, _>>>().repeated().to_slice();
         let parser = select_ref! { Token::Identifier(name) = e => (name.as_str(), e.span()) }
             .labelled("identifier")

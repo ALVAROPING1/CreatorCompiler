@@ -538,7 +538,7 @@ impl Architecture<'_> {
     ///
     /// Errors if the input `JSON` data is invalid, either because it's ill-formatted or because it
     /// doesn't conform to the specification
-    pub fn from_json(src: &str) -> serde_json::Result<Architecture> {
+    pub fn from_json(src: &str) -> serde_json::Result<Architecture<'_>> {
         let arch = serde_json::from_str::<Architecture>(src)?;
         let word_size = arch.arch_conf.word_size;
         for instruction in &arch.instructions {
@@ -644,7 +644,7 @@ impl Architecture<'_> {
     /// # Parameters
     ///
     /// * `type`: type of the file wanted
-    pub fn find_reg_files(&self, r#type: RegisterType) -> impl Iterator<Item = &Component> {
+    pub fn find_reg_files(&self, r#type: RegisterType) -> impl Iterator<Item = &Component<'_>> {
         let eq = move |file: &&Component| match r#type {
             RegisterType::Int => matches!(file.r#type, ComponentType::Int),
             RegisterType::Ctrl => matches!(file.r#type, ComponentType::Ctrl),
@@ -667,12 +667,12 @@ impl Component<'_> {
     /// # Parameters
     ///
     /// * `name`: name of the register to search for
-    /// * `match_case`: whether the find should be case sensitive (`true`) or not (`false`)
+    /// * `case`: whether the find should be case sensitive (`true`) or not (`false`)
     #[must_use]
-    pub fn find_register(&self, name: &str, match_case: bool) -> Option<(usize, &Register, &str)> {
+    pub fn find_register(&self, name: &str, case: bool) -> Option<(usize, &Register<'_>, &str)> {
         self.elements.iter().enumerate().find_map(|(i, reg)| {
             let name = reg.name.iter().find(|&&n| {
-                if match_case {
+                if case {
                     n == name
                 } else {
                     n.eq_ignore_ascii_case(name)

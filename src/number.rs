@@ -74,7 +74,7 @@ impl From<Number> for f32 {
     }
 }
 
-/// Generates implementations of [`From`]`<int>` for [`Number`]
+/// Generates implementations of <code>[From]\<int></code> for [`Number`]
 macro_rules! impl_from_int {
     ($($ty:ty),+) => {
         $(
