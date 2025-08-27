@@ -50,6 +50,7 @@ impl Integer {
     /// # Errors
     ///
     /// Returns a [`ErrorKind::IntegerOutOfRange`] if the value doesn't fit in the specified size
+    #[allow(clippy::missing_panics_doc)] // Function should never panic
     pub fn build(
         value: BigInt,
         size: usize,
@@ -76,21 +77,12 @@ impl Integer {
                 bounds.start..=bounds.end - 1,
             ));
         }
-        // Reinterpret the value as unsigned, so that we can manipulate the bits more easily
-        let value = value.to_biguint().unwrap_or_else(|| {
-            let mut bytes = value.to_signed_bytes_le();
-            let size = size.div_ceil(8);
-            if bytes.len() < size {
-                let diff = size - bytes.len();
-                bytes.extend(std::iter::repeat_n(0xFF, diff));
-            }
-            BigUint::from_bytes_le(&bytes)
-        });
         // Mask for bits outside of the specified size
-        let mask = (BigUint::from(1u8) << size) - 1u8;
+        let mask = (BigInt::from(1u8) << size) - 1u8;
+        let value = BigUint::try_from(value & mask);
         #[allow(clippy::cast_sign_loss)]
         Ok(Self {
-            value: value & mask,
+            value: value.expect("AND'ing a bigint with a positive should always return a positive"),
             size,
             r#type,
         })
