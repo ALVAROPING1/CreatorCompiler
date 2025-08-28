@@ -31,7 +31,7 @@ use std::collections::HashMap;
 
 mod utils;
 pub use utils::NonEmptyRangeInclusive;
-pub use utils::{BaseN, Integer, Pair};
+pub use utils::{BaseN, Integer, Pair, RangeFrom};
 
 mod json;
 
@@ -63,6 +63,25 @@ pub struct Architecture<'a> {
     /// Definitions of possible enumerated instruction fields
     #[serde(default)]
     pub enums: HashMap<&'a str, EnumDefinition<'a>>,
+    /// Definitions of possible modifiers
+    #[serde(default)]
+    pub modifiers: ModifierDefinitions<'a>,
+}
+
+/// Definitions of possible modifiers
+pub type ModifierDefinitions<'a> = HashMap<&'a str, Modifier>;
+
+/// Definition of a expression modifier, an operator which returns a slice of bits from its input
+#[derive(Deserialize, JsonSchema, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Modifier {
+    /// Range of bits to select from the expression's value
+    pub range: RangeFrom,
+    /// Whether to account for the lower (unselected) bits being treated as a signed number. If
+    /// `true`, will add 1 to the output if that number would have been negative
+    pub lower_signed: bool,
+    /// Whether to return the result as a signed (`true`) or unsigned (`false`) number. If the
+    /// range of bits selected has no upper bound, the sign of the input will always be preserved
+    pub output_signed: bool,
 }
 
 /// Definition of an enumerated field

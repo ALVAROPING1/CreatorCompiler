@@ -25,8 +25,8 @@ use std::ops;
 use num_bigint::{BigInt, BigUint};
 use num_traits::cast::ToPrimitive;
 
-use crate::compiler::error::OperationKind;
-use crate::compiler::ErrorKind;
+use crate::architecture::Modifier;
+use crate::compiler::{error::OperationKind, ErrorKind};
 use crate::span::{Span, Spanned};
 
 /// Generic number type, either an integer or a floating-point number
@@ -206,6 +206,34 @@ impl_bin_op!(
 impl_bin_op!(ops::BitOr, bitor, |, OperationKind::BitwiseOR);
 impl_bin_op!(ops::BitAnd, bitand, &, OperationKind::BitwiseAND);
 impl_bin_op!(ops::BitXor, bitxor, ^, OperationKind::BitwiseXOR);
+
+impl Number {
+    /// Applies a modifier to this number, taking a slice of bits from it, manipulating it as
+    /// specified, and returning it as an integer
+    pub fn modify(self, modifier: Modifier) -> Self {
+        // Convert the number to an int, preserving the bit pattern for floats
+        let mut x = match self {
+            Self::Int(x) => x,
+            Self::Float { value, .. } => value.to_bits().into(),
+        };
+        // Discard the bits below the range, if any
+        if modifier.range.start > 0 {
+            let lower = modifier.range.start - 1;
+            let inc = modifier.lower_signed && x.bit(lower);
+            x = (x >> modifier.range.start) + u8::from(inc);
+        }
+        // Discard the bits above the range, if any
+        if let Some(size) = modifier.range.size {
+            // NOTE: Bitwise operations are performed in two's complement. Positive numbers have
+            // infinite leading 0s while negative numbers have infinite leading 1s
+            x &= (BigInt::from(1) << size) - 1;
+            if modifier.output_signed && x.bit(size - 1) {
+                x |= BigInt::from(-1) << size;
+            }
+        }
+        Self::Int(x)
+    }
+}
 
 #[cfg(test)]
 mod test {
@@ -499,5 +527,84 @@ mod test {
             ),
             Ok(Number::from(BigInt::from(0xFFFF_FFFF_FFFF_FFFF_FFFE_u128)))
         );
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used, clippy::cast_possible_wrap)]
+    fn modify_split() {
+        let hi = Modifier {
+            range: (12, Some(32)).try_into().unwrap(),
+            lower_signed: true,
+            output_signed: false,
+        };
+        let lo = Modifier {
+            range: (0, Some(12)).try_into().unwrap(),
+            lower_signed: false,
+            output_signed: true,
+        };
+        let neg = |x: u16| (x as i16).into();
+
+        let x = Number::from(0xdead_beef_u32);
+        let x_hi: BigInt = x.clone().modify(hi).try_into().unwrap();
+        let x_lo: BigInt = x.clone().modify(lo).try_into().unwrap();
+        assert_eq!(x_hi, 0xdeadc.into());
+        assert_eq!(x_lo, neg(0xfeef));
+        let res = (x_hi << 12) + x_lo;
+        assert_eq!(res, x.try_into().unwrap());
+
+        let x = Number::from(0xFFFF_FFFF_u32);
+        let x_hi: BigInt = x.clone().modify(hi).try_into().unwrap();
+        let x_lo: BigInt = x.modify(lo).try_into().unwrap();
+        assert_eq!(x_hi, 0.into());
+        assert_eq!(x_lo, neg(0xffff));
+        let res = (x_hi << 12) + x_lo;
+        assert_eq!(res, (-1).into());
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used, clippy::cast_possible_wrap)]
+    fn modify() {
+        let modifier = |range: (u64, Option<u64>), lower_signed, output_signed| Modifier {
+            range: range.try_into().unwrap(),
+            lower_signed,
+            output_signed,
+        };
+        let neg = |x: u8| i32::from(x as i8);
+        let mod1 = modifier((4, None), true, false);
+        let mod2 = modifier((4, None), false, false);
+        let mod3 = modifier((4, Some(8)), true, false);
+        let mod4 = modifier((4, Some(8)), false, false);
+        let mod5 = modifier((4, Some(8)), true, true);
+        let test_cases = [
+            (0b0101_0110, mod1, 0b0101),
+            (0b1001_0110, mod1, 0b1001),
+            (0b1001_0001, mod1, 0b1001),
+            (0b1001_1001, mod1, 0b1010),
+            (0b1001_1001, mod2, 0b1001),
+            (0b1001_0110, mod2, 0b1001),
+            (neg(0xA7), mod2, neg(0xFA)),
+            (neg(0x7F), mod2, neg(0x07)),
+            (0b1_1001_0110, mod3, 0b1001),
+            (0b1_1001_0001, mod3, 0b1001),
+            (0b1_1001_1001, mod3, 0b1010),
+            (0b1_1111_1001, mod3, 0b0000),
+            (0b1_1001_1001, mod4, 0b1001),
+            (0b1_1001_0110, mod4, 0b1001),
+            (0b1_0101_1001, mod4, 0b0101),
+            (neg(0xA7), mod5, neg(0xFA)),
+            (neg(0x7F), mod5, neg(0xF8)),
+            (neg(0x74), mod5, neg(0x07)),
+        ];
+        for (i, (x, modifier, expected)) in test_cases.into_iter().enumerate() {
+            let x = Number::from(x);
+            let res: BigInt = x.modify(modifier).try_into().unwrap();
+            assert_eq!(res, expected.into(), "{i}, {modifier:?}");
+        }
+        let x = Number::from((1.25, 0..4));
+        let res: BigInt = x
+            .modify(modifier((0, None), false, false))
+            .try_into()
+            .unwrap();
+        assert_eq!(res, 1.25_f64.to_bits().into());
     }
 }

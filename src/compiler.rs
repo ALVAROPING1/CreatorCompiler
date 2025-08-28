@@ -242,7 +242,7 @@ fn parse_instruction<'a>(
                         | FieldType::ImmUnsigned
                         | FieldType::OffsetBytes
                         | FieldType::OffsetWords => match value
-                            .eval_no_ident()
+                            .eval_no_ident(&arch.modifiers)
                             .and_then(|x| BigInt::try_from(x).add_span(*span))
                         {
                             Ok(val) => val,
@@ -779,7 +779,7 @@ fn compile_data(
         match statement.data_type {
             DirectiveData::Alignment(align_type) => {
                 let (value, span) = ArgumentNumber::exactly_one(args)?;
-                let value = value.into_expr(span)?.eval_no_ident()?;
+                let value = value.into_expr(span)?.eval_no_ident(&ctx.arch.modifiers)?;
                 let value = BigUint::try_from(value).add_span(span)?;
                 // Calculate the align size in bytes
                 let align = match align_type {
@@ -811,7 +811,7 @@ fn compile_data(
             }
             DirectiveData::Space(size) => {
                 let (value, span) = ArgumentNumber::exactly_one(args)?;
-                let value = value.into_expr(span)?.eval_no_ident()?;
+                let value = value.into_expr(span)?.eval_no_ident(&ctx.arch.modifiers)?;
                 let size = BigUint::try_from(value).add_span(span)? * size;
                 memory.push(PendingData {
                     address: section.try_reserve(&size).add_span(span)?,
@@ -835,7 +835,8 @@ fn compile_data(
             DirectiveData::Float(float_type) => {
                 ArgumentNumber::new(1, true).check(&args)?;
                 for (value, span) in args.0 {
-                    let value = f64::from(value.into_expr(span)?.eval_no_ident()?);
+                    let value =
+                        f64::from(value.into_expr(span)?.eval_no_ident(&ctx.arch.modifiers)?);
                     // We intentionally want to truncate the number from f64 to f32 if the user
                     // asked for an f32
                     #[allow(clippy::cast_possible_truncation)]
@@ -1035,7 +1036,7 @@ fn evaluate_instruction_field(
         | FieldType::ImmUnsigned
         | FieldType::OffsetBytes
         | FieldType::OffsetWords => {
-            let value = arg.value.0.eval(|label: &str| {
+            let label_eval = |label: &str| {
                 let value = label_eval(&ctx.label_table, address, label)?;
                 // Function to calculate the offset between a given address and the
                 // address in which the value is being compiled into
@@ -1045,7 +1046,8 @@ fn evaluate_instruction_field(
                     FieldType::OffsetBytes => offset(value),
                     _ => value,
                 })
-            })?;
+            };
+            let value = arg.value.0.eval(label_eval, &ctx.arch.modifiers)?;
             let value = BigInt::try_from(value).add_span(arg.value.1)?;
             // Remove the least significant bits according to the padding specified by
             // the field
@@ -1194,19 +1196,21 @@ fn translate_instruction(
 ///
 /// # Parameters
 ///
-/// * `label_table`: symbol table for labels
+/// * `ctx`: compilation context to use
 /// * `data`: data element to translate
 ///
 /// # Errors
 ///
 /// Errors if there is any problem translating the instruction
-fn translate_data(label_table: &LabelTable, data: PendingData) -> Result<Data, ErrorData> {
+fn translate_data(ctx: &Context, data: PendingData) -> Result<Data, ErrorData> {
     Ok(Data {
         labels: data.labels,
         value: match data.value {
             // Evaluate the expression used as value for integer directives
             PendingValue::Integer((value, span), size, int_type) => {
-                let value = value.eval(|label| label_eval(label_table, &data.address, label))?;
+                let (label_table, mods) = (&ctx.label_table, &ctx.arch.modifiers);
+                let value =
+                    value.eval(|label| label_eval(label_table, &data.address, label), mods)?;
                 let value = BigInt::try_from(value).add_span(span)?;
                 let int = Integer::build(value, size.saturating_mul(8), Some(int_type), None);
                 Value::Integer(int.add_span(span)?)
@@ -1261,7 +1265,7 @@ fn compile_inner(
     // Perform the 2nd pass of data directives processing
     let data_memory = pending_data
         .into_iter()
-        .map(|data| translate_data(&ctx.label_table, data))
+        .map(|data| translate_data(ctx, data))
         .collect::<Result<Vec<_>, _>>()?;
     Ok((global_symbols, instructions, data_memory))
 }

@@ -28,12 +28,13 @@ use chumsky::{input::ValueInput, prelude::*};
 use num_bigint::{BigInt, BigUint};
 
 use super::{lexer::Operator, Parser, Span, Spanned, Token};
+use crate::architecture::ModifierDefinitions;
 use crate::compiler::error::SpannedErr;
 use crate::compiler::{ErrorData, ErrorKind};
 use crate::number::Number;
 
 /// Allowed unary operations
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UnaryOp {
     /// Unary plus, essentially a no-op
     Plus,
@@ -41,6 +42,8 @@ pub enum UnaryOp {
     Minus,
     /// Unary binary complement
     Complement,
+    /// Unary Modifier
+    Modifier(String),
 }
 
 /// Allowed binary operations
@@ -99,6 +102,7 @@ impl Expr {
     /// # Parameters
     ///
     /// * `ident_eval`: callback function to evaluate identifiers
+    /// * `modifiers`: definitions of the modifiers allowed
     ///
     /// # Errors
     ///
@@ -108,21 +112,29 @@ impl Expr {
     pub fn eval(
         &self,
         ident_eval: impl Copy + Fn(&str) -> Result<BigInt, ErrorKind>,
+        modifiers: &ModifierDefinitions,
     ) -> Result<Number, ErrorData> {
         match self {
             Self::Integer(value) => Ok(value.clone().into()),
             Self::Float((value, span)) => Ok(Number::from((*value, *span))),
             Self::Character(c) => Ok((*c as u32).into()),
             Self::Identifier((ident, span)) => Ok(ident_eval(ident).add_span(*span)?.into()),
-            Self::UnaryOp { op, operand } => match op.0 {
-                UnaryOp::Plus => operand.0.eval(ident_eval),
-                UnaryOp::Minus => Ok(-(operand.0.eval(ident_eval)?)),
-                UnaryOp::Complement => (!(operand.0.eval(ident_eval)?)).add_span(op.1),
+            Self::UnaryOp { op, operand } => match &op.0 {
+                UnaryOp::Plus => operand.0.eval(ident_eval, modifiers),
+                UnaryOp::Minus => Ok(-(operand.0.eval(ident_eval, modifiers)?)),
+                UnaryOp::Complement => (!(operand.0.eval(ident_eval, modifiers)?)).add_span(op.1),
+                UnaryOp::Modifier(name) => {
+                    let x = operand.0.eval(ident_eval, modifiers)?;
+                    let modifier = modifiers
+                        .get(name.as_str())
+                        .ok_or_else(|| ErrorKind::UnknownModifier(name.clone()).add_span(op.1))?;
+                    Ok(x.modify(*modifier))
+                }
             },
             Self::BinaryOp { op, lhs, rhs } => {
-                let lhs = lhs.0.eval(ident_eval)?;
+                let lhs = lhs.0.eval(ident_eval, modifiers)?;
                 let span = rhs.1;
-                let rhs = rhs.0.eval(ident_eval)?;
+                let rhs = rhs.0.eval(ident_eval, modifiers)?;
                 match op.0 {
                     BinaryOp::Add => Ok(lhs + rhs),
                     BinaryOp::Sub => Ok(lhs - rhs),
@@ -153,8 +165,8 @@ impl Expr {
     ///
     /// Errors in the same cases as [`Expr::eval`], but any identifier usage results in a
     /// [`ErrorKind::UnallowedLabel`]
-    pub fn eval_no_ident(&self) -> Result<Number, ErrorData> {
-        self.eval(Self::unallowed_ident)
+    pub fn eval_no_ident(&self, modifiers: &ModifierDefinitions) -> Result<Number, ErrorData> {
+        self.eval(Self::unallowed_ident, modifiers)
     }
 }
 
@@ -211,16 +223,26 @@ where
         // are allowed so that expressions may span multiple lines. Newlines aren't allowed after
         // them to prevent them from consuming new lines required to end statements
 
-        // atom: `atom -> \n* (literal | ( expression ))`
-        let atom = newline().ignore_then(
-            literal
-                // Remove span to replace it with one including the parenthesis
-                .or(expr.map(|(x, _)| x).delimited_by(
-                    just(Token::Ctrl('(')),
-                    newline().ignore_then(just(Token::Ctrl(')'))),
-                ))
-                .map_with(|atom, e| (atom, e.span())),
+        // paren_expr: `paren_expr -> ( expression )`
+        let paren_expr = expr.delimited_by(
+            just(Token::Ctrl('(')),
+            newline().ignore_then(just(Token::Ctrl(')'))),
         );
+        // modifier: `modifier -> % ident paren_expr`
+        let modifier = just(Token::Operator(Operator::Percent))
+            .ignore_then(select! {Token::Identifier(name) => name }.labelled("identifier"))
+            .map_with(|name, e| (UnaryOp::Modifier(name), e.span()))
+            .then(paren_expr.clone())
+            .map(|(op, expr)| Expr::UnaryOp {
+                op,
+                operand: Box::new(expr),
+            });
+        // Remove span to replace it with one including the parenthesis
+        let paren_expr = paren_expr.map(|(x, _)| x);
+
+        // atom: `atom -> \n* (literal | modifier | paren_expr)`
+        let atom = choice((literal, modifier, paren_expr)).map_with(|atom, e| (atom, e.span()));
+        let atom = newline().ignore_then(atom);
         let atom = atom.labelled("expression").as_context();
 
         let expr = atom.pratt((
@@ -229,12 +251,13 @@ where
                 op!(:"unary": Plus => UnaryOp::Plus, Minus => UnaryOp::Minus, Tilde => UnaryOp::Complement),
                 |op: Spanned<UnaryOp>, rhs: Spanned<Expr>, _| {
                     let span = op.1.start..rhs.1.end;
+                    let ctx = op.1.context;
                     (
                         Expr::UnaryOp {
                             op,
                             operand: Box::new(rhs),
                         },
-                        Span::new(op.1.context, span),
+                        Span::new(ctx, span),
                     )
                 },
             ),
@@ -249,6 +272,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::architecture::Modifier;
     use crate::compiler::error::OperationKind;
     use crate::span::test::*;
 
@@ -266,11 +290,21 @@ mod test {
                 Err(ErrorKind::UnknownLabel(ident.to_owned()))
             }
         };
+        #[allow(clippy::unwrap_used)]
+        let modifier = |range: (u64, Option<u64>), lower_signed, output_signed| Modifier {
+            range: range.try_into().unwrap(),
+            lower_signed,
+            output_signed,
+        };
+        let modifiers = ModifierDefinitions::from([
+            ("hi", modifier((12, Some(32)), true, false)),
+            ("low", modifier((0, Some(12)), false, true)),
+        ]);
         for (src, expr, expected) in test_cases {
             let start = (src.trim_start().as_ptr() as usize) - (src.as_ptr() as usize);
             let span = (start..src.len()).span();
             assert_eq!(parse(src), Ok((expr.clone(), span)), "`{src:?}`");
-            let res = expr.eval(ident_eval);
+            let res = expr.eval(ident_eval, &modifiers);
             assert_eq!(res, expected, "`{src:?}`\n{expr:?}");
         }
     }
@@ -360,6 +394,7 @@ mod test {
 
     #[test]
     fn unary() {
+        let modifier = |n: &str, s| (UnaryOp::Modifier(n.into()), s);
         test([
             (
                 "+2",
@@ -395,6 +430,21 @@ mod test {
                 "~2.75",
                 un_op((UnaryOp::Complement, 0..1), float(2.75, 1..5)),
                 Err(float_op(OperationKind::Complement, 1..5, 0..1)),
+            ),
+            (
+                "%hi(0xABCDE701)",
+                un_op(modifier("hi", 0..3), int(0xABCD_E701, 4..14)),
+                Ok((0xABCDE).into()),
+            ),
+            (
+                "%low(0xABCDE701)",
+                un_op(modifier("low", 0..4), int(0xABCD_E701, 5..15)),
+                Ok((0x701).into()),
+            ),
+            (
+                "%mod(0xABCDE701)",
+                un_op(modifier("mod", 0..4), int(0xABCD_E701, 5..15)),
+                Err(ErrorKind::UnknownModifier("mod".into()).add_span((0..4).span())),
             ),
         ]);
     }
@@ -686,6 +736,25 @@ mod test {
                     ),
                 ),
                 Ok(32.into()),
+            ),
+            (
+                "1 + %low(0x1234) * 3",
+                bin_op(
+                    (BinaryOp::Add, 2..3),
+                    int(1, 0..1),
+                    (
+                        bin_op(
+                            (BinaryOp::Mul, 17..18),
+                            (
+                                un_op((UnaryOp::Modifier("low".into()), 4..8), int(0x1234, 9..15)),
+                                4..16,
+                            ),
+                            int(3, 19..20),
+                        ),
+                        4..20,
+                    ),
+                ),
+                Ok((1 + 0x234 * 3).into()),
             ),
         ]);
     }

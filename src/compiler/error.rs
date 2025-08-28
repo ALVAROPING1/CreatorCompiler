@@ -73,6 +73,7 @@ pub enum Kind {
         value: String,
         enum_name: String,
     },
+    UnknownModifier(String),
     IncorrectInstructionSyntax(Vec<(String, ParseError)>),
     IncorrectDirectiveArgumentNumber {
         expected: ArgumentNumber,
@@ -242,24 +243,25 @@ impl Info for Error<'_> {
             Kind::UnknownRegister { .. } => 5,
             Kind::UnknownEnumType { .. } => 6,
             Kind::UnknownEnumValue { .. } => 7,
-            Kind::IncorrectInstructionSyntax(..) => 8,
-            Kind::IncorrectDirectiveArgumentNumber { .. } => 9,
-            Kind::IncorrectArgumentType { .. } => 10,
-            Kind::DuplicateLabel(..) => 11,
-            Kind::MissingMainLabel => 12,
-            Kind::MainInLibrary => 13,
-            Kind::MainOutsideCode => 14,
-            Kind::MemorySectionFull(..) => 15,
-            Kind::DataUnaligned { .. } => 16,
-            Kind::UnallowedStatementType { .. } => 17,
-            Kind::UnallowedLabel => 18,
-            Kind::UnallowedFloat(..) => 19,
-            Kind::UnallowedFloatOperation(..) => 20,
-            Kind::UnallowedNegativeValue(..) => 21,
-            Kind::IntegerOutOfRange(..) => 22,
-            Kind::DivisionBy0(..) => 23,
-            Kind::RemainderWith0(..) => 24,
-            Kind::PseudoinstructionError { .. } => 25,
+            Kind::UnknownModifier { .. } => 8,
+            Kind::IncorrectInstructionSyntax(..) => 9,
+            Kind::IncorrectDirectiveArgumentNumber { .. } => 10,
+            Kind::IncorrectArgumentType { .. } => 11,
+            Kind::DuplicateLabel(..) => 12,
+            Kind::MissingMainLabel => 13,
+            Kind::MainInLibrary => 14,
+            Kind::MainOutsideCode => 15,
+            Kind::MemorySectionFull(..) => 16,
+            Kind::DataUnaligned { .. } => 17,
+            Kind::UnallowedStatementType { .. } => 18,
+            Kind::UnallowedLabel => 19,
+            Kind::UnallowedFloat(..) => 20,
+            Kind::UnallowedFloatOperation(..) => 21,
+            Kind::UnallowedNegativeValue(..) => 22,
+            Kind::IntegerOutOfRange(..) => 23,
+            Kind::DivisionBy0(..) => 24,
+            Kind::RemainderWith0(..) => 25,
+            Kind::PseudoinstructionError { .. } => 26,
         }
     }
 
@@ -315,6 +317,10 @@ impl Info for Error<'_> {
                 let default = HashMap::default();
                 let enum_def = enums.get(enum_name.as_str()).unwrap_or(&default);
                 let names = utils::get_similar(value, enum_def.keys().copied());
+                format!("Did you mean {}?", DisplayList::non_empty(names, color)?)
+            }
+            Kind::UnknownModifier(s) => {
+                let names = utils::get_similar(s, self.ctx.arch.modifiers.keys().copied());
                 format!("Did you mean {}?", DisplayList::non_empty(names, color)?)
             }
             Kind::DuplicateLabel(.., Some(_)) => "Consider renaming either of the labels".into(),
@@ -387,6 +393,7 @@ impl Info for Error<'_> {
             Kind::UnknownRegister { .. } => "Unknown register".into(),
             Kind::UnknownEnumType { .. } => "Unknown enum type".into(),
             Kind::UnknownEnumValue { .. } => "Unknown enum value".into(),
+            Kind::UnknownModifier { .. } => "Unknown modifier name".into(),
             Kind::IncorrectInstructionSyntax(..) => "Incorrect syntax".into(),
             Kind::IncorrectDirectiveArgumentNumber { found, .. } => {
                 format!("This directive has {}", ArgNum(*found, red))
@@ -442,6 +449,13 @@ impl Info for Error<'_> {
                 Colored(value, red),
                 Colored(enum_name, blue)
             ),
+            Kind::UnknownModifier(s) => {
+                format!(
+                    "Modifier {}{} isn't defined",
+                    Colored('%', red),
+                    Colored(s, red)
+                )
+            }
             Kind::IncorrectInstructionSyntax(..) => "Incorrect instruction syntax".into(),
             Kind::IncorrectDirectiveArgumentNumber { expected, found } => format!(
                 "Incorrect amount of arguments, expected {}{} but found {}",

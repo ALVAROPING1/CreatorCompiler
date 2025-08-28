@@ -199,6 +199,30 @@ macro_rules! impl_NonEmptyRangeInclusive {
 
 impl_NonEmptyRangeInclusive!(BigUint, usize);
 
+/// Exclusive non-empty range with a possibly unbound end
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
+#[serde(try_from = "(u64, Option<u64>)")]
+pub struct RangeFrom {
+    /// Start of the range
+    pub start: u64,
+    /// End of the range
+    pub size: Option<u64>,
+}
+schema_from!(RangeFrom, (u64, Option<u64>));
+
+impl TryFrom<(u64, Option<u64>)> for RangeFrom {
+    type Error = &'static str;
+
+    fn try_from((start, end): (u64, Option<u64>)) -> Result<Self, Self::Error> {
+        let size = match end.map(|end| end.checked_sub(start)) {
+            Some(None) => return Err("the range end must be bigger than the start"),
+            Some(Some(x)) => Some(x),
+            None => None,
+        };
+        Ok(Self { start, size })
+    }
+}
+
 /// Derive implementation of [`JsonSchema`] from the implementation of a different type
 macro_rules! schema_from {
     ($dst:ident$(<$($lt:lifetime)? $($(,)? $t:ident)?>)?, $src:ty) => {

@@ -264,6 +264,7 @@ pub fn expand<'arch>(
     // Expansion
     let mut def = instruction.definition.replace('\n', "");
     let case = arch.arch_conf.sensitive_register_name;
+    let mods = &arch.modifiers;
 
     // Replace occurrences of `AliasDouble()`
     while let Some(x) = ALIAS_DOUBLE.captures(&def) {
@@ -327,7 +328,7 @@ pub fn expand<'arch>(
         let field = match ty {
             "int" => {
                 // Convert the number to binary using two's complement
-                let s = BigInt::try_from(value.eval(ident_eval)?)
+                let s = BigInt::try_from(value.eval(ident_eval, mods)?)
                     .add_span(*value_span)?
                     .to_signed_bytes_be()
                     .iter()
@@ -349,8 +350,8 @@ pub fn expand<'arch>(
                     pad
                 }
             }
-            "float" => format!("{:032b}", f32::from(value.eval_no_ident()?).to_bits()),
-            "double" => format!("{:064b}", f64::from(value.eval_no_ident()?).to_bits()),
+            "float" => format!("{:032b}", f32::from(value.eval_no_ident(mods)?).to_bits()),
+            "double" => format!("{:064b}", f64::from(value.eval_no_ident(mods)?).to_bits()),
             ty => {
                 return Err(Error {
                     definition: def.clone(),
@@ -402,7 +403,7 @@ pub fn expand<'arch>(
             .value;
         // Calculate the size of the expression
         #[allow(clippy::cast_possible_truncation)]
-        let size = match value.eval(ident_eval)? {
+        let size = match value.eval(ident_eval, mods)? {
             Number::Int(x) => x.bits() + 1,
             // If the result is a float, assume it is in single precision
             Number::Float { .. } => 32,
