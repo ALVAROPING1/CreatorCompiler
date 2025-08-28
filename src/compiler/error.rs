@@ -41,6 +41,7 @@ use super::{PseudoinstructionError, PseudoinstructionErrorKind};
 
 /// Type of arguments for directives/instructions
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ArgumentType {
     String,
     Expression,
@@ -50,6 +51,7 @@ pub enum ArgumentType {
 
 /// Unsupported operations for floating point numbers
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum OperationKind {
     Complement,
     BitwiseOR,
@@ -59,6 +61,7 @@ pub enum OperationKind {
 
 /// Error type
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Kind {
     UnknownDirective(String),
     UnknownInstruction(String),

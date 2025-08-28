@@ -35,6 +35,7 @@ use crate::number::Number;
 
 /// Allowed unary operations
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum UnaryOp {
     /// Unary plus, essentially a no-op
     Plus,
@@ -48,6 +49,7 @@ pub enum UnaryOp {
 
 /// Allowed binary operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum BinaryOp {
     /// Addition
     Add,
@@ -69,6 +71,7 @@ pub enum BinaryOp {
 
 /// Mathematical expression on constant values
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum Expr {
     /// Integer literal
     Integer(BigUint),
