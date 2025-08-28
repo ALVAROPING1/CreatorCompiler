@@ -122,18 +122,19 @@ impl Expr {
             Self::Float((value, span)) => Ok(Number::from((*value, *span))),
             Self::Character(c) => Ok((*c as u32).into()),
             Self::Identifier((ident, span)) => Ok(ident_eval(ident).add_span(*span)?.into()),
-            Self::UnaryOp { op, operand } => match &op.0 {
-                UnaryOp::Plus => operand.0.eval(ident_eval, modifiers),
-                UnaryOp::Minus => Ok(-(operand.0.eval(ident_eval, modifiers)?)),
-                UnaryOp::Complement => (!(operand.0.eval(ident_eval, modifiers)?)).add_span(op.1),
-                UnaryOp::Modifier(name) => {
-                    let x = operand.0.eval(ident_eval, modifiers)?;
-                    let modifier = modifiers
-                        .get(name.as_str())
-                        .ok_or_else(|| ErrorKind::UnknownModifier(name.clone()).add_span(op.1))?;
-                    Ok(x.modify(*modifier))
+            Self::UnaryOp { op, operand } => {
+                let rhs = operand.0.eval(ident_eval, modifiers)?;
+                match &op.0 {
+                    UnaryOp::Plus => Ok(rhs),
+                    UnaryOp::Minus => Ok(-rhs),
+                    UnaryOp::Complement => (!rhs).add_span(op.1),
+                    UnaryOp::Modifier(name) => {
+                        let err = || ErrorKind::UnknownModifier(name.clone()).add_span(op.1);
+                        let modifier = modifiers.get(name.as_str()).ok_or_else(err)?;
+                        Ok(rhs.modify(*modifier))
+                    }
                 }
-            },
+            }
             Self::BinaryOp { op, lhs, rhs } => {
                 let lhs = lhs.0.eval(ident_eval, modifiers)?;
                 let span = rhs.1;
