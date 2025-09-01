@@ -330,7 +330,7 @@ pub fn lexer<'src, 'arch: 'src>(
     let (string, character) = str_lexer();
 
     // Any of the previous patterns can be a token
-    let token = choice((num, op, ctrl, identifier, string, character, literal));
+    let token = choice((op, ctrl, num, identifier, string, character, literal));
 
     // Comments
     let line_comment = just(comment_prefix)
