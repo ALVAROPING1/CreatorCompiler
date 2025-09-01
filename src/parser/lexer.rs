@@ -81,6 +81,16 @@ operator_token! {
     & => And,
     ^ => Caret,
     ~ => Tilde,
+    > => Gt,
+    < => Lt,
+    >= => Ge,
+    <= => Le,
+    != => Ne,
+    == => Eq,
+    && => LogicalAnd,
+    || => LogicalOr,
+    << => Shl,
+    >> => Shr,
 }
 
 /// Tokens created by the lexer
@@ -273,7 +283,7 @@ pub fn lexer<'src, 'arch: 'src>(
     let num = int.or(float);
 
     // Expression operators
-    let op = select! {
+    let single_char_op = select! {
         '+' => Operator::Plus,
         '-' => Operator::Minus,
         '*' => Operator::Star,
@@ -283,9 +293,27 @@ pub fn lexer<'src, 'arch: 'src>(
         '&' => Operator::And,
         '^' => Operator::Caret,
         '~' => Operator::Tilde,
-    }
-    .map(Token::Operator)
-    .labelled("operator");
+        '>' => Operator::Gt,
+        '<' => Operator::Lt,
+    };
+    let double_char_op = any().repeated().exactly(2).to_slice().try_map(|op, span| {
+        match op {
+            ">=" => Ok(Operator::Ge),
+            "<=" => Ok(Operator::Le),
+            "!=" => Ok(Operator::Ne),
+            "==" => Ok(Operator::Eq),
+            "&&" => Ok(Operator::LogicalAnd),
+            "||" => Ok(Operator::LogicalOr),
+            "<<" => Ok(Operator::Shl),
+            ">>" => Ok(Operator::Shr),
+            // Use a generic error if we don't match a valid operator. The characters can always be
+            // lexed as a combination of other tokens so this will never appear in the output
+            _ => Err(Rich::custom(span, "unknown operator")),
+        }
+    });
+    let op = choice((double_char_op, single_char_op))
+        .map(Token::Operator)
+        .labelled("operator");
 
     // Control characters used in the grammar
     let ctrl = one_of(",()")
@@ -607,9 +635,13 @@ mod test {
 
     #[test]
     fn operator() {
-        for (c, op) in OPERATORS {
-            let span = (0..1).span();
-            assert_eq!(lex(c), Ok(vec![(Token::Operator(op), span)]));
+        for (s, op) in OPERATORS {
+            #[allow(clippy::range_plus_one)]
+            let span = (1..s.len() + 1).span();
+            assert_eq!(
+                lex(&format!(" {s} ")),
+                Ok(vec![(Token::Operator(op), span)])
+            );
         }
     }
 
@@ -633,7 +665,7 @@ mod test {
 
     #[test]
     fn literal() {
-        for c in "@!?=:;${}[]\\<>".chars() {
+        for c in "@!?=:;${}[]\\".chars() {
             let span = (0..1).span();
             assert_eq!(lex(&c.to_string()), Ok(vec![(Token::Literal(c), span)]));
         }
@@ -689,7 +721,7 @@ mod test {
 
     #[test]
     fn sequence() {
-        let src = "a 1 .z +- test:  ]\t='x'\"string\"";
+        let src = "a 1 .z +- test:  ]\t='x'\"string\" <= >= &<";
         let tokens = [
             (Token::Identifier("a".into()), 0..1),
             (Token::Integer(1u8.into()), 2..3),
@@ -701,6 +733,10 @@ mod test {
             (Token::Literal('='), 19..20),
             (Token::Character('x'), 20..23),
             (Token::String("string".into()), 23..31),
+            (Token::Operator(Operator::Le), 32..34),
+            (Token::Operator(Operator::Ge), 35..37),
+            (Token::Operator(Operator::And), 38..39),
+            (Token::Operator(Operator::Lt), 39..40),
         ]
         .into_iter()
         .map(|(t, s)| (t, s.span()))

@@ -57,6 +57,8 @@ pub enum OperationKind {
     BitwiseOR,
     BitwiseAND,
     BitwiseXOR,
+    Shl,
+    Shr,
 }
 
 /// Error type
@@ -106,6 +108,7 @@ pub enum Kind {
     IntegerOutOfRange(BigInt, RangeInclusive<BigInt>),
     DivisionBy0(Span),
     RemainderWith0(Span),
+    ShiftOutOfRange(Span, BigInt),
     PseudoinstructionError {
         name: String,
         error: Box<PseudoinstructionError>,
@@ -143,6 +146,8 @@ impl fmt::Display for OperationKind {
             Self::BitwiseOR => write!(f, "bitwise OR"),
             Self::BitwiseAND => write!(f, "bitwise AND"),
             Self::BitwiseXOR => write!(f, "bitwise XOR"),
+            Self::Shl => write!(f, "shift left"),
+            Self::Shr => write!(f, "shift right"),
         }
     }
 }
@@ -264,7 +269,8 @@ impl Info for Error<'_> {
             Kind::IntegerOutOfRange(..) => 23,
             Kind::DivisionBy0(..) => 24,
             Kind::RemainderWith0(..) => 25,
-            Kind::PseudoinstructionError { .. } => 26,
+            Kind::ShiftOutOfRange(..) => 26,
+            Kind::PseudoinstructionError { .. } => 27,
         }
     }
 
@@ -272,6 +278,9 @@ impl Info for Error<'_> {
         Some(match self.error.kind.as_ref() {
             Kind::IntegerOutOfRange(_, bounds) => {
                 format!("Allowed range is [{}, {}]", bounds.start(), bounds.end())
+            }
+            Kind::ShiftOutOfRange(_, x) if *x >= BigInt::ZERO => {
+                format!("Allowed range is [{}, {}]", u16::MIN, u16::MAX)
             }
             Kind::IncorrectInstructionSyntax(errs) => {
                 let mut res = "Allowed formats:".to_string();
@@ -382,6 +391,12 @@ impl Info for Error<'_> {
                     format!("This expression has value {}", Colored(0, red)),
                 )]
             }
+            Kind::ShiftOutOfRange(span, x) => {
+                vec![(
+                    *span,
+                    format!("This expression has value {}", Colored(x, red)),
+                )]
+            }
             _ => Vec::new(),
         }
     }
@@ -418,7 +433,8 @@ impl Info for Error<'_> {
             Kind::UnallowedLabel | Kind::UnallowedFloat(..) => "This value can't be used".into(),
             Kind::UnallowedFloatOperation(..)
             | Kind::DivisionBy0(..)
-            | Kind::RemainderWith0(..) => "This operation can't be performed".into(),
+            | Kind::RemainderWith0(..)
+            | Kind::ShiftOutOfRange(..) => "This operation can't be performed".into(),
             Kind::UnallowedNegativeValue(val) | Kind::IntegerOutOfRange(val, _) => {
                 format!("This expression has value {}", Colored(val, red))
             }
@@ -516,6 +532,10 @@ impl Info for Error<'_> {
             ),
             Kind::DivisionBy0(..) => "Can't divide by 0".into(),
             Kind::RemainderWith0(..) => "Can't take the remainder of a division by 0".into(),
+            Kind::ShiftOutOfRange(_, x) if *x < BigInt::ZERO => {
+                "Can't perform a shift by negative".into()
+            }
+            Kind::ShiftOutOfRange(..) => "Can't perform a shift by big integer".into(),
             Kind::PseudoinstructionError { name, .. } => {
                 let name = Colored(name, red);
                 format!("Error while expanding pseudoinstruction {name}")

@@ -835,8 +835,8 @@ fn compile_data(
             DirectiveData::Float(float_type) => {
                 ArgumentNumber::new(1, true).check(&args)?;
                 for (value, span) in args.0 {
-                    let value =
-                        f64::from(value.into_expr(span)?.eval_no_ident(&ctx.arch.modifiers)?);
+                    let value = value.into_expr(span)?.eval_no_ident(&ctx.arch.modifiers)?;
+                    let value = value.to_f64();
                     // We intentionally want to truncate the number from f64 to f32 if the user
                     // asked for an f32
                     #[allow(clippy::cast_possible_truncation)]

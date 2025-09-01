@@ -55,56 +55,56 @@ strings:
 
 words:
 # Block of data to test integer expressions
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
-.word (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff, /* An inline comment */ (((10 * 1024 * 1024 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
+.word (((10 * 1024 << 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff >= 0, /* An inline comment */ (((10 * 1024 >> 2 - 40 / 2) % 101) ^ 0xabababababab) & 0xffffffff | 0b10011001 >= 0
 .word (1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1) * 2 - (1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1)
 .word (1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1) * 2 - (1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1)
 .word (1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1) * 2 - (1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1)

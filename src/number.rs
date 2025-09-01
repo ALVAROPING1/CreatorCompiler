@@ -55,25 +55,6 @@ impl Number {
     }
 }
 
-impl From<Number> for f64 {
-    fn from(value: Number) -> Self {
-        match value {
-            Number::Int(x) => x.to_f64().expect("Converting a bigint to f64 can't fail"),
-            Number::Float { value, .. } => value,
-        }
-    }
-}
-
-impl From<Number> for f32 {
-    fn from(value: Number) -> Self {
-        match value {
-            Number::Int(x) => x.to_f32().expect("Converting a bigint to f32 can't fail"),
-            #[allow(clippy::cast_possible_truncation)]
-            Number::Float { value, .. } => value as Self,
-        }
-    }
-}
-
 /// Generates implementations of <code>[From]\<int></code> for [`Number`]
 macro_rules! impl_from_int {
     ($($ty:ty),+) => {
@@ -159,7 +140,7 @@ macro_rules! impl_bin_op {
                     (Self::Int($lhs), Self::Int($rhs)) => Self::Int($int),
                     (lhs, rhs) => {
                         let $orig = lhs.combine_origin(&rhs);
-                        let _value = match (f64::from(lhs), f64::from(rhs)) {
+                        let _value = match (lhs.to_f64(), rhs.to_f64()) {
                             ($lhs, $rhs) => $float
                         };
                         #[allow(unreachable_code)]
@@ -190,6 +171,27 @@ macro_rules! impl_bin_op {
             Result<Self, ErrorKind>: Ok
         );
     };
+    // Implementation for shifts
+    ($trait:path, $name:ident, shift $int:tt, $float:expr) => {
+        impl_bin_op!(
+            $trait,
+            $name,
+            (_lhs, _rhs),
+            {
+                let rhs = u16::try_from(_rhs).map_err(|e| {
+                    ErrorKind::ShiftOutOfRange(
+                        // NOTE: we don't have information here about the position of the int
+                        // TODO: implement operations in Spanned<Number> instead to solve this?
+                        crate::span::DEFAULT_SPAN,
+                        e.into_original().into(),
+                    )
+                })?;
+                _lhs $int rhs
+            },
+            |origin| return Err(ErrorKind::UnallowedFloatOperation($float, origin)),
+            Result<Self, ErrorKind>: Ok
+        );
+    };
 }
 
 impl_bin_op!(ops::Add, add, +);
@@ -206,8 +208,35 @@ impl_bin_op!(
 impl_bin_op!(ops::BitOr, bitor, |, OperationKind::BitwiseOR);
 impl_bin_op!(ops::BitAnd, bitand, &, OperationKind::BitwiseAND);
 impl_bin_op!(ops::BitXor, bitxor, ^, OperationKind::BitwiseXOR);
+impl_bin_op!(ops::Shl, shl, shift <<, OperationKind::Shl);
+impl_bin_op!(ops::Shr, shr, shift >>, OperationKind::Shr);
 
 impl Number {
+    /// Converts this number to a [`f64`]
+    pub fn to_f64(&self) -> f64 {
+        match self {
+            Self::Int(x) => x.to_f64().expect("Converting a bigint to f64 can't fail"),
+            Self::Float { value, .. } => *value,
+        }
+    }
+
+    /// Converts this number to a [`f32`]
+    pub fn to_f32(&self) -> f32 {
+        match self {
+            Self::Int(x) => x.to_f32().expect("Converting a bigint to f32 can't fail"),
+            #[allow(clippy::cast_possible_truncation)]
+            Self::Float { value, .. } => *value as f32,
+        }
+    }
+
+    /// Converts this number to a [`bool`]
+    pub fn to_bool(&self) -> bool {
+        match self {
+            Self::Int(x) => *x != BigInt::ZERO,
+            Self::Float { value, .. } => *value != 0.0,
+        }
+    }
+
     /// Applies a modifier to this number, taking a slice of bits from it, manipulating it as
     /// specified, and returning it as an integer
     pub fn modify(self, modifier: Modifier) -> Self {
@@ -235,10 +264,19 @@ impl Number {
     }
 }
 
+impl PartialOrd for Number {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self, other) {
+            (Self::Int(lhs), Self::Int(rhs)) => Some(lhs.cmp(rhs)),
+            (lhs, rhs) => lhs.to_f64().partial_cmp(&rhs.to_f64()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::span::test::*;
+    use crate::span::{test::*, DEFAULT_SPAN};
 
     impl From<Ranged<f64>> for Number {
         fn from(value: Ranged<f64>) -> Self {
@@ -252,20 +290,22 @@ mod test {
     #[test]
     #[allow(clippy::float_cmp)]
     fn to_float() {
-        assert_eq!(f64::from(Number::Int(123.into())), 123.0);
+        assert_eq!(Number::Int(123.into()).to_f64(), 123.0);
         assert_eq!(
-            f64::from(Number::Float {
+            Number::Float {
                 value: 101.5,
                 origin: (0..0).span()
-            }),
+            }
+            .to_f64(),
             101.5
         );
-        assert_eq!(f32::from(Number::Int(123.into())), 123.0);
+        assert_eq!(Number::Int(123.into()).to_f32(), 123.0);
         assert_eq!(
-            f32::from(Number::Float {
+            Number::Float {
                 value: 101.5,
                 origin: (0..0).span()
-            }),
+            }
+            .to_f32(),
             101.5
         );
     }
@@ -296,6 +336,28 @@ mod test {
             }),
             Err(ErrorKind::UnallowedFloat((1..3).span()))
         );
+    }
+
+    #[test]
+    fn to_bool() {
+        assert!(Number::Int(123.into()).to_bool());
+        assert!(!Number::Int(0.into()).to_bool());
+        assert!(Number::Int((-1).into()).to_bool());
+        assert!(Number::Float {
+            value: 101.5,
+            origin: (1..3).span()
+        }
+        .to_bool());
+        assert!(Number::Float {
+            value: -1.5,
+            origin: (3..5).span()
+        }
+        .to_bool());
+        assert!(!Number::Float {
+            value: 0.0,
+            origin: (1..3).span()
+        }
+        .to_bool());
     }
 
     #[test]
@@ -530,6 +592,69 @@ mod test {
     }
 
     #[test]
+    fn shl() {
+        let op = |a: &Number, b: &Number| a.clone() << b.clone();
+        let i1 = Number::from(0b1010);
+        let i2 = Number::from(2);
+        let i3 = Number::from(-3);
+        let f1 = Number::from((1.2, 1..3));
+        let f2 = Number::from((2.5, 5..6));
+        let err = |s: Range| ErrorKind::UnallowedFloatOperation(OperationKind::Shl, s.span());
+        assert_eq!(op(&i1, &i2), Ok(Number::from(0b10_1000)));
+        assert_eq!(op(&i1, &f2), Err(err(5..6)));
+        assert_eq!(op(&f1, &i2), Err(err(1..3)));
+        assert_eq!(op(&f1, &f2), Err(err(1..3)));
+        assert_eq!(
+            op(&i1, &i3),
+            Err(ErrorKind::ShiftOutOfRange(DEFAULT_SPAN, (-3).into()))
+        );
+        let m = u32::from(u16::MAX) + 1;
+        assert_eq!(
+            op(&i1, &Number::from(m)),
+            Err(ErrorKind::ShiftOutOfRange(DEFAULT_SPAN, m.into()))
+        );
+    }
+
+    #[test]
+    fn shr() {
+        let op = |a: &Number, b: &Number| a.clone() >> b.clone();
+        let opint = |a: BigInt, b: BigInt| op(&Number::from(a), &Number::from(b));
+        let i1 = Number::from(0b1010);
+        let i2 = Number::from(2);
+        let i3 = Number::from(-3);
+        let f1 = Number::from((1.2, 1..3));
+        let f2 = Number::from((2.5, 5..6));
+        let err = |s: Range| ErrorKind::UnallowedFloatOperation(OperationKind::Shr, s.span());
+        assert_eq!(op(&i1, &i2), Ok(Number::from(0b10)));
+        assert_eq!(op(&i1, &f2), Err(err(5..6)));
+        assert_eq!(op(&f1, &i2), Err(err(1..3)));
+        assert_eq!(op(&f1, &f2), Err(err(1..3)));
+        assert_eq!(
+            op(&i1, &i3),
+            Err(ErrorKind::ShiftOutOfRange(DEFAULT_SPAN, (-3).into()))
+        );
+        let m = u32::from(u16::MAX) + 1;
+        assert_eq!(
+            op(&i1, &Number::from(m)),
+            Err(ErrorKind::ShiftOutOfRange(DEFAULT_SPAN, m.into()))
+        );
+        assert_eq!(
+            opint(
+                BigInt::from(0xAAAA_AAAA_AAAA_AAAA_AAAB_u128),
+                BigInt::from(u16::MAX)
+            ),
+            Ok(Number::from(0))
+        );
+        assert_eq!(
+            opint(
+                BigInt::from(-0xAAAA_AAAA_AAAA_AAAA_AAAB_i128),
+                BigInt::from(u16::MAX)
+            ),
+            Ok(Number::from(-1))
+        );
+    }
+
+    #[test]
     #[allow(clippy::unwrap_used, clippy::cast_possible_wrap)]
     fn modify_split() {
         let hi = Modifier {
@@ -606,5 +731,32 @@ mod test {
             .try_into()
             .unwrap();
         assert_eq!(res, 1.25_f64.to_bits().into());
+    }
+
+    #[test]
+    fn partial_ord() {
+        use std::cmp::Ordering;
+        let test_cases: [(Number, Number, Ordering); _] = [
+            (1.into(), 2.into(), Ordering::Less),
+            (2.into(), 2.into(), Ordering::Equal),
+            (3.into(), 2.into(), Ordering::Greater),
+            ((1.5, 0..1).into(), (2.5, 0..1).into(), Ordering::Less),
+            ((1.5, 0..1).into(), (2.5, 3..5).into(), Ordering::Less),
+            ((2.5, 0..1).into(), (2.5, 0..1).into(), Ordering::Equal),
+            ((2.5, 0..1).into(), (2.5, 3..5).into(), Ordering::Equal),
+            ((3.5, 0..1).into(), (2.5, 0..1).into(), Ordering::Greater),
+            ((3.5, 0..1).into(), (2.5, 3..5).into(), Ordering::Greater),
+            (2.into(), (3.0, 0..1).into(), Ordering::Less),
+            (3.into(), (3.0, 0..1).into(), Ordering::Equal),
+            (4.into(), (3.0, 0..1).into(), Ordering::Greater),
+            ((2.0, 0..1).into(), 3.into(), Ordering::Less),
+            ((3.0, 0..1).into(), 3.into(), Ordering::Equal),
+            ((4.0, 0..1).into(), 3.into(), Ordering::Greater),
+            (2.into(), (2.5, 0..1).into(), Ordering::Less),
+            (3.into(), (2.5, 0..1).into(), Ordering::Greater),
+        ];
+        for (i, (a, b, res)) in test_cases.into_iter().enumerate() {
+            assert_eq!(a.partial_cmp(&b), Some(res), "{i}, a: {a:?}, b: {b:?}");
+        }
     }
 }

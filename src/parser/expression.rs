@@ -26,6 +26,7 @@
 use chumsky::pratt::{infix, left, prefix};
 use chumsky::{input::ValueInput, prelude::*};
 use num_bigint::{BigInt, BigUint};
+use std::cmp::Ordering;
 
 use super::{lexer::Operator, Parser, Span, Spanned, Token};
 use crate::architecture::ModifierDefinitions;
@@ -67,6 +68,26 @@ pub enum BinaryOp {
     BitwiseAND,
     /// Bitwise XOR
     BitwiseXOR,
+    /// Greater
+    Gt,
+    /// Less
+    Lt,
+    /// Greater or equal
+    Ge,
+    /// Less or equal
+    Le,
+    /// Not equal
+    Ne,
+    /// Equal
+    Eq,
+    /// Boolean AND
+    LogicalAnd,
+    /// Boolean OR
+    LogicalOr,
+    /// Shift left
+    Shl,
+    /// Shift right
+    Shr,
 }
 
 /// Mathematical expression on constant values
@@ -139,6 +160,12 @@ impl Expr {
                 let lhs = lhs.0.eval(ident_eval, modifiers)?;
                 let span = rhs.1;
                 let rhs = rhs.0.eval(ident_eval, modifiers)?;
+                #[rustfmt::skip]
+                let to_int = |cond, ret: i32| Ok(if cond { ret.into() } else { BigInt::ZERO.into() });
+                let replace_span = |e, span| match e {
+                    ErrorKind::ShiftOutOfRange(_, x) => ErrorKind::ShiftOutOfRange(span, x),
+                    e => e,
+                };
                 match op.0 {
                     BinaryOp::Add => Ok(lhs + rhs),
                     BinaryOp::Sub => Ok(lhs - rhs),
@@ -148,6 +175,16 @@ impl Expr {
                     BinaryOp::BitwiseOR => lhs | rhs,
                     BinaryOp::BitwiseAND => lhs & rhs,
                     BinaryOp::BitwiseXOR => lhs ^ rhs,
+                    BinaryOp::Gt => to_int(lhs > rhs, -1),
+                    BinaryOp::Lt => to_int(lhs < rhs, -1),
+                    BinaryOp::Ge => to_int(lhs >= rhs, -1),
+                    BinaryOp::Le => to_int(lhs <= rhs, -1),
+                    BinaryOp::Ne => to_int(lhs.partial_cmp(&rhs) != Some(Ordering::Equal), -1),
+                    BinaryOp::Eq => to_int(lhs.partial_cmp(&rhs) == Some(Ordering::Equal), -1),
+                    BinaryOp::LogicalAnd => to_int(lhs.to_bool() && rhs.to_bool(), 1),
+                    BinaryOp::LogicalOr => to_int(lhs.to_bool() || rhs.to_bool(), 1),
+                    BinaryOp::Shl => (lhs << rhs).map_err(|e| replace_span(e, span)),
+                    BinaryOp::Shr => (lhs >> rhs).map_err(|e| replace_span(e, span)),
                 }
                 .add_span(op.1)
             }
@@ -194,14 +231,14 @@ where
 
     // Operator parser
     macro_rules! op {
-        (:$name:literal: $($i:ident => $o:expr),+$(,)?) => {
+        (:$name:literal: $($i:ident => $o:expr),+ $(,)?) => {
             newline().ignore_then(
                 select! { $(Token::Operator(Operator::$i) => $o,)+ }
                     .map_with(|x, e| (x, e.span()))
                     .labelled(concat!($name, " operator"))
             )
         };
-        ($($i:ident => $o:expr),+) => { op!(:"binary": $($i => $o,)+) };
+        ($($i:ident => $o:expr),+ $(,)?) => { op!(:"binary": $($i => $o,)+) };
     }
 
     // Folding function for binary operations. We need to define it with a macro because the
@@ -249,9 +286,31 @@ where
         let atom = newline().ignore_then(atom);
         let atom = atom.labelled("expression").as_context();
 
+        let high_precedence = op!(
+            Star => BinaryOp::Mul,
+            Slash => BinaryOp::Div,
+            Percent => BinaryOp::Rem,
+            Shl => BinaryOp::Shl,
+            Shr => BinaryOp::Shr,
+        );
+        let medium_precedence = op!(
+            Or => BinaryOp::BitwiseOR,
+            And => BinaryOp::BitwiseAND,
+            Caret => BinaryOp::BitwiseXOR,
+        );
+        let low_precedence = op!(
+            Plus => BinaryOp::Add,
+            Minus => BinaryOp::Sub,
+            Gt => BinaryOp::Gt,
+            Lt => BinaryOp::Lt,
+            Ge => BinaryOp::Ge,
+            Le => BinaryOp::Le,
+            Ne => BinaryOp::Ne,
+            Eq => BinaryOp::Eq,
+        );
         let expr = atom.pratt((
             prefix(
-                4,
+                6,
                 op!(:"unary": Plus => UnaryOp::Plus, Minus => UnaryOp::Minus, Tilde => UnaryOp::Complement),
                 |op: Spanned<UnaryOp>, rhs: Spanned<Expr>, _| {
                     let span = op.1.start..rhs.1.end;
@@ -265,9 +324,11 @@ where
                     )
                 },
             ),
-            infix(left(3), op!(Star => BinaryOp::Mul, Slash => BinaryOp::Div, Percent => BinaryOp::Rem), fold!()),
-            infix(left(2), op!(Or => BinaryOp::BitwiseOR, And => BinaryOp::BitwiseAND, Caret => BinaryOp::BitwiseXOR), fold!()),
-            infix(left(1), op!(Plus => BinaryOp::Add, Minus => BinaryOp::Sub), fold!())
+            infix(left(5), high_precedence, fold!()),
+            infix(left(4), medium_precedence, fold!()),
+            infix(left(3), low_precedence, fold!()),
+            infix(left(2), op!(LogicalAnd => BinaryOp::LogicalAnd), fold!()),
+            infix(left(1), op!(LogicalOr => BinaryOp::LogicalOr), fold!()),
         ));
         expr.labelled("expression").as_context()
     })
@@ -631,6 +692,161 @@ mod test {
     }
 
     #[test]
+    fn binary_comparison() {
+        test([
+            (
+                "5 < 3",
+                bin_op((BinaryOp::Lt, 2..3), int(5, 0..1), int(3, 4..5)),
+                Ok(0.into()),
+            ),
+            (
+                "5 > 3",
+                bin_op((BinaryOp::Gt, 2..3), int(5, 0..1), int(3, 4..5)),
+                Ok((-1).into()),
+            ),
+            (
+                "5 <= 3",
+                bin_op((BinaryOp::Le, 2..4), int(5, 0..1), int(3, 5..6)),
+                Ok(0.into()),
+            ),
+            (
+                "5 >= 3",
+                bin_op((BinaryOp::Ge, 2..4), int(5, 0..1), int(3, 5..6)),
+                Ok((-1).into()),
+            ),
+            (
+                "5 == 3",
+                bin_op((BinaryOp::Eq, 2..4), int(5, 0..1), int(3, 5..6)),
+                Ok(0.into()),
+            ),
+            (
+                "5 != 3",
+                bin_op((BinaryOp::Ne, 2..4), int(5, 0..1), int(3, 5..6)),
+                Ok((-1).into()),
+            ),
+            (
+                "3 >= 3",
+                bin_op((BinaryOp::Ge, 2..4), int(3, 0..1), int(3, 5..6)),
+                Ok((-1).into()),
+            ),
+            (
+                "0 == 0.0",
+                bin_op((BinaryOp::Eq, 2..4), int(0, 0..1), float(0.0, 5..8)),
+                Ok((-1).into()),
+            ),
+            (
+                "3 >= 3.1",
+                bin_op((BinaryOp::Ge, 2..4), int(3, 0..1), float(3.1, 5..8)),
+                Ok(0.into()),
+            ),
+        ]);
+    }
+
+    #[test]
+    fn binary_boolean() {
+        test([
+            (
+                "5 || 3",
+                bin_op((BinaryOp::LogicalOr, 2..4), int(5, 0..1), int(3, 5..6)),
+                Ok(1.into()),
+            ),
+            (
+                "0 || 3",
+                bin_op((BinaryOp::LogicalOr, 2..4), int(0, 0..1), int(3, 5..6)),
+                Ok(1.into()),
+            ),
+            (
+                "5 || 0",
+                bin_op((BinaryOp::LogicalOr, 2..4), int(5, 0..1), int(0, 5..6)),
+                Ok(1.into()),
+            ),
+            (
+                "0 || 0",
+                bin_op((BinaryOp::LogicalOr, 2..4), int(0, 0..1), int(0, 5..6)),
+                Ok(0.into()),
+            ),
+            (
+                "0.2 || 0",
+                bin_op((BinaryOp::LogicalOr, 4..6), float(0.2, 0..3), int(0, 7..8)),
+                Ok(1.into()),
+            ),
+            (
+                "5 && 3",
+                bin_op((BinaryOp::LogicalAnd, 2..4), int(5, 0..1), int(3, 5..6)),
+                Ok(1.into()),
+            ),
+            (
+                "0 && 3",
+                bin_op((BinaryOp::LogicalAnd, 2..4), int(0, 0..1), int(3, 5..6)),
+                Ok(0.into()),
+            ),
+            (
+                "5 && 0",
+                bin_op((BinaryOp::LogicalAnd, 2..4), int(5, 0..1), int(0, 5..6)),
+                Ok(0.into()),
+            ),
+            (
+                "0 && 0",
+                bin_op((BinaryOp::LogicalAnd, 2..4), int(0, 0..1), int(0, 5..6)),
+                Ok(0.into()),
+            ),
+            (
+                "0.2 && 1.4",
+                bin_op(
+                    (BinaryOp::LogicalAnd, 4..6),
+                    float(0.2, 0..3),
+                    float(1.4, 7..10),
+                ),
+                Ok(1.into()),
+            ),
+        ]);
+    }
+
+    #[test]
+    fn binary_shift() {
+        test([
+            (
+                "5 << 3",
+                bin_op((BinaryOp::Shl, 2..4), int(5, 0..1), int(3, 5..6)),
+                Ok(40.into()),
+            ),
+            (
+                "5 >> 1",
+                bin_op((BinaryOp::Shr, 2..4), int(5, 0..1), int(1, 5..6)),
+                Ok(2.into()),
+            ),
+            (
+                "5.2 << 3",
+                bin_op((BinaryOp::Shl, 4..6), float(5.2, 0..3), int(3, 7..8)),
+                Err(float_op(OperationKind::Shl, 0..3, 4..6)),
+            ),
+            (
+                "5.2 >> 3",
+                bin_op((BinaryOp::Shr, 4..6), float(5.2, 0..3), int(3, 7..8)),
+                Err(float_op(OperationKind::Shr, 0..3, 4..6)),
+            ),
+            (
+                "5 << -1",
+                bin_op(
+                    (BinaryOp::Shl, 2..4),
+                    int(5, 0..1),
+                    (un_op((UnaryOp::Minus, 5..6), int(1, 6..7)), 5..7),
+                ),
+                Err(ErrorKind::ShiftOutOfRange((5..7).span(), (-1).into()).add_span((2..4).span())),
+            ),
+            (
+                "5 >> -1",
+                bin_op(
+                    (BinaryOp::Shr, 2..4),
+                    int(5, 0..1),
+                    (un_op((UnaryOp::Minus, 5..6), int(1, 6..7)), 5..7),
+                ),
+                Err(ErrorKind::ShiftOutOfRange((5..7).span(), (-1).into()).add_span((2..4).span())),
+            ),
+        ]);
+    }
+
+    #[test]
     #[allow(clippy::too_many_lines)]
     fn precedence() {
         test([
@@ -719,7 +935,7 @@ mod test {
                 Ok(0.into()),
             ),
             (
-                "1 + 6 | 3 * +9",
+                "1 + 6 | +3 * +9",
                 bin_op(
                     (BinaryOp::Add, 2..3),
                     int(1, 0..1),
@@ -729,14 +945,14 @@ mod test {
                             int(6, 4..5),
                             (
                                 bin_op(
-                                    (BinaryOp::Mul, 10..11),
-                                    int(3, 8..9),
-                                    (un_op((UnaryOp::Plus, 12..13), int(9, 13..14)), 12..14),
+                                    (BinaryOp::Mul, 11..12),
+                                    (un_op((UnaryOp::Plus, 8..9), int(3, 9..10)), 8..10),
+                                    (un_op((UnaryOp::Plus, 13..14), int(9, 14..15)), 13..15),
                                 ),
-                                8..14,
+                                8..15,
                             ),
                         ),
-                        4..14,
+                        4..15,
                     ),
                 ),
                 Ok(32.into()),
@@ -759,6 +975,125 @@ mod test {
                     ),
                 ),
                 Ok((1 + 0x234 * 3).into()),
+            ),
+            (
+                "1 + 2 > 3 < 4 != 0 + 1",
+                bin_op(
+                    (BinaryOp::Add, 19..20),
+                    (
+                        bin_op(
+                            (BinaryOp::Ne, 14..16),
+                            (
+                                bin_op(
+                                    (BinaryOp::Lt, 10..11),
+                                    (
+                                        bin_op(
+                                            (BinaryOp::Gt, 6..7),
+                                            (
+                                                bin_op(
+                                                    (BinaryOp::Add, 2..3),
+                                                    int(1, 0..1),
+                                                    int(2, 4..5),
+                                                ),
+                                                0..5,
+                                            ),
+                                            int(3, 8..9),
+                                        ),
+                                        0..9,
+                                    ),
+                                    int(4, 12..13),
+                                ),
+                                0..13,
+                            ),
+                            int(0, 17..18),
+                        ),
+                        0..18,
+                    ),
+                    int(1, 21..22),
+                ),
+                Ok(0.into()),
+            ),
+            (
+                "1 + 2 >= 3 <= 4 == 0 + 1",
+                bin_op(
+                    (BinaryOp::Add, 21..22),
+                    (
+                        bin_op(
+                            (BinaryOp::Eq, 16..18),
+                            (
+                                bin_op(
+                                    (BinaryOp::Le, 11..13),
+                                    (
+                                        bin_op(
+                                            (BinaryOp::Ge, 6..8),
+                                            (
+                                                bin_op(
+                                                    (BinaryOp::Add, 2..3),
+                                                    int(1, 0..1),
+                                                    int(2, 4..5),
+                                                ),
+                                                0..5,
+                                            ),
+                                            int(3, 9..10),
+                                        ),
+                                        0..10,
+                                    ),
+                                    int(4, 14..15),
+                                ),
+                                0..15,
+                            ),
+                            int(0, 19..20),
+                        ),
+                        0..20,
+                    ),
+                    int(1, 23..24),
+                ),
+                Ok(1.into()),
+            ),
+            (
+                "0 || 1 && 2 + 3",
+                bin_op(
+                    (BinaryOp::LogicalOr, 2..4),
+                    int(0, 0..1),
+                    (
+                        bin_op(
+                            (BinaryOp::LogicalAnd, 7..9),
+                            int(1, 5..6),
+                            (
+                                bin_op((BinaryOp::Add, 12..13), int(2, 10..11), int(3, 14..15)),
+                                10..15,
+                            ),
+                        ),
+                        5..15,
+                    ),
+                ),
+                Ok(1.into()),
+            ),
+            (
+                "2 * 1 << 2 >> 1 * 2",
+                bin_op(
+                    (BinaryOp::Mul, 16..17),
+                    (
+                        bin_op(
+                            (BinaryOp::Shr, 11..13),
+                            (
+                                bin_op(
+                                    (BinaryOp::Shl, 6..8),
+                                    (
+                                        bin_op((BinaryOp::Mul, 2..3), int(2, 0..1), int(1, 4..5)),
+                                        0..5,
+                                    ),
+                                    int(2, 9..10),
+                                ),
+                                0..10,
+                            ),
+                            int(1, 14..15),
+                        ),
+                        0..15,
+                    ),
+                    int(2, 18..19),
+                ),
+                Ok(8.into()),
             ),
         ]);
     }

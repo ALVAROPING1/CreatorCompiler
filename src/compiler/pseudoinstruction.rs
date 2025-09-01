@@ -350,8 +350,8 @@ pub fn expand<'arch>(
                     pad
                 }
             }
-            "float" => format!("{:032b}", f32::from(value.eval_no_ident(mods)?).to_bits()),
-            "double" => format!("{:064b}", f64::from(value.eval_no_ident(mods)?).to_bits()),
+            "float" => format!("{:032b}", value.eval_no_ident(mods)?.to_f32().to_bits()),
+            "double" => format!("{:064b}", value.eval_no_ident(mods)?.to_f64().to_bits()),
             ty => {
                 return Err(Error {
                     definition: def.clone(),
