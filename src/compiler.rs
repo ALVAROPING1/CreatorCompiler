@@ -786,11 +786,12 @@ fn compile_data(
                     // Calculate 2^argument
                     AlignmentType::Exponential => {
                         // Convert the input to a fixed sized int, as shifts aren't implemented
-                        // with big ints as the second argument
-                        let value = u128::try_from(value).map_err(|e| {
+                        // with big ints as the second argument. `u16` gives more than enough size
+                        // for normal usage, anything bigger will likely be user error
+                        let value = u16::try_from(value).map_err(|e| {
                             ErrorKind::IntegerOutOfRange(
                                 e.into_original().into(),
-                                0.into()..=u128::MAX.into(),
+                                0.into()..=u16::MAX.into(),
                             )
                             .add_span(span)
                         })?;
