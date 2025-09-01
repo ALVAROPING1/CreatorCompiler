@@ -347,7 +347,7 @@ mod test {
 
     type ExprResult = Result<Number, ErrorData>;
 
-    fn test(test_cases: impl IntoIterator<Item = (&'static str, Expr, ExprResult)>) {
+    fn test(test_cases: impl IntoIterator<Item = (&'static str, Spanned<Expr>, ExprResult)>) {
         let ident_eval = |ident: &str| {
             if ident.len() == 1 {
                 Ok(BigInt::from(ident.as_bytes()[0] - b'a' + 5))
@@ -366,11 +366,9 @@ mod test {
             ("low", modifier((0, Some(12)), false, true)),
         ]);
         for (src, expr, expected) in test_cases {
-            let start = (src.trim_start().as_ptr() as usize) - (src.as_ptr() as usize);
-            let span = (start..src.len()).span();
-            assert_eq!(parse(src), Ok((expr.clone(), span)), "`{src:?}`");
-            let res = expr.eval(ident_eval, &modifiers);
-            assert_eq!(res, expected, "`{src:?}`\n{expr:?}");
+            assert_eq!(parse(src), Ok(expr.clone()), "`{src:?}`");
+            let res = expr.0.eval(ident_eval, &modifiers);
+            assert_eq!(res, expected, "`{src:?}`\n{:?}", expr.0);
         }
     }
 
@@ -392,33 +390,42 @@ mod test {
     #[test]
     fn literal() {
         let int = BigUint::from(2u8).pow(128) - 1u8;
+        let span = |e, s: Range| (e, s.span());
         test([
-            ("16", Expr::Integer(16u8.into()), Ok(16.into())),
-            ("\n\n16", Expr::Integer(16u8.into()), Ok(16.into())),
-            ("'a'", Expr::Character('a'), Ok(('a' as u32).into())),
+            ("16", span(Expr::Integer(16u8.into()), 0..2), Ok(16.into())),
+            (
+                "\n\n16",
+                span(Expr::Integer(16u8.into()), 2..4),
+                Ok(16.into()),
+            ),
+            (
+                "'a'",
+                span(Expr::Character('a'), 0..3),
+                Ok(('a' as u32).into()),
+            ),
             (
                 "a",
-                Expr::Identifier(("a".into(), (0..1).span())),
+                span(Expr::Identifier(("a".into(), (0..1).span())), 0..1),
                 Ok(5.into()),
             ),
             (
                 "test",
-                Expr::Identifier(("test".into(), (0..4).span())),
+                span(Expr::Identifier(("test".into(), (0..4).span())), 0..4),
                 Err(ErrorKind::UnknownLabel("test".into()).add_span((0..4).span())),
             ),
             (
                 ".test",
-                Expr::Identifier((".test".into(), (0..5).span())),
+                span(Expr::Identifier((".test".into(), (0..5).span())), 0..5),
                 Err(ErrorKind::UnknownLabel(".test".into()).add_span((0..5).span())),
             ),
             (
                 "1.0",
-                Expr::Float((1.0, (0..3).span())),
+                span(Expr::Float((1.0, (0..3).span())), 0..3),
                 Ok((1.0, 0..3).into()),
             ),
             (
                 "340282366920938463463374607431768211455",
-                Expr::Integer(int.clone()),
+                span(Expr::Integer(int.clone()), 0..39),
                 Ok(int.into()),
             ),
         ]);
@@ -436,30 +443,41 @@ mod test {
     }
 
     #[must_use]
-    fn un_op(op: (UnaryOp, impl IntoSpan), operand: (Expr, impl IntoSpan)) -> Expr {
-        Expr::UnaryOp {
-            op: (op.0, op.1.span()),
-            operand: Box::new((operand.0, operand.1.span())),
-        }
+    fn un_op(op: (UnaryOp, impl IntoSpan), operand: (Expr, impl IntoSpan)) -> Spanned<Expr> {
+        let op_span = op.1.span();
+        let operand_span = operand.1.span();
+        (
+            Expr::UnaryOp {
+                op: (op.0, op_span),
+                operand: Box::new((operand.0, operand_span)),
+            },
+            (op_span.start..operand_span.end).span(),
+        )
     }
 
     #[must_use]
-    fn bin_op<S1, S2, S3>(op: (BinaryOp, S1), lhs: (Expr, S2), rhs: (Expr, S3)) -> Expr
+    fn bin_op<S1, S2, S3>(op: (BinaryOp, S1), lhs: (Expr, S2), rhs: (Expr, S3)) -> Spanned<Expr>
     where
         S1: IntoSpan,
         S2: IntoSpan,
         S3: IntoSpan,
     {
-        Expr::BinaryOp {
-            op: (op.0, op.1.span()),
-            lhs: Box::new((lhs.0, lhs.1.span())),
-            rhs: Box::new((rhs.0, rhs.1.span())),
-        }
+        let l_span = lhs.1.span();
+        let r_span = rhs.1.span();
+        (
+            Expr::BinaryOp {
+                op: (op.0, op.1.span()),
+                lhs: Box::new((lhs.0, l_span)),
+                rhs: Box::new((rhs.0, r_span)),
+            },
+            (l_span.start..r_span.end).span(),
+        )
     }
 
     #[test]
     fn unary() {
         let modifier = |n: &str, s| (UnaryOp::Modifier(n.into()), s);
+        let mod_span = |e: Spanned<Expr>, s: Range| (e.0, s.span());
         test([
             (
                 "+2",
@@ -498,17 +516,17 @@ mod test {
             ),
             (
                 "%hi(0xABCDE701)",
-                un_op(modifier("hi", 0..3), int(0xABCD_E701, 4..14)),
+                mod_span(un_op(modifier("hi", 0..3), int(0xABCD_E701, 4..14)), 0..15),
                 Ok((0xABCDE).into()),
             ),
             (
                 "%low(0xABCDE701)",
-                un_op(modifier("low", 0..4), int(0xABCD_E701, 5..15)),
+                mod_span(un_op(modifier("low", 0..4), int(0xABCD_E701, 5..15)), 0..16),
                 Ok((0x701).into()),
             ),
             (
                 "%mod(0xABCDE701)",
-                un_op(modifier("mod", 0..4), int(0xABCD_E701, 5..15)),
+                mod_span(un_op(modifier("mod", 0..4), int(0xABCD_E701, 5..15)), 0..16),
                 Err(ErrorKind::UnknownModifier("mod".into()).add_span((0..4).span())),
             ),
         ]);
@@ -830,7 +848,7 @@ mod test {
                 bin_op(
                     (BinaryOp::Shl, 2..4),
                     int(5, 0..1),
-                    (un_op((UnaryOp::Minus, 5..6), int(1, 6..7)), 5..7),
+                    un_op((UnaryOp::Minus, 5..6), int(1, 6..7)),
                 ),
                 Err(ErrorKind::ShiftOutOfRange((5..7).span(), (-1).into()).add_span((2..4).span())),
             ),
@@ -839,7 +857,7 @@ mod test {
                 bin_op(
                     (BinaryOp::Shr, 2..4),
                     int(5, 0..1),
-                    (un_op((UnaryOp::Minus, 5..6), int(1, 6..7)), 5..7),
+                    un_op((UnaryOp::Minus, 5..6), int(1, 6..7)),
                 ),
                 Err(ErrorKind::ShiftOutOfRange((5..7).span(), (-1).into()).add_span((2..4).span())),
             ),
@@ -854,10 +872,7 @@ mod test {
                 "1 + 2 - 3",
                 bin_op(
                     (BinaryOp::Sub, 6..7),
-                    (
-                        bin_op((BinaryOp::Add, 2..3), int(1, 0..1), int(2, 4..5)),
-                        0..5,
-                    ),
+                    bin_op((BinaryOp::Add, 2..3), int(1, 0..1), int(2, 4..5)),
                     int(3, 8..9),
                 ),
                 Ok(0.into()),
@@ -868,7 +883,7 @@ mod test {
                     (BinaryOp::Add, 2..3),
                     int(1, 0..1),
                     (
-                        bin_op((BinaryOp::Sub, 9..10), int(2, 7..8), int(3, 11..12)),
+                        bin_op((BinaryOp::Sub, 9..10), int(2, 7..8), int(3, 11..12)).0,
                         5..14,
                     ),
                 ),
@@ -878,16 +893,10 @@ mod test {
                 "1 | 6 & 3 ^ 9",
                 bin_op(
                     (BinaryOp::BitwiseXOR, 10..11),
-                    (
-                        bin_op(
-                            (BinaryOp::BitwiseAND, 6..7),
-                            (
-                                bin_op((BinaryOp::BitwiseOR, 2..3), int(1, 0..1), int(6, 4..5)),
-                                0..5,
-                            ),
-                            int(3, 8..9),
-                        ),
-                        0..9,
+                    bin_op(
+                        (BinaryOp::BitwiseAND, 6..7),
+                        bin_op((BinaryOp::BitwiseOR, 2..3), int(1, 0..1), int(6, 4..5)),
+                        int(3, 8..9),
                     ),
                     int(9, 12..13),
                 ),
@@ -897,16 +906,10 @@ mod test {
                 "1 * 6 / 3 % 2",
                 bin_op(
                     (BinaryOp::Rem, 10..11),
-                    (
-                        bin_op(
-                            (BinaryOp::Div, 6..7),
-                            (
-                                bin_op((BinaryOp::Mul, 2..3), int(1, 0..1), int(6, 4..5)),
-                                0..5,
-                            ),
-                            int(3, 8..9),
-                        ),
-                        0..9,
+                    bin_op(
+                        (BinaryOp::Div, 6..7),
+                        bin_op((BinaryOp::Mul, 2..3), int(1, 0..1), int(6, 4..5)),
+                        int(3, 8..9),
                     ),
                     int(2, 12..13),
                 ),
@@ -916,7 +919,7 @@ mod test {
                 "\n- \n\n+ \n1",
                 un_op(
                     (UnaryOp::Minus, 1..2),
-                    (un_op((UnaryOp::Plus, 5..6), int(1, 8..9)), 5..9),
+                    un_op((UnaryOp::Plus, 5..6), int(1, 8..9)),
                 ),
                 Ok((-1).into()),
             ),
@@ -924,12 +927,9 @@ mod test {
                 "~-+1",
                 un_op(
                     (UnaryOp::Complement, 0..1),
-                    (
-                        un_op(
-                            (UnaryOp::Minus, 1..2),
-                            (un_op((UnaryOp::Plus, 2..3), int(1, 3..4)), 2..4),
-                        ),
-                        1..4,
+                    un_op(
+                        (UnaryOp::Minus, 1..2),
+                        un_op((UnaryOp::Plus, 2..3), int(1, 3..4)),
                     ),
                 ),
                 Ok(0.into()),
@@ -939,20 +939,14 @@ mod test {
                 bin_op(
                     (BinaryOp::Add, 2..3),
                     int(1, 0..1),
-                    (
+                    bin_op(
+                        (BinaryOp::BitwiseOR, 6..7),
+                        int(6, 4..5),
                         bin_op(
-                            (BinaryOp::BitwiseOR, 6..7),
-                            int(6, 4..5),
-                            (
-                                bin_op(
-                                    (BinaryOp::Mul, 11..12),
-                                    (un_op((UnaryOp::Plus, 8..9), int(3, 9..10)), 8..10),
-                                    (un_op((UnaryOp::Plus, 13..14), int(9, 14..15)), 13..15),
-                                ),
-                                8..15,
-                            ),
+                            (BinaryOp::Mul, 11..12),
+                            un_op((UnaryOp::Plus, 8..9), int(3, 9..10)),
+                            un_op((UnaryOp::Plus, 13..14), int(9, 14..15)),
                         ),
-                        4..15,
                     ),
                 ),
                 Ok(32.into()),
@@ -962,16 +956,13 @@ mod test {
                 bin_op(
                     (BinaryOp::Add, 2..3),
                     int(1, 0..1),
-                    (
-                        bin_op(
-                            (BinaryOp::Mul, 17..18),
-                            (
-                                un_op((UnaryOp::Modifier("low".into()), 4..8), int(0x1234, 9..15)),
-                                4..16,
-                            ),
-                            int(3, 19..20),
+                    bin_op(
+                        (BinaryOp::Mul, 17..18),
+                        (
+                            un_op((UnaryOp::Modifier("low".into()), 4..8), int(0x1234, 9..15)).0,
+                            4..16,
                         ),
-                        4..20,
+                        int(3, 19..20),
                     ),
                 ),
                 Ok((1 + 0x234 * 3).into()),
@@ -980,34 +971,18 @@ mod test {
                 "1 + 2 > 3 < 4 != 0 + 1",
                 bin_op(
                     (BinaryOp::Add, 19..20),
-                    (
+                    bin_op(
+                        (BinaryOp::Ne, 14..16),
                         bin_op(
-                            (BinaryOp::Ne, 14..16),
-                            (
-                                bin_op(
-                                    (BinaryOp::Lt, 10..11),
-                                    (
-                                        bin_op(
-                                            (BinaryOp::Gt, 6..7),
-                                            (
-                                                bin_op(
-                                                    (BinaryOp::Add, 2..3),
-                                                    int(1, 0..1),
-                                                    int(2, 4..5),
-                                                ),
-                                                0..5,
-                                            ),
-                                            int(3, 8..9),
-                                        ),
-                                        0..9,
-                                    ),
-                                    int(4, 12..13),
-                                ),
-                                0..13,
+                            (BinaryOp::Lt, 10..11),
+                            bin_op(
+                                (BinaryOp::Gt, 6..7),
+                                bin_op((BinaryOp::Add, 2..3), int(1, 0..1), int(2, 4..5)),
+                                int(3, 8..9),
                             ),
-                            int(0, 17..18),
+                            int(4, 12..13),
                         ),
-                        0..18,
+                        int(0, 17..18),
                     ),
                     int(1, 21..22),
                 ),
@@ -1017,34 +992,18 @@ mod test {
                 "1 + 2 >= 3 <= 4 == 0 + 1",
                 bin_op(
                     (BinaryOp::Add, 21..22),
-                    (
+                    bin_op(
+                        (BinaryOp::Eq, 16..18),
                         bin_op(
-                            (BinaryOp::Eq, 16..18),
-                            (
-                                bin_op(
-                                    (BinaryOp::Le, 11..13),
-                                    (
-                                        bin_op(
-                                            (BinaryOp::Ge, 6..8),
-                                            (
-                                                bin_op(
-                                                    (BinaryOp::Add, 2..3),
-                                                    int(1, 0..1),
-                                                    int(2, 4..5),
-                                                ),
-                                                0..5,
-                                            ),
-                                            int(3, 9..10),
-                                        ),
-                                        0..10,
-                                    ),
-                                    int(4, 14..15),
-                                ),
-                                0..15,
+                            (BinaryOp::Le, 11..13),
+                            bin_op(
+                                (BinaryOp::Ge, 6..8),
+                                bin_op((BinaryOp::Add, 2..3), int(1, 0..1), int(2, 4..5)),
+                                int(3, 9..10),
                             ),
-                            int(0, 19..20),
+                            int(4, 14..15),
                         ),
-                        0..20,
+                        int(0, 19..20),
                     ),
                     int(1, 23..24),
                 ),
@@ -1055,16 +1014,10 @@ mod test {
                 bin_op(
                     (BinaryOp::LogicalOr, 2..4),
                     int(0, 0..1),
-                    (
-                        bin_op(
-                            (BinaryOp::LogicalAnd, 7..9),
-                            int(1, 5..6),
-                            (
-                                bin_op((BinaryOp::Add, 12..13), int(2, 10..11), int(3, 14..15)),
-                                10..15,
-                            ),
-                        ),
-                        5..15,
+                    bin_op(
+                        (BinaryOp::LogicalAnd, 7..9),
+                        int(1, 5..6),
+                        bin_op((BinaryOp::Add, 12..13), int(2, 10..11), int(3, 14..15)),
                     ),
                 ),
                 Ok(1.into()),
@@ -1073,23 +1026,14 @@ mod test {
                 "2 * 1 << 2 >> 1 * 2",
                 bin_op(
                     (BinaryOp::Mul, 16..17),
-                    (
+                    bin_op(
+                        (BinaryOp::Shr, 11..13),
                         bin_op(
-                            (BinaryOp::Shr, 11..13),
-                            (
-                                bin_op(
-                                    (BinaryOp::Shl, 6..8),
-                                    (
-                                        bin_op((BinaryOp::Mul, 2..3), int(2, 0..1), int(1, 4..5)),
-                                        0..5,
-                                    ),
-                                    int(2, 9..10),
-                                ),
-                                0..10,
-                            ),
-                            int(1, 14..15),
+                            (BinaryOp::Shl, 6..8),
+                            bin_op((BinaryOp::Mul, 2..3), int(2, 0..1), int(1, 4..5)),
+                            int(2, 9..10),
                         ),
-                        0..15,
+                        int(1, 14..15),
                     ),
                     int(2, 18..19),
                 ),
