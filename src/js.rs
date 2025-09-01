@@ -64,7 +64,7 @@ fn to_html(str: &str) -> String {
     let converter = ansi_to_html::Converter::default().four_bit_var_prefix(Some("err-".into()));
     converter
         .convert(str)
-        .expect("we should only generate valid ANSI escapes")
+        .expect("We should only generate valid ANSI escapes")
 }
 
 /// Converts a number to a `JS` big integer
