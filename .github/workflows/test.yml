@@ -34,3 +34,15 @@ jobs:
         run: cargo test --all-features
         env:
             RUSTDOCFLAGS: --cfg docsrs
+  msrv:
+    name: MSRV
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install MSRV
+        uses: dtolnay/rust-toolchain@master
+        with:
+            toolchain: "1.89"
+            components: rustfmt, clippy
+      - name: Check MSRV compatibility
+        run: cargo check --all-features

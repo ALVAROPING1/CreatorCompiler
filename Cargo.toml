@@ -6,6 +6,7 @@ license = "LGPL-2.1-or-later"
 description = "A reimplementation of Creator (https://creatorsim.github.io/)'s compiler"
 categories = ["command-line-utilities", "compilers"]
 keywords = ["compiler", "assembly", "assembler", "Creator"]
+rust-version = "1.89"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
