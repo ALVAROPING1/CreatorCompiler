@@ -59,7 +59,7 @@ pub struct Architecture<'a> {
     pub memory_layout: MemoryLayout,
     /// Interrupt configuration
     #[serde(default)]
-    pub interrupts: Option<Interrupts<'a>>,
+    pub interrupts: Option<Interrupts>,
     /// Definitions of possible enumerated instruction fields
     #[serde(default)]
     pub enums: HashMap<&'a str, EnumDefinition<'a>>,
@@ -496,26 +496,26 @@ pub struct MemoryLayout {
 }
 utils::schema_from!(MemoryLayout, Vec<Pair<json::MemoryLayoutKeys, BaseN<16>>>);
 
-#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
-pub struct Interrupts<'a> {
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
+pub struct Interrupts {
     /// Controls whether interrupts are enabled by default (`true`) or not (`false`)
     pub enabled: bool,
     /// JS code to be executed in order to check whether an interrupt happened.
     /// It must return an `InterruptType` (if an interrupt happened) or `null` (if it didn't)
-    pub interrupt_check: &'a str,
+    pub interrupt_check: String,
     /// JS code to be executed in order to check whether interrupts are enabled
-    pub enable_check: &'a str,
+    pub enable_check: String,
     /// JS code to be executed in order to enable interrupts
-    pub interrupt_enable: &'a str,
+    pub interrupt_enable: String,
     /// JS code to be executed in order to disable interrupts
-    pub interrupt_disable: &'a str,
+    pub interrupt_disable: String,
     /// JS code to be executed in order to obtain the interrupt handler address
-    pub get_handler_addr: &'a str,
+    pub get_handler_addr: String,
     /// JS code to be executed in order to clear an interrupt
-    pub clear_interrupt: &'a str,
+    pub clear_interrupt: String,
     /// JS arrow (lambda) function to be executed in order to set an interrupt given an interrupt
     /// type
-    pub set_interrupt_cause: &'a str,
+    pub set_interrupt_cause: String,
 }
 
 impl Architecture<'_> {
