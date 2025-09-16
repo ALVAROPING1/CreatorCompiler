@@ -31,7 +31,7 @@ use std::collections::HashMap;
 
 mod utils;
 pub use utils::NonEmptyRangeInclusive;
-pub use utils::{BaseN, Integer, Pair, RangeFrom};
+pub use utils::{BaseN, Integer, RangeFrom};
 
 mod json;
 
@@ -43,7 +43,7 @@ pub struct Architecture<'a> {
     /// memory alignment, main function, passing convention, and sensitive register
     /// name
     #[serde(borrow)]
-    pub arch_conf: Config<'a>,
+    pub config: Config<'a>,
     /// Components (register files) of the architecture. It's assumed that the first register of
     /// the first file will contain the program counter
     pub components: Vec<Component<'a>>,
@@ -88,8 +88,7 @@ pub struct Modifier {
 pub type EnumDefinition<'a> = HashMap<&'a str, Integer>;
 
 /// Architecture metadata attributes
-#[derive(Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
-#[serde(try_from = "[json::Config<'a>; 9]")]
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Config<'a> {
     /// Name of the architecture
     pub name: &'a str,
@@ -98,7 +97,7 @@ pub struct Config<'a> {
     /// Description of the architecture
     pub description: &'a str,
     /// Storage format of the architecture (big/little endian)
-    pub data_format: DataFormat,
+    pub endianness: Endianness,
     /// Whether to enable memory alignment
     pub memory_alignment: bool,
     /// Name of the `main` function of the program
@@ -110,12 +109,11 @@ pub struct Config<'a> {
     /// String to use as line comment prefix
     pub comment_prefix: &'a str,
 }
-utils::schema_from!(Config<'a>, [json::Config<'a>; 9]);
 
 /// Endianness of data in the architecture
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
-pub enum DataFormat {
+pub enum Endianness {
     BigEndian,
     LittleEndian,
 }
@@ -499,13 +497,12 @@ pub enum AlignmentType {
 }
 
 /// Memory layout of the architecture
-#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
-#[serde(try_from = "Vec<Pair<json::MemoryLayoutKeys, BaseN<16>>>")]
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
 pub struct MemoryLayout {
     /// Addresses reserved for the kernel text segment
-    kernel_text: Option<NonEmptyRangeInclusive<BigUint>>,
+    ktext: Option<NonEmptyRangeInclusive<BigUint>>,
     /// Addresses reserved for the kernel data segment
-    kernel_data: Option<NonEmptyRangeInclusive<BigUint>>,
+    kdata: Option<NonEmptyRangeInclusive<BigUint>>,
     /// Addresses reserved for the text segment
     text: NonEmptyRangeInclusive<BigUint>,
     /// Addresses reserved for the data segment
@@ -513,7 +510,6 @@ pub struct MemoryLayout {
     /// Addresses reserved for the stack segment
     stack: NonEmptyRangeInclusive<BigUint>,
 }
-utils::schema_from!(MemoryLayout, Vec<Pair<json::MemoryLayoutKeys, BaseN<16>>>);
 
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
 pub struct Interrupts {
@@ -559,7 +555,7 @@ impl Architecture<'_> {
     /// doesn't conform to the specification
     pub fn from_json(src: &str) -> serde_json::Result<Architecture<'_>> {
         let arch = serde_json::from_str::<Architecture>(src)?;
-        let word_size = arch.arch_conf.word_size;
+        let word_size = arch.config.word_size;
         for instruction in &arch.instructions {
             let size = instruction.nwords.saturating_mul(word_size);
             for field in &instruction.syntax.fields {
@@ -591,19 +587,19 @@ impl Architecture<'_> {
     /// Gets the word size of the architecture
     #[must_use]
     pub const fn word_size(&self) -> usize {
-        self.arch_conf.word_size
+        self.config.word_size
     }
 
     /// Gets the name of the label used as the entry point of the code
     #[must_use]
     pub const fn main_label(&self) -> &str {
-        self.arch_conf.main_function
+        self.config.main_function
     }
 
     /// Gets the string to use as the line comment prefix
     #[must_use]
     pub const fn comment_prefix(&self) -> &str {
-        self.arch_conf.comment_prefix
+        self.config.comment_prefix
     }
 
     /// Gets the code section's start/end addresses
@@ -615,7 +611,7 @@ impl Architecture<'_> {
     /// Gets the kernel's code section's start/end addresses
     #[must_use]
     pub const fn kernel_code_section(&self) -> Option<&NonEmptyRangeInclusive<BigUint>> {
-        self.memory_layout.kernel_text.as_ref()
+        self.memory_layout.ktext.as_ref()
     }
 
     /// Gets the data section's start/end addresses
@@ -627,7 +623,7 @@ impl Architecture<'_> {
     /// Gets the kernel's data section's start/end addresses
     #[must_use]
     pub const fn kernel_data_section(&self) -> Option<&NonEmptyRangeInclusive<BigUint>> {
-        self.memory_layout.kernel_data.as_ref()
+        self.memory_layout.kdata.as_ref()
     }
 
     /// Gets the instructions with the given name
