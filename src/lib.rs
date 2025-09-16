@@ -43,7 +43,7 @@
 //! ";
 //!
 //! // Parse the code
-//! let ast = parser::parse(arch.arch_conf.comment_prefix, code)
+//! let ast = parser::parse(arch.config.comment_prefix, code)
 //!     .map_err(|e| eprintln!("{}", e.clone().render("file.s", code, true)))
 //!     .expect("The code should be valid");
 //! // Compile the code

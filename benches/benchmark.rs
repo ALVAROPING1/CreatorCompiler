@@ -14,7 +14,7 @@ static CODE: &str = include_str!("sample.s");
 static NAME: &str = "sample.s";
 
 fn parse(arch: &Architecture) -> AST {
-    parser::parse(black_box(arch.arch_conf.comment_prefix), black_box(CODE))
+    parser::parse(black_box(arch.config.comment_prefix), black_box(CODE))
         .map_err(|e| eprintln!("{}", e.render(NAME, CODE, true)))
         .unwrap()
 }

@@ -1,42 +1,15 @@
 {
-  "arch_conf": [
-    {
-      "name": "Name",
-      "value": "Test"
-    },
-    {
-      "name": "Bits",
-      "value": "32"
-    },
-    {
-      "name": "Description",
-      "value": "Test architecture"
-    },
-    {
-      "name": "Data Format",
-      "value": "big_endian"
-    },
-    {
-      "name": "Memory Alignment",
-      "value": "1"
-    },
-    {
-      "name": "Main Function",
-      "value": "main"
-    },
-    {
-      "name": "Passing Convention",
-      "value": "1"
-    },
-    {
-      "name": "Sensitive Register Name",
-      "value": "0"
-    },
-    {
-      "name": "CommentPrefix",
-      "value": "#"
-    }
-  ],
+  "config": {
+    "name": "Test",
+    "word_size": 32,
+    "description": "Test architecture",
+    "endianness": "big_endian",
+    "memory_alignment": true,
+    "main_function": "main",
+    "passing_convention": true,
+    "sensitive_register_name": false,
+    "comment_prefix": "#"
+  },
   "components": [
     {
       "name": "Integer registers",
@@ -44,10 +17,7 @@
       "double_precision": false,
       "elements": [
         {
-          "name": [
-            "x0",
-            "ZeRo"
-          ],
+          "name": ["x0", "ZeRo"],
           "nbits": "32",
           "value": 0,
           "default_value": 0,
@@ -227,46 +197,26 @@
       "size": "1"
     }
   ],
-  "memory_layout": [
-    {
-      "name": "ktext start",
-      "value": "0x00000000"
+  "memory_layout": {
+    "ktext": {
+      "start": 0,
+      "end": 15
     },
-    {
-      "name": "ktext end",
-      "value": "0x0000000f"
+    "kdata": {
+      "start": 16,
+      "end": 31
     },
-    {
-      "name": "kdata start",
-      "value": "0x00000010"
+    "text": {
+      "start": 32,
+      "end": 47
     },
-    {
-      "name": "kdata end",
-      "value": "0x0000001f"
+    "data": {
+      "start": 48,
+      "end": 63
     },
-    {
-      "name": "text start",
-      "value": "0x00000020"
-    },
-    {
-      "name": "text end",
-      "value": "0x0000002f"
-    },
-    {
-      "name": "data start",
-      "value": "0x00000030"
-    },
-    {
-      "name": "data end",
-      "value": "0x0000003f"
-    },
-    {
-      "name": "stack start",
-      "value": "0x0FFFFFFC"
-    },
-    {
-      "name": "stack end",
-      "value": "0x0FFFFFFF"
+    "stack": {
+      "start": 268435452,
+      "end": 268435455
     }
-  ]
+  }
 }

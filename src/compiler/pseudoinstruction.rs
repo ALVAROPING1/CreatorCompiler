@@ -263,7 +263,7 @@ pub fn expand<'arch>(
 
     // Expansion
     let mut def = instruction.definition.replace('\n', "");
-    let case = arch.arch_conf.sensitive_register_name;
+    let case = arch.config.sensitive_register_name;
     let mods = &arch.modifiers;
 
     // Replace occurrences of `AliasDouble()`

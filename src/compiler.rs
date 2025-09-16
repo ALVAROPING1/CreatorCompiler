@@ -1089,7 +1089,7 @@ fn evaluate_instruction_field(
             files
                 .peek()
                 .ok_or_else(|| ErrorKind::UnknownRegisterFile(file_type).add_span(arg.value.1))?;
-            let case = ctx.arch.arch_conf.sensitive_register_name;
+            let case = ctx.arch.config.sensitive_register_name;
             // Find the register with the given name
             let (i, _, name) = files
                 .find_map(|file| file.find_register(&name, case))
