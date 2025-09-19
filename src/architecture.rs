@@ -60,6 +60,9 @@ pub struct Architecture<'a> {
     /// Interrupt configuration
     #[serde(default)]
     pub interrupts: Option<Interrupts>,
+    /// Timer configuration
+    #[serde(default)]
+    pub timer: Option<Timer>,
     /// Definitions of possible enumerated instruction fields
     #[serde(default)]
     pub enums: HashMap<&'a str, EnumDefinition<'a>>,
@@ -525,6 +528,23 @@ pub struct Interrupts {
     /// JS arrow (lambda) function to be executed in order to set an interrupt given an interrupt
     /// type
     pub create: String,
+}
+
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
+pub struct Timer {
+    /// Number of clock cycles that correspond to one timer tick
+    pub tick_cycles: usize,
+    /// JS code to be executed each tick in order to advance the tick
+    pub advance: String,
+    /// JS code to be executed each tick in order to check the timer and act (e.g. launch an
+    /// interrupt)
+    pub handler: String,
+    /// JS code to be executed in order to check whether the timer is enabled
+    pub is_enabled: String,
+    /// JS code to be executed in order to enable timer
+    pub enable: String,
+    /// JS code to be executed in order to disable timer
+    pub disable: String,
 }
 
 impl Architecture<'_> {
