@@ -175,17 +175,11 @@ pub struct Register<'a> {
     #[serde(borrow)]
     pub name: Vec<&'a str>,
     /// Size
-    #[serde(deserialize_with = "utils::from_str")]
-    #[schemars(with = "utils::StringOrT<Integer>")]
     pub nbits: Integer,
     /// Current value of the register
-    #[serde(deserialize_with = "utils::from_str")]
-    #[schemars(with = "utils::StringOrT<Number>")]
     pub value: Number,
     /// Default value of the register
-    #[serde(deserialize_with = "utils::optional_from_str")]
     #[serde(default)]
-    #[schemars(with = "Option<utils::StringOrT<Number>>")]
     pub default_value: Option<Number>,
     /// Properties of this register
     pub properties: Vec<RegisterProperty>,

@@ -18,7 +18,7 @@
       "elements": [
         {
           "name": ["x0"],
-          "nbits": "32",
+          "nbits": 32,
           "value": 0,
           "default_value": 0,
           "properties": []
@@ -82,7 +82,7 @@
     {
       "name": ".zero",
       "action": "space",
-      "size": "1"
+      "size": 1
     }
   ],
   "memory_layout": {

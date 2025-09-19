@@ -26,7 +26,7 @@ use serde::Deserialize;
 
 use super::{utils, DirectiveAction};
 use super::{AlignmentType, FloatType, IntegerType, StringType};
-use utils::{NonEmptyRangeInclusive, StringOrT};
+use utils::NonEmptyRangeInclusive;
 
 /// Directive specification
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
@@ -36,9 +36,7 @@ pub struct Directive<'a> {
     /// Action of the directive
     pub action: DirectiveAction<DirectiveData>,
     /// Size in bytes of values associated with this directive
-    #[serde(deserialize_with = "utils::optional_from_str")]
     #[serde(default)]
-    #[schemars(with = "Option<StringOrT<usize>>")]
     pub size: Option<usize>,
 }
 

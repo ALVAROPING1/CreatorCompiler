@@ -18,21 +18,21 @@
       "elements": [
         {
           "name": ["PC"],
-          "nbits": "32",
+          "nbits": 32,
           "value": 0,
           "default_value": 0,
           "properties": []
         },
         {
           "name": ["ctrl1"],
-          "nbits": "32",
+          "nbits": 32,
           "value": 0,
           "default_value": 0,
           "properties": []
         },
         {
           "name": ["ctrl2"],
-          "nbits": "32",
+          "nbits": 32,
           "value": 0,
           "default_value": 0,
           "properties": []
@@ -46,21 +46,21 @@
       "elements": [
         {
           "name": ["x0"],
-          "nbits": "32",
+          "nbits": 32,
           "value": 0,
           "default_value": 0,
           "properties": []
         },
         {
           "name": ["x1"],
-          "nbits": "32",
+          "nbits": 32,
           "value": 0,
           "default_value": 0,
           "properties": []
         },
         {
           "name": ["x2", "two", "2"],
-          "nbits": "32",
+          "nbits": 32,
           "value": 0,
           "default_value": 0,
           "properties": []
@@ -75,21 +75,21 @@
       "elements": [
         {
           "name": ["ft0"],
-          "nbits": "64",
+          "nbits": 64,
           "value": 0.0,
           "default_value": 0.0,
           "properties": []
         },
         {
           "name": ["F1", "ft1"],
-          "nbits": "64",
+          "nbits": 64,
           "value": 0.0,
           "default_value": 0.0,
           "properties": []
         },
         {
           "name": ["Field2", "ft2"],
-          "nbits": "64",
+          "nbits": 64,
           "value": 0.0,
           "default_value": 0.0,
           "properties": []
@@ -103,21 +103,21 @@
       "elements": [
         {
           "name": ["fs0"],
-          "nbits": "32",
+          "nbits": 32,
           "value": 0.0,
           "default_value": 0.0,
           "properties": []
         },
         {
           "name": ["fs1"],
-          "nbits": "32",
+          "nbits": 32,
           "value": 0.0,
           "default_value": 0.0,
           "properties": []
         },
         {
           "name": ["fs2"],
-          "nbits": "32",
+          "nbits": 32,
           "value": 0.0,
           "default_value": 0.0,
           "properties": []
@@ -132,7 +132,7 @@
       "elements": [
         {
           "name": ["FD0"],
-          "nbits": "64",
+          "nbits": 64,
           "value": 0.0,
           "default_value": 0.0,
           "simple_reg": ["fs0", "fs1"],
@@ -140,7 +140,7 @@
         },
         {
           "name": ["FD1"],
-          "nbits": "64",
+          "nbits": 64,
           "value": 0.0,
           "default_value": 0.0,
           "simple_reg": ["fs1", "fs2"],
@@ -148,7 +148,7 @@
         },
         {
           "name": ["FD2"],
-          "nbits": "64",
+          "nbits": 64,
           "value": 0.0,
           "default_value": 0.0,
           "simple_reg": ["fs2", "fs3"],
@@ -554,7 +554,7 @@
     {
       "name": ".zero",
       "action": "space",
-      "size": "1"
+      "size": 1
     },
     {
       "name": ".align",
@@ -579,22 +579,22 @@
     {
       "name": ".byte",
       "action": "byte",
-      "size": "1"
+      "size": 1
     },
     {
       "name": ".half",
       "action": "half_word",
-      "size": "2"
+      "size": 2
     },
     {
       "name": ".word",
       "action": "word",
-      "size": "4"
+      "size": 4
     },
     {
       "name": ".dword",
       "action": "double_word",
-      "size": "8"
+      "size": 8
     },
     {
       "name": ".float",
