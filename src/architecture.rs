@@ -511,20 +511,20 @@ pub struct Interrupts {
     pub enabled: bool,
     /// JS code to be executed in order to check whether an interrupt happened.
     /// It must return an `InterruptType` (if an interrupt happened) or `null` (if it didn't)
-    pub interrupt_check: String,
+    pub check: String,
     /// JS code to be executed in order to check whether interrupts are enabled
-    pub enable_check: String,
+    pub is_enabled: String,
     /// JS code to be executed in order to enable interrupts
-    pub interrupt_enable: String,
+    pub enable: String,
     /// JS code to be executed in order to disable interrupts
-    pub interrupt_disable: String,
+    pub disable: String,
     /// JS code to be executed in order to obtain the interrupt handler address
     pub get_handler_addr: String,
     /// JS code to be executed in order to clear an interrupt
-    pub clear_interrupt: String,
+    pub clear: String,
     /// JS arrow (lambda) function to be executed in order to set an interrupt given an interrupt
     /// type
-    pub set_interrupt_cause: String,
+    pub create: String,
 }
 
 impl Architecture<'_> {
