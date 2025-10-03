@@ -143,9 +143,6 @@ pub struct InstructionSyntax<'a, BitRange> {
     /// Syntax specification of the instruction. `[fF]\d+` is interpreted as the field with index
     /// `i` of the instruction. Other characters are interpreted literally. Ex: `F0 F3 F1 (F2)`
     pub signature_definition: &'a str,
-    /// Same as `signature`, but replacing `[fF]\d+` with the field names
-    #[serde(rename = "signatureRaw")]
-    pub signature_raw: &'a str,
     /// Parameters of the instruction
     pub fields: Vec<super::InstructionField<'a, BitRange>>,
 }
@@ -158,7 +155,6 @@ impl<'a, T> TryFrom<InstructionSyntax<'a, T>> for super::InstructionSyntax<'a, T
         Ok(Self {
             parser,
             output_syntax: value.signature_definition,
-            user_syntax: value.signature_raw,
             fields: value.fields,
         })
     }
