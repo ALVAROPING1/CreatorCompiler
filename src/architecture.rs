@@ -238,8 +238,6 @@ pub struct Instruction<'a> {
     // Can't be a reference because there might be escape sequences, which require
     // modifying the data on deserialization
     pub definition: String,
-    /// Determines whether the field `i` is separated in the resulting binary instruction
-    pub separated: Option<Vec<bool>>,
     /// Help information of the instruction
     pub help: &'a str,
     /// Properties of the instruction
