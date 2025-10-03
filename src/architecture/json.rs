@@ -144,10 +144,6 @@ pub struct InstructionSyntax<'a, BitRange> {
     /// the field with index i of the instruction. Other characters are interpreted literally
     /// Ex: `F0 F3 F1 (F2)`
     pub signature_definition: &'a str,
-    /// `signature_definition` in which `[fF]\d+` has been replaced with the type of each field in
-    /// the instruction. Valid values are those in `InstructionFieldType`, except `Co` and `Cop`.
-    /// The instruction opcode is replaced with its name. Spaces must also be replaced with `,`
-    pub signature: &'a str,
     /// Same as `signature`, but replacing `[fF]\d+` with the field names
     #[serde(rename = "signatureRaw")]
     pub signature_raw: &'a str,
