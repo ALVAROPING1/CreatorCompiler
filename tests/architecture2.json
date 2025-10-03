@@ -50,8 +50,7 @@
           "valueField": "1111"
         }
       ],
-      "definition": "",
-      "help": ""
+      "definition": ""
     },
     {
       "name": "ctrl",
@@ -75,8 +74,7 @@
           "stopbit": 28
         }
       ],
-      "definition": "",
-      "help": ""
+      "definition": ""
     },
     {
       "name": "int",
@@ -100,8 +98,7 @@
           "stopbit": 28
         }
       ],
-      "definition": "",
-      "help": ""
+      "definition": ""
     },
     {
       "name": "float",
@@ -125,8 +122,7 @@
           "stopbit": 28
         }
       ],
-      "definition": "",
-      "help": ""
+      "definition": ""
     },
     {
       "name": "double",
@@ -150,8 +146,7 @@
           "stopbit": 28
         }
       ],
-      "definition": "",
-      "help": ""
+      "definition": ""
     }
   ],
   "pseudoinstructions": [],

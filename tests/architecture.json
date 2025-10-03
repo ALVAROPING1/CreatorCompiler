@@ -181,8 +181,7 @@
           "valueField": "1111"
         }
       ],
-      "definition": "",
-      "help": ""
+      "definition": ""
     },
     {
       "name": "nop2",
@@ -207,8 +206,7 @@
           "valueField": "1001"
         }
       ],
-      "definition": "",
-      "help": ""
+      "definition": ""
     },
     {
       "name": "imm",
@@ -244,8 +242,7 @@
           "stopbit": 10
         }
       ],
-      "definition": "",
-      "help": ""
+      "definition": ""
     },
     {
       "name": "reg",
@@ -287,8 +284,7 @@
           "stopbit": 0
         }
       ],
-      "definition": "",
-      "help": ""
+      "definition": ""
     },
     {
       "name": "off",
@@ -318,8 +314,7 @@
           "stopbit": 0
         }
       ],
-      "definition": "",
-      "help": ""
+      "definition": ""
     },
     {
       "name": "multi",
@@ -343,8 +338,7 @@
           "stopbit": 28
         }
       ],
-      "definition": "",
-      "help": ""
+      "definition": ""
     },
     {
       "name": "multi",
@@ -362,8 +356,7 @@
           "stopbit": 0
         }
       ],
-      "definition": "",
-      "help": ""
+      "definition": ""
     },
     {
       "name": "multi",
@@ -387,8 +380,7 @@
           "stopbit": 27
         }
       ],
-      "definition": "",
-      "help": ""
+      "definition": ""
     },
     {
       "name": "pad",
@@ -420,8 +412,7 @@
           "padding": 2
         }
       ],
-      "definition": "",
-      "help": ""
+      "definition": ""
     },
     {
       "name": "enum",
@@ -467,8 +458,7 @@
           "enum_name": "test"
         }
       ],
-      "definition": "",
-      "help": ""
+      "definition": ""
     },
     {
       "name": "lit",
@@ -492,8 +482,7 @@
           "stopbit": 0
         }
       ],
-      "definition": "",
-      "help": ""
+      "definition": ""
     }
   ],
   "pseudoinstructions": [],

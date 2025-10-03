@@ -238,8 +238,6 @@ pub struct Instruction<'a> {
     // Can't be a reference because there might be escape sequences, which require
     // modifying the data on deserialization
     pub definition: String,
-    /// Help information of the instruction
-    pub help: &'a str,
     /// Properties of the instruction
     pub properties: Option<Vec<InstructionProperties>>,
 }
@@ -374,8 +372,6 @@ pub struct Pseudoinstruction<'a> {
     // Can't be a reference because there might be escape sequences, which require
     // modifying the data on deserialization
     pub definition: String,
-    /// Help information of the instruction
-    pub help: &'a str,
     /// Properties of the instruction
     pub properties: Option<Vec<InstructionProperties>>,
 }
