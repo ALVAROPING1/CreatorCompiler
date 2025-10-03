@@ -285,8 +285,8 @@ utils::schema_from!(InstructionSyntax<'a, T>, json::InstructionSyntax<T>);
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum InstructionProperties {
-    ExitSubrutine,
-    EnterSubrutine,
+    ExitSubroutine,
+    EnterSubroutine,
     Privileged,
 }
 
@@ -328,10 +328,10 @@ pub enum FieldType<'a> {
         value: BaseN<2>,
     },
     /// Immediate signed integer
-    #[serde(rename = "inm-signed")]
+    #[serde(rename = "imm-signed")]
     ImmSigned,
     /// Immediate unsigned integer
-    #[serde(rename = "inm-unsigned")]
+    #[serde(rename = "imm-unsigned")]
     ImmUnsigned,
     /// Offset from the next instruction's address in bytes
     #[serde(rename = "offset_bytes")]
