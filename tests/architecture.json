@@ -224,14 +224,14 @@
           "stopbit": 0
         },
         {
-          "name": "inms",
-          "type": "inm-signed",
+          "name": "imms",
+          "type": "imm-signed",
           "startbit": 29,
           "stopbit": 26
         },
         {
-          "name": "inmu",
-          "type": "inm-unsigned",
+          "name": "immu",
+          "type": "imm-unsigned",
           "startbit": 8,
           "stopbit": 1
         },
@@ -333,7 +333,7 @@
         },
         {
           "name": "imm4",
-          "type": "inm-unsigned",
+          "type": "imm-unsigned",
           "startbit": 31,
           "stopbit": 28
         }
@@ -375,7 +375,7 @@
         },
         {
           "name": "imm5",
-          "type": "inm-unsigned",
+          "type": "imm-unsigned",
           "startbit": 31,
           "stopbit": 27
         }
@@ -399,14 +399,14 @@
         },
         {
           "name": "imm5",
-          "type": "inm-signed",
+          "type": "imm-signed",
           "startbit": 31,
           "stopbit": 29,
           "padding": 2
         },
         {
           "name": "imm6",
-          "type": "inm-signed",
+          "type": "imm-signed",
           "startbit": 5,
           "stopbit": 2,
           "padding": 2
@@ -477,7 +477,7 @@
         },
         {
           "name": "imm",
-          "type": "inm-signed",
+          "type": "imm-signed",
           "startbit": 3,
           "stopbit": 0
         }
