@@ -140,9 +140,8 @@ impl TryFrom<BitRange> for super::BitRange {
 /// Instruction syntax specification
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
 pub struct InstructionSyntax<'a, BitRange> {
-    /// Order of the fields/literal characters in the instruction text. `[fF]\d+` is interpreted as
-    /// the field with index i of the instruction. Other characters are interpreted literally
-    /// Ex: `F0 F3 F1 (F2)`
+    /// Syntax specification of the instruction. `[fF]\d+` is interpreted as the field with index
+    /// `i` of the instruction. Other characters are interpreted literally. Ex: `F0 F3 F1 (F2)`
     pub signature_definition: &'a str,
     /// Same as `signature`, but replacing `[fF]\d+` with the field names
     #[serde(rename = "signatureRaw")]
@@ -155,18 +154,11 @@ impl<'a, T> TryFrom<InstructionSyntax<'a, T>> for super::InstructionSyntax<'a, T
     type Error = &'static str;
 
     fn try_from(value: InstructionSyntax<'a, T>) -> Result<Self, Self::Error> {
-        let format = |fmt: &str| {
-            let fmt = fmt.replace(" (", "(");
-            fmt.split_once(' ')
-                .map(|(opcode, syntax)| format!("{opcode} {}", syntax.replace(' ', ",")))
-                .unwrap_or(fmt)
-        };
-        let parser =
-            crate::parser::Instruction::build(&format(value.signature_definition), &value.fields)?;
+        let parser = crate::parser::Instruction::build(value.signature_definition, &value.fields)?;
         Ok(Self {
             parser,
             output_syntax: value.signature_definition,
-            user_syntax: format(value.signature_raw),
+            user_syntax: value.signature_raw,
             fields: value.fields,
         })
     }
