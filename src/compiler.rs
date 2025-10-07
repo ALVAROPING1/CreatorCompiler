@@ -272,14 +272,14 @@ fn parse_instruction<'a>(
                 // Otherwise, store it in case this is the only matching definition
                 possible_def = Some((inst, parsed_args));
             }
-            Err(e) => errs.push((inst.syntax.user_syntax.to_string(), e)),
+            Err(e) => errs.push((inst.syntax.parser.syntax().to_string(), e)),
         }
     }
     for inst in arch.find_pseudoinstructions(name.0) {
         match inst.syntax.parser.parse(args) {
             // If parsing is successful, assume this definition is the correct one and return it
             Ok(parsed_args) => return Ok((InstructionDefinition::Pseudo(inst), parsed_args)),
-            Err(e) => errs.push((inst.syntax.user_syntax.to_string(), e)),
+            Err(e) => errs.push((inst.syntax.parser.syntax().to_string(), e)),
         }
     }
     // None of the definitions matched perfectly. If there is a matching definition that failed due

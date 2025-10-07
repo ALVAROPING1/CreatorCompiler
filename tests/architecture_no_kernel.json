@@ -31,8 +31,6 @@
       "name": "nop",
       "type": "Arithmetic integer",
       "signature_definition": "F0",
-      "signature": "nop",
-      "signatureRaw": "nop",
       "co": "1111111",
       "cop": "0000000000",
       "nwords": 1,

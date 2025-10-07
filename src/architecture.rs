@@ -280,8 +280,6 @@ pub struct InstructionSyntax<'a, BitRange> {
     pub parser: crate::parser::Instruction,
     /// Translated instruction's syntax
     pub output_syntax: &'a str,
-    /// User representation of the instruction's syntax
-    pub user_syntax: String,
     /// Parameters of the instruction
     pub fields: Vec<InstructionField<'a, BitRange>>,
 }
