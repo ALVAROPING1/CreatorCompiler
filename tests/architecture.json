@@ -19,6 +19,7 @@
         {
           "name": ["PC"],
           "nbits": 32,
+          "encoding": 0,
           "value": 0,
           "default_value": 0,
           "properties": []
@@ -26,6 +27,7 @@
         {
           "name": ["ctrl1"],
           "nbits": 32,
+          "encoding": 1,
           "value": 0,
           "default_value": 0,
           "properties": []
@@ -33,6 +35,7 @@
         {
           "name": ["ctrl2"],
           "nbits": 32,
+          "encoding": 2,
           "value": 0,
           "default_value": 0,
           "properties": []
@@ -47,6 +50,7 @@
         {
           "name": ["x0"],
           "nbits": 32,
+          "encoding": 0,
           "value": 0,
           "default_value": 0,
           "properties": []
@@ -54,6 +58,7 @@
         {
           "name": ["x1"],
           "nbits": 32,
+          "encoding": 1,
           "value": 0,
           "default_value": 0,
           "properties": []
@@ -61,6 +66,7 @@
         {
           "name": ["x2", "two", "2"],
           "nbits": 32,
+          "encoding": 2,
           "value": 0,
           "default_value": 0,
           "properties": []
@@ -76,6 +82,7 @@
         {
           "name": ["ft0"],
           "nbits": 64,
+          "encoding": 0,
           "value": 0.0,
           "default_value": 0.0,
           "properties": []
@@ -83,6 +90,7 @@
         {
           "name": ["F1", "ft1"],
           "nbits": 64,
+          "encoding": 1,
           "value": 0.0,
           "default_value": 0.0,
           "properties": []
@@ -90,6 +98,7 @@
         {
           "name": ["Field2", "ft2"],
           "nbits": 64,
+          "encoding": 2,
           "value": 0.0,
           "default_value": 0.0,
           "properties": []
@@ -104,6 +113,7 @@
         {
           "name": ["fs0"],
           "nbits": 32,
+          "encoding": 0,
           "value": 0.0,
           "default_value": 0.0,
           "properties": []
@@ -111,6 +121,7 @@
         {
           "name": ["fs1"],
           "nbits": 32,
+          "encoding": 1,
           "value": 0.0,
           "default_value": 0.0,
           "properties": []
@@ -118,6 +129,7 @@
         {
           "name": ["fs2"],
           "nbits": 32,
+          "encoding": 2,
           "value": 0.0,
           "default_value": 0.0,
           "properties": []
@@ -133,6 +145,7 @@
         {
           "name": ["FD0"],
           "nbits": 64,
+          "encoding": 0,
           "value": 0.0,
           "default_value": 0.0,
           "simple_reg": ["fs0", "fs1"],
@@ -141,6 +154,7 @@
         {
           "name": ["FD1"],
           "nbits": 64,
+          "encoding": 1,
           "value": 0.0,
           "default_value": 0.0,
           "simple_reg": ["fs1", "fs2"],
@@ -149,6 +163,7 @@
         {
           "name": ["FD2"],
           "nbits": 64,
+          "encoding": 2,
           "value": 0.0,
           "default_value": 0.0,
           "simple_reg": ["fs2", "fs3"],

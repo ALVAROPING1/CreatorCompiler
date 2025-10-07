@@ -19,6 +19,7 @@
         {
           "name": ["x0", "ZeRo"],
           "nbits": 32,
+          "encoding": 0,
           "value": 0,
           "default_value": 0,
           "properties": []

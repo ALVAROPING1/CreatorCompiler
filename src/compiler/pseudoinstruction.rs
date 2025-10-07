@@ -282,7 +282,7 @@ pub fn expand<'arch>(
         let i: usize = num(i);
         // Find the register name and replace it
         for file in arch.find_reg_files(RegisterType::Float(FloatType::Double)) {
-            if let Some((_, reg, _)) = file.find_register(name, case) {
+            if let Some((reg, _)) = file.find_register(name, case) {
                 let name = reg
                     .simple_reg
                     .and_then(|regs| regs.get(i).copied())

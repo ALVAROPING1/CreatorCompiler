@@ -177,6 +177,8 @@ pub struct Register<'a> {
     /// List of aliases
     #[serde(borrow)]
     pub name: Vec<&'a str>,
+    /// Encoding of the register in an instruction
+    pub encoding: Integer,
     /// Size
     pub nbits: Integer,
     /// Current value of the register
@@ -690,8 +692,8 @@ impl Component<'_> {
     /// * `name`: name of the register to search for
     /// * `case`: whether the find should be case sensitive (`true`) or not (`false`)
     #[must_use]
-    pub fn find_register(&self, name: &str, case: bool) -> Option<(usize, &Register<'_>, &str)> {
-        self.elements.iter().enumerate().find_map(|(i, reg)| {
+    pub fn find_register(&self, name: &str, case: bool) -> Option<(&Register<'_>, &str)> {
+        self.elements.iter().find_map(|reg| {
             let name = reg.name.iter().find(|&&n| {
                 if case {
                     n == name
@@ -699,7 +701,7 @@ impl Component<'_> {
                     n.eq_ignore_ascii_case(name)
                 }
             });
-            name.map(|&n| (i, reg, n))
+            name.map(|&n| (reg, n))
         })
     }
 }

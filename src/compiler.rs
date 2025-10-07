@@ -1091,7 +1091,7 @@ fn evaluate_instruction_field(
                 .ok_or_else(|| ErrorKind::UnknownRegisterFile(file_type).add_span(arg.value.1))?;
             let case = ctx.arch.config.sensitive_register_name;
             // Find the register with the given name
-            let (i, _, name) = files
+            let (reg, name) = files
                 .find_map(|file| file.find_register(&name, case))
                 .ok_or_else(|| {
                     ErrorKind::UnknownRegister {
@@ -1100,7 +1100,7 @@ fn evaluate_instruction_field(
                     }
                     .add_span(arg.value.1)
                 })?;
-            (i.into(), name.to_string())
+            (reg.encoding.0.clone().into(), name.to_string())
         }
         // Enumerated fields
         FieldType::Enum { enum_name } => {
