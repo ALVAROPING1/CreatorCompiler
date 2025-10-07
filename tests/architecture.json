@@ -193,7 +193,7 @@
           "type": "cop",
           "startbit": 31,
           "stopbit": 28,
-          "valueField": "1111"
+          "value": "1111"
         }
       ],
       "definition": ""
@@ -218,7 +218,7 @@
           "type": "cop",
           "startbit": 63,
           "stopbit": 60,
-          "valueField": "1001"
+          "value": "1001"
         }
       ],
       "definition": ""

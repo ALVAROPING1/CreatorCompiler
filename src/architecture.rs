@@ -326,7 +326,6 @@ pub enum FieldType<'a> {
     /// Extended operation code
     Cop {
         /// Fixed value of this field in the binary instruction (specified as a binary string)
-        #[serde(rename = "valueField")]
         value: BaseN<2>,
     },
     /// Immediate signed integer
