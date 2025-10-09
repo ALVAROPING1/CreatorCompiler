@@ -77,7 +77,6 @@
       "name": "Floating point registers",
       "type": "fp_registers",
       "double_precision": true,
-      "double_precision_type": "extended",
       "elements": [
         {
           "name": ["ft0"],
@@ -132,41 +131,6 @@
           "encoding": 2,
           "value": 0.0,
           "default_value": 0.0,
-          "properties": []
-        }
-      ]
-    },
-    {
-      "name": "Double floating point registers",
-      "type": "fp_registers",
-      "double_precision": true,
-      "double_precision_type": "linked",
-      "elements": [
-        {
-          "name": ["FD0"],
-          "nbits": 64,
-          "encoding": 0,
-          "value": 0.0,
-          "default_value": 0.0,
-          "simple_reg": ["fs0", "fs1"],
-          "properties": []
-        },
-        {
-          "name": ["FD1"],
-          "nbits": 64,
-          "encoding": 1,
-          "value": 0.0,
-          "default_value": 0.0,
-          "simple_reg": ["fs1", "fs2"],
-          "properties": []
-        },
-        {
-          "name": ["FD2"],
-          "nbits": 64,
-          "encoding": 2,
-          "value": 0.0,
-          "default_value": 0.0,
-          "simple_reg": ["fs2", "fs3"],
           "properties": []
         }
       ]

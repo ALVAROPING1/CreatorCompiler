@@ -1470,9 +1470,9 @@ mod test {
     #[test]
     fn instruction_fields_regs() {
         // Simple
-        let x = compile(".text\nmain: reg ctrl1, x2, ft1, ft2").unwrap();
+        let x = compile(".text\nmain: reg ctrl1, x2, fs1, ft2").unwrap();
         let binary = "01001000000000000000000000010010";
-        let result = "reg ctrl1, x2, ft1, ft2";
+        let result = "reg ctrl1, x2, fs1, ft2";
         let tbl = label_table([("main", 0, 6..11)]);
         assert_eq!(x.label_table, tbl);
         assert_eq!(
@@ -1482,9 +1482,9 @@ mod test {
         assert_eq!(x.data_memory, vec![]);
         assert_eq!(x.global_symbols, HashSet::new());
         // Aliases
-        let x = compile(".text\nmain: reg ctrl1, two, F1, Field2").unwrap();
+        let x = compile(".text\nmain: reg ctrl1, two, f1, Field2").unwrap();
         assert_eq!(x.label_table, tbl);
-        let instruction = "reg ctrl1, two, F1, Field2";
+        let instruction = "reg ctrl1, two, f1, Field2";
         assert_eq!(
             x.instructions,
             vec![inst(0, &["main"], instruction, binary, 12..38)]
@@ -1492,21 +1492,11 @@ mod test {
         assert_eq!(x.data_memory, vec![]);
         assert_eq!(x.global_symbols, HashSet::new());
         // Number aliases
-        let x = compile(".text\nmain: reg ctrl1, 2, ft1, ft2").unwrap();
+        let x = compile(".text\nmain: reg ctrl1, 2, fs1, ft2").unwrap();
         assert_eq!(x.label_table, tbl);
         assert_eq!(
             x.instructions,
-            vec![inst(0, &["main"], "reg ctrl1, 2, ft1, ft2", binary, 12..34)]
-        );
-        assert_eq!(x.data_memory, vec![]);
-        assert_eq!(x.global_symbols, HashSet::new());
-        // Linked floating point registers
-        let x = compile(".text\nmain: reg ctrl1, x2, fs1, FD2").unwrap();
-        let result = "reg ctrl1, x2, fs1, FD2";
-        assert_eq!(x.label_table, tbl);
-        assert_eq!(
-            x.instructions,
-            vec![inst(0, &["main"], result, binary, 12..35)]
+            vec![inst(0, &["main"], "reg ctrl1, 2, fs1, ft2", binary, 12..34)]
         );
         assert_eq!(x.data_memory, vec![]);
         assert_eq!(x.global_symbols, HashSet::new());
@@ -2257,15 +2247,15 @@ mod test {
             .add_span((24..26).span())),
         );
         assert_eq!(
-            compile(".text\nmain: reg PC, x0, FD1, ft2"),
+            compile(".text\nmain: reg PC, x0, F1, ft2"),
             Err(ErrorKind::UnknownRegister {
-                name: "FD1".into(),
+                name: "F1".into(),
                 file: RegisterType::Float(FloatType::Float),
             }
-            .add_span((24..27).span())),
+            .add_span((24..26).span())),
         );
         assert_eq!(
-            compile(".text\nmain: reg PC, x0, ft1, fs2"),
+            compile(".text\nmain: reg PC, x0, fs1, fs2"),
             Err(ErrorKind::UnknownRegister {
                 name: "fs2".into(),
                 file: RegisterType::Float(FloatType::Double),

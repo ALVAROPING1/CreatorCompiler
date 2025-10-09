@@ -130,8 +130,6 @@ pub struct Component<'a> {
     r#type: ComponentType,
     /// Whether the registers have double the word size
     double_precision: bool,
-    /// If the registers have double the word size, how this size is achieved
-    double_precision_type: Option<PrecisionType>,
     /// Registers in this file
     pub elements: Vec<Register<'a>>,
 }
@@ -161,16 +159,6 @@ pub enum RegisterType {
     Float(FloatType),
 }
 
-/// Type of registers bigger than a single word
-#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone, Copy)]
-#[serde(rename_all = "snake_case")]
-pub enum PrecisionType {
-    /// Register has a bigger size
-    Extended,
-    /// Register is made up of 2 word size registers
-    Linked,
-}
-
 /// Register specification
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
 pub struct Register<'a> {
@@ -188,8 +176,6 @@ pub struct Register<'a> {
     pub default_value: Option<Number>,
     /// Properties of this register
     pub properties: Vec<RegisterProperty>,
-    /// Smaller registers that make up this register when the double precision mode is `Linked`
-    pub simple_reg: Option<[&'a str; 2]>,
 }
 
 /// Properties of a register
@@ -668,14 +654,11 @@ impl Architecture<'_> {
     /// * `type`: type of the file wanted
     pub fn find_reg_files(&self, r#type: RegisterType) -> impl Iterator<Item = &Component<'_>> {
         let eq = move |file: &&Component| match r#type {
-            RegisterType::Int => matches!(file.r#type, ComponentType::Int),
-            RegisterType::Ctrl => matches!(file.r#type, ComponentType::Ctrl),
-            RegisterType::Float(FloatType::Float) => matches!(
-                (file.r#type, file.double_precision_type),
-                (ComponentType::Float, None | Some(PrecisionType::Extended))
-            ),
-            RegisterType::Float(FloatType::Double) => {
-                matches!(file.r#type, ComponentType::Float) && file.double_precision_type.is_some()
+            RegisterType::Int => file.r#type == ComponentType::Int,
+            RegisterType::Ctrl => file.r#type == ComponentType::Ctrl,
+            RegisterType::Float(x) => {
+                file.r#type == ComponentType::Float
+                    && (x == FloatType::Double) == file.double_precision
             }
         };
         self.components.iter().filter(eq)
