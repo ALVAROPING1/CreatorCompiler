@@ -189,8 +189,6 @@ macro_rules! parse_with {
         let src = $src.with_context(FileID::SRC);
         || -> Result<_, ParseError> {
             let tokens = lexer::lexer($comment_prefix).parse(src).into_result()?;
-            // TODO: replace with `chumsky::input::IterInput` on chumsky 0.10.2 (on 0.10.1 it
-            // doesn't implement the correct traits)
             let tokens = tokens.map(end, |(x, s)| (x, s));
             let res = $parser.parse(tokens).into_result()?;
             Ok(res)

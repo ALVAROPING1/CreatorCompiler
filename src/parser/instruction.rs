@@ -47,8 +47,6 @@ pub type ParsedArgs = Vec<ParsedArgument>;
 /// Input type to be used with instruction argument parsers
 // NOTE: we need to name this input type to be able to box the parsers, which is required to store
 // them on a struct
-// TODO: replace with `chumsky::input::IterInput` on chumsky 0.10.2 (on 0.10.1 it doesn't implement
-// the correct traits)
 type TokenInput<'src> =
     MappedInput<Token, Span, &'src [Spanned<Token>], fn(&Spanned<Token>) -> (&Token, &Span)>;
 
