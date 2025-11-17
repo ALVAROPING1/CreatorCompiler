@@ -144,8 +144,7 @@ where
     // Instruction: `instruction -> ident [^\n]*`
     let instruction = ident
         .then(
-            any()
-                .and_is(newline().not())
+            none_of([Token::Ctrl('\n')])
                 .map_with(|token, e| (token, e.span()))
                 .repeated()
                 .collect()
