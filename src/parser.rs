@@ -148,7 +148,15 @@ where
                 .map_with(|token, e| (token, e.span()))
                 .repeated()
                 .collect()
-                .map_with(|args, e| (args, e.span())),
+                .map_with(|args: Vec<_>, e| {
+                    // Fix the span being wrong when there are no arguments (when sub-parser doesn't
+                    // consume input). SEE: <https://github.com/zesterer/chumsky/issues/870>
+                    let mut s: Span = e.span();
+                    if args.is_empty() {
+                        s.start = s.end;
+                    }
+                    (args, s)
+                }),
         )
         .map(|(name, args)| Statement::Instruction(InstructionNode { name, args }))
         .labelled("instruction");
@@ -408,7 +416,17 @@ mod test {
             ("name\n", empty.clone()),
             ("name\r", empty.clone()),
             ("name\r\n", empty.clone()),
+            ("name \n", empty.clone()),
             ("name", empty),
+            (
+                "name a ",
+                vec![instruction(
+                    vec![],
+                    ("name", 0..4),
+                    (vec![(Token::Identifier("a".into()), 5..6)], 5..6),
+                    0..6,
+                )],
+            ),
             (
                 "name a\n",
                 vec![instruction(
