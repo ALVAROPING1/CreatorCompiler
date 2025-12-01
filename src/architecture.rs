@@ -488,25 +488,45 @@ pub struct MemoryLayout {
 }
 
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
+pub struct InterruptHandlers {
+    /// JS Handler for CREATOR interrupt handler's syscall interrupt
+    pub creator_syscall: Option<String>,
+    /// JS Handler for the custom interrupt handler
+    pub custom: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
 pub struct Interrupts {
-    /// Controls whether interrupts are enabled by default (`true`) or not (`false`)
-    pub enabled: bool,
-    /// JS code to be executed in order to check whether an interrupt happened.
-    /// It must return an `InterruptType` (if an interrupt happened) or `null` (if it didn't)
+    /// Interrupt handler configuration
+    pub handlers: InterruptHandlers,
+    /// JS code to be executed in order to check what type of interrupt ocurred.
+    /// It must return an `InterruptType` (if an interrupt happened) or `null`
+    /// (if it didn't)
     pub check: String,
-    /// JS code to be executed in order to check whether interrupts are enabled
-    pub is_enabled: String,
-    /// JS code to be executed in order to enable interrupts
-    pub enable: String,
-    /// JS code to be executed in order to disable interrupts
-    pub disable: String,
-    /// JS code to be executed in order to obtain the interrupt handler address
-    pub get_handler_addr: String,
-    /// JS code to be executed in order to clear an interrupt
-    pub clear: String,
-    /// JS arrow (lambda) function to be executed in order to set an interrupt given an interrupt
-    /// type
+    /// JS code to be executed in order to enable the specified interrupt
+    /// `type`. Defaults to `global_enable`
+    pub enable: Option<String>,
+    /// JS code to be executed in order to disable the specified interrupt
+    /// `type`. Defaults to `global_disable`
+    pub disable: Option<String>,
+    /// JS code to be executed in order to globally enable interrupts
+    pub global_enable: String,
+    /// JS code to be executed in order to globally disable interrupts
+    pub global_disable: String,
+    /// JS code to be executed in order to clear an interrupt of the specified
+    /// `type`. Defaults to `global_clear`
+    pub clear: Option<String>,
+    /// JS code to be executed in order to clear all interrupts
+    pub global_clear: String,
+    /// JS code to be executed in order to set an interrupt given an interrupt
+    /// `type`
     pub create: String,
+    /// JS code to check whether the specified interrupt `type` is enabled. Must
+    /// return a boolean. Defaults to `is_global_enabled`
+    pub is_enabled: Option<String>,
+    /// JS code to check whether interrupts are globally is enabled. Must return
+    /// a boolean
+    pub is_global_enabled: String,
 }
 
 #[derive(Deserialize, JsonSchema, Debug, PartialEq, Eq, Clone)]
